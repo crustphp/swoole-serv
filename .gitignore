@@ -1,0 +1,63 @@
+/node_modules
+/public/assets
+/public/storage
+/public/build
+/public/vendor
+/public/mix-manifest.json
+/resources/js/@iconify/icons-bundle.js
+/storage/*.key
+/storage/*.json
+/storage/tmp
+/storage/test
+/storage/media-library
+/vendor
+/logs
+.env
+.env.backup
+.phpunit.result.cache
+docker-compose.override.yml
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+supervisord.log
+supervisord.pid
+_ide_helper.php
+_ide_helper_models.php
+public/mix-manifest.json~f6f998d (More improvements)
+public/mix-manifest.json~f6f998d (More improvements)_0
+vendor
+logs
+.DS_Store
+node_modules
+/dist
+
+composer.json
+
+# local env files
+.env.local
+.env.*.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea
+.vscode/*
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+!.vscode/*.code-snippets
+
+# script
+/vuexy-scripts
+
+# Docs
+/docs/.temp
+
+public/hot
