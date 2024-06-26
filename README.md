@@ -65,7 +65,7 @@ EOF"
 sudo phpenmod -s cli -v 8.3 openswoole
 ```
 
-### (Optional) Install OpenSwoole (Optional)
+### (Optional) Install OpenSwoole
 
 ```sh
 sudo pear channel-update pear.php.net  && \
@@ -90,6 +90,6 @@ sudo phpenmod -s cli -v 8.3 openswoole
 ```git clone https://github.com/fakharak/swoole-serv.git```
 
 ```sh 
-composer install``
+composer install
 composer dump-autoload
 ```
