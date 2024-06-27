@@ -355,13 +355,11 @@ class sw_service {
                 include_once __DIR__ . '/Controllers/WebSocketController.php';
                 $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools);
 
-                echo "Outside Tick: Received from frame->fd: {$frame->fd}, frame->data: {$frame->data}, 
-          frame->opcode: {$frame->opcode}, frame->fin:{$frame->finish}, frame->flags:{$frame->flags}\n";
-
+                $timerTime = $_ENV['SWOOLE_TIMER_TIME1'];
                 if ($this->swoole_ext == 1) {
-                    $this->fds[$frame->fd] = swTimer::tick(5000, $respond, $webSocketServer, $frame, $sw_websocket_controller);
+                    $this->fds[$frame->fd] = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
                 } else {
-                    $this->fds[$frame->fd] = oswTimer::tick(5000, $respond, $webSocketServer, $frame, $sw_websocket_controller);
+                    $this->fds[$frame->fd] = oswTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
                 }
             }
         });
