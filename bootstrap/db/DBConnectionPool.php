@@ -18,20 +18,43 @@ class DBConnectionPool
     use ConnectionPoolTrait;
 
     private $pool_key;
-    private string $db_engine = 'postgres';
-    private string $pool_type = 'swoole';
+    private string $dbEngine = 'postgres';
+    private string $poolDriver = 'swoole';
 
-    function __construct($pool_driver='smf', string $db_engine='postgres') {
-        $this->pool_driver = $pool_driver;
-        $this->db_engine = $db_engine;
+    function __construct($poolDriver='smf', string $dbEngine='postgres') {
+        $this->poolDriver = $poolDriver;
+        $this->dbEngine = $dbEngine;
     }
 
-    public function create($pool_key, bool $is_pdo = true)
+    public function create($pool_key, bool $isPdo = true)
     {
+        global $swPostgresServerHost;
+        global $swPostgresServerPort;
+        global $swPostgresServerDB;
+        global $swPostgresServerUser;
+        global $swPostgresServerPasswd;
+
+        global $swMysqlServerDriver;
+        global $swMysqlServerHost;
+        global $swMysqlServerPort;
+        global $swMysqlServerDb;
+        global $swMysqlServerUser;
+        global $swMysqlServerCharset;
+        global $swMysqlServerPasswd;
+
         // For Smf package based Connection Pool
 
         // Configure Connection Pool through SMF ConnectionPool class constructor
-        $obj_conn_pool = $this->create_connection_pool_object($is_pdo, $this->pool_driver, $this->db_engine);
+        $obj_conn_pool = $this->create_connection_pool_object(
+            $swPostgresServerHost,
+            $swPostgresServerPort,
+            $swPostgresServerDB,
+            $swPostgresServerUser,
+            $swPostgresServerPasswd,
+            $isPdo,
+            $this->poolDriver,
+            $this->dbEngine
+        );
 
         // Creates a Connection Pool (Channel) of Connections
         $obj_conn_pool->init();
@@ -40,10 +63,11 @@ class DBConnectionPool
         $this->addConnectionPool($pool_key, $obj_conn_pool);
     }
 
-    public function create_connection_pool_object(bool $is_pdo = true, string $pool_driver = 'smf', $db_engine = 'postgres')
+    public function create_connection_pool_object($serverHost, $serverPort, $serverDB, $serverUser, $serverPasswd,
+                                                  bool $isPdo = true, string $poolDriver = 'smf', $dbEngine = 'postgres')
     {
-        if ($db_engine == 'postgres') {
-            if (strtolower($this->pool_driver) == 'smf') {
+        if ($dbEngine == 'postgres') {
+            if (strtolower($poolDriver) == 'smf') {
                 // All PosgreSQL connections: [4 workers * 2 = 8, 4 workers * 10 = 40]
                 return new ConnectionPool(
                     [
@@ -53,14 +77,14 @@ class DBConnectionPool
                         'maxIdleTime' => 20,
                         'idleCheckInterval' => 10,
                     ],
-                    (($is_pdo) ? new PDOConnector : new CoroutinePostgreSQLConnector),
-                    (($is_pdo) ?
+                    (($isPdo) ? new PDOConnector : new CoroutinePostgreSQLConnector),
+                    (($isPdo) ?
                         [
-                            'dsn' => 'pgsql:host='.POSTGRES_SERVER_HOST.';
-                                        port='.POSTGRES_SERVER_PORT.';
-                                        dbname='.POSTGRES_SERVER_DB,
-                            'username' => POSTGRES_SERVER_USER,
-                            'password' => POSTGRES_SERVER_PWD,
+                            'dsn' => 'pgsql:host='.$serverHost.';
+                                        port='.$serverPort.';
+                                        dbname='.$serverDB,
+                            'username' => $serverUser,
+                            'password' => $serverPasswd,
                             'options' => [
                                 \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
                                 \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
@@ -68,17 +92,17 @@ class DBConnectionPool
                             ],
                         ] :
                         [
-                            'connection_strings' => 'host='.POSTGRES_SERVER_HOST.';
-                                            port='.POSTGRES_SERVER_PORT.';
-                                            dbname='.POSTGRES_SERVER_DB.';
-                                            user='.POSTGRES_SERVER_USER.';
-                                            password='.POSTGRES_SERVER_PWD,
+                            'connection_strings' => 'host='.$serverHost.';
+                                            port='.$serverPort.';
+                                            dbname='.$serverDB.';
+                                            user='.$serverUser.';
+                                            password='.$serverPasswd,
                         ]
                     )
                 );
             }
         } else {
-            if (!empty(MYSQL_SERVER_DB)) {
+            if (!empty($swMysqlServerDriver)) {
                 $db_prefix = 'MYSQL_'; // POSTGRES_
                 return new PDOPool(
                     (new PDOConfig())
