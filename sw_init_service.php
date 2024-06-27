@@ -7,8 +7,16 @@
     $key_dir = __DIR__. '/ssl';
 
     if (isset($argc)) {
-        $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-        $dotenv->safeLoad();
+        if (file_exists(realpath(__DIR__ . '/composer.json')) ||
+            file_exists(realpath(__DIR__ . '/package.json'))
+        ) {
+            $dotenv = Dotenv\Dotenv::createMutable(dirname(__DIR__));
+            $dotenv->safeLoad();
+        }
+        if (!isset($_ENV['APP_ENV']) || $_ENV['APP_ENV'] == 'local') {
+            $dotenv = Dotenv\Dotenv::createMutable(__DIR__);
+            $dotenv->safeLoad();
+        }
         include('service_creation_params.php');
         include('sw_service.php');
 
