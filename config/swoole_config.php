@@ -8,10 +8,10 @@ $swoole_config = [
          'hook_flags' => SWOOLE_HOOK_ALL,
     ],
     'server_settings' => [
-//        'daemonize'             => 1,
+        'daemonize'             => $_ENV['DAEMONIZE'],
 //        'user' => 'www-data',
 //        'group' => 'www-data',
-//        'pid_file' => dirname(__DIR__).'server.pid',
+        'pid_file' => dirname(__DIR__).'server.pid',
 //        'chroot' => '/data/server/',
 //        'open_cpu_affinity' => true,
 //        'cpu_affinity_ignore' => [0, 1],
