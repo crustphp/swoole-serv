@@ -8,7 +8,7 @@ $swoole_config = [
          'hook_flags' => SWOOLE_HOOK_ALL,
     ],
     'server_settings' => [
-        'daemonize'             => $_ENV['DAEMONIZE'],
+        'daemonize'             => $_ENV['SWOOLE_DAEMONIZE'],
 //        'user' => 'www-data',
 //        'group' => 'www-data',
         'pid_file' => dirname(__DIR__).'server.pid',
