@@ -67,8 +67,8 @@ class sw_service {
        $this->port = $port;
        $this->serverMode = $serverMode;
        $this->serverProtocol = $serverProtocol;
-       list($this->isSwoole, $this->swoole_ext) = extension_loaded('swoole') ? [true, 1] :
-           (extension_loaded('openswoole') ? [true, 2] : [false, 0]);
+       $this->swoole_ext = ($GLOBALS['swoole_ext'] ?? (extension_loaded('swoole') ? 1 : (
+           extension_loaded('openswoole') ? 2 : 0)));
 
        Swoole\Coroutine::enableScheduler();
         //OR
@@ -173,7 +173,7 @@ class sw_service {
         $my_onStart = function ($serv)
         {
             $this->swoole_version = (($this->swoole_ext == 1) ? SWOOLE_VERSION : '22.1.2');
-            echo "OpenSwoole ". ucfirst($this->serverProtocol)." Server started at $this->ip:$this->port in Server Mode:$this->serverMode\n";
+            echo "Asynch ". ucfirst($this->serverProtocol)." Server started at $this->ip:$this->port in Server Mode:$this->serverMode\n";
             echo "MasterPid={$serv->master_pid}|Manager_pid={$serv->manager_pid}\n".PHP_EOL;
             echo "Server: start.".PHP_EOL."Swoole version is [" . $this->swoole_version . "]\n".PHP_EOL;
         };
@@ -190,19 +190,18 @@ class sw_service {
     protected function bindWorkerReloadEvents() {
         $this->server->on('BeforeReload', function($server)
         {
-            echo "Before Reload". PHP_EOL;
-            var_dump(get_included_files());
+            echo "Test Statement: Before Reload". PHP_EOL;
+//            var_dump(get_included_files());
         });
 
         $this->server->on('AfterReload', function($server)
         {
-            echo "After Reload". PHP_EOL;
-            var_dump(get_included_files());
+            echo "Test Statement: After Reload". PHP_EOL;
+//            var_dump(get_included_files());
         });
     }
 
     protected function bindWorkerEvents() {
-
         $init = function ($server, $worker_id) {
 
             global $argv;
@@ -223,8 +222,15 @@ class sw_service {
 
             // For Smf package based Connection Pool
             // Configure Connection Pool through SMF ConnectionPool class constructor
-            $this->dbConnectionPools[$this->postgresDbKey] = new DBConnectionPool('smf','postgres');
-            $this->dbConnectionPools[$this->postgresDbKey]->create($this->postgresDbKey.$worker_id, true); // initialize a DB Connections Pool, globally for a Worker
+            // OR Swoole / OpenSwoole Connection Pool
+            $this->dbConnectionPools[$this->postgresDbKey] = new DBConnectionPool('swoole','postgres');
+            try {
+                $this->dbConnectionPools[$this->postgresDbKey]->create($this->postgresDbKey.$worker_id, true); // initialize a DB Connections Pool, globally for a Worker
+            } catch (\Throwable $e) {
+                var_dump($e->getMessage());
+//                var_dump($e->getStatus() === 1);
+//                var_dump($e->getFlags() === SWOOLE_EXIT_IN_COROUTINE);
+            }
 
             /////////////////////////////////////////////////////
             //////// For Swoole Based PDO Connection Pool ///////

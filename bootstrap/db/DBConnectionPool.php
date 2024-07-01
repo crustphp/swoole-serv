@@ -11,6 +11,13 @@ use DB\ConnectionPoolTrait;
 use Swoole\Database\PDOConfig;
 use Swoole\Database\PDOPool;
 
+use OpenSwoole\Core\Coroutine\Client\PostgresClientFactory as oswPostgresClientFactory;
+use OpenSwoole\Core\Coroutine\Client\PostgresConfig as oswPostgresConfig;
+use OpenSwoole\Core\Coroutine\Pool\ClientPool as oswClientPool;
+
+use DB\SwoolePgConfig;
+use DB\SwoolePgConnectionPool;
+
 include (dirname(dirname(__DIR__)).'/config/db_config.php');
 
 class DBConnectionPool
@@ -20,10 +27,13 @@ class DBConnectionPool
     private $pool_key;
     private string $dbEngine = 'postgres';
     private string $poolDriver = 'swoole';
+    private $swoole_ext;
 
     function __construct($poolDriver='smf', string $dbEngine='postgres') {
-        $this->poolDriver = $poolDriver;
+        $this->poolDriver = strtolower($poolDriver);
         $this->dbEngine = $dbEngine;
+        $this->swoole_ext = ($GLOBALS['swoole_ext'] ?? (extension_loaded('swoole') ? 1 : (
+            extension_loaded('openswoole') ? 2 : 0)));
     }
 
     public function create($pool_key, bool $isPdo = true)
@@ -44,6 +54,7 @@ class DBConnectionPool
 
         // For Smf package based Connection Pool
 
+        $poolDriver = $this->poolDriver;
         // Configure Connection Pool through SMF ConnectionPool class constructor
         $obj_conn_pool = $this->create_connection_pool_object(
             $swPostgresServerHost,
@@ -52,22 +63,27 @@ class DBConnectionPool
             $swPostgresServerUser,
             $swPostgresServerPasswd,
             $isPdo,
-            $this->poolDriver,
+            $poolDriver,
             $this->dbEngine
         );
 
-        // Creates a Connection Pool (Channel) of Connections
-        $obj_conn_pool->init();
+        if ($poolDriver == 'smf') {
+            // Creates a Connection Pool (Channel) of Connections
+            $obj_conn_pool->init();
+        } else if ($poolDriver == 'swoole') {
+            $obj_conn_pool->fill();
+        }
 
         // Key for Connection Pool through ConnectionPoolTrait
         $this->addConnectionPool($pool_key, $obj_conn_pool);
     }
 
-    public function create_connection_pool_object($serverHost, $serverPort, $serverDB, $serverUser, $serverPasswd,
-                                                  bool $isPdo = true, string $poolDriver = 'smf', $dbEngine = 'postgres')
+    protected function create_connection_pool_object($serverHost, $serverPort, $serverDB, $serverUser, $serverPasswd,
+                                                  bool $isPdo = true, string $poolDriver='smf', $dbEngine = 'postgres')
     {
+        $poolDriver = strtolower($poolDriver);
         if ($dbEngine == 'postgres') {
-            if (strtolower($poolDriver) == 'smf') {
+            if ($poolDriver == 'smf') {
                 // All PosgreSQL connections: [4 workers * 2 = 8, 4 workers * 10 = 40]
                 return new ConnectionPool(
                     [
@@ -100,6 +116,29 @@ class DBConnectionPool
                         ]
                     )
                 );
+            } else if ($poolDriver == 'swoole' || $poolDriver == 'openswoole') {
+                if ($this->swoole_ext = 1) {
+                    $config = (new SwoolePgConfig())
+                        ->withHost($serverHost)
+                        ->withPort($serverPort)
+                        ->withDbname($serverDB)
+                        ->withUsername($serverUser)
+                        ->withPassword($serverPasswd);
+                    return new SwoolePgConnectionPool($config, $GLOBALS['db_connection_pool_size']);
+                } else if ($this->swoole_ext = 2) {
+                    $config = (
+                    (new oswPostgresConfig())
+                        ->withHost($serverHost)
+                        ->withPort($serverPort)
+                        ->withDbname($serverDB)
+                        ->withUsername($serverUser)
+                        ->withPassword($serverPasswd)
+                    );
+                    return new oswClientPool(oswPostgresClientFactory::class, $config, $GLOBALS['db_connection_pool_size']);
+                } else {
+//                    throw new \Swoole\ExitException("Swoole Extension Not Found");
+                    throw new \RuntimeException("Swoole Extension Not Found.".PHP_EOL." File: ".__FILE__.PHP_EOL." Line: ".__LINE__);
+                }
             }
         } else {
             if (!empty($swMysqlServerDriver)) {

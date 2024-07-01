@@ -27,6 +27,11 @@ class WebSocketController
           echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
           $this->webSocketServer->reload();
       } else {
+//                $postgresClient = $pool->get();
+//                $sql            = 'SELECT version()';
+//                $result         = $postgresClient->query($sql);
+//                var_dump($postgresClient->fetchAll($result));
+//                $pool->put($postgresClient);
           echo "Received from frame->fd: {$this->frame->fd}, frame->data: {$this->frame->data}, 
           frame->opcode: {$this->frame->opcode}, frame->fin:{$this->frame->finish}, frame->flags:{$this->frame->flags}\n";
 

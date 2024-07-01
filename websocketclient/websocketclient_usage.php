@@ -1,5 +1,6 @@
 <?php
 include 'wbsocketclient.php';
+//$w = new WebSocketClient('45.76.35.99', 9501);
 $w = new WebSocketClient('127.0.0.1', 9501);
 if ($x = $w->connect()) {
 //    var_dump($x);
