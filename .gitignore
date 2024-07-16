@@ -32,7 +32,7 @@ logs
 node_modules
 /dist
 
-composer.json
+server.pid
 
 # local env files
 .env.local

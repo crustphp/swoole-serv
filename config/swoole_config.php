@@ -1,23 +1,23 @@
 <?php
 $swoole_config = [
     'coroutine_settings' => [
-        'max_concurrency' => 10,
-        'max_coroutine' => 1000,
+        'max_concurrency' => 100,
+        'max_coroutine' => 10000,
 
         // Can also be set using Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
-         'hook_flags' => SWOOLE_HOOK_ALL,
+//         'hook_flags' => SWOOLE_HOOK_ALL,
     ],
     'server_settings' => [
-//        'daemonize'             => 1,
+        'daemonize'             => $_ENV['SWOOLE_DAEMONIZE'],
 //        'user' => 'www-data',
 //        'group' => 'www-data',
-//        'pid_file' => dirname(__DIR__).'server.pid',
+        'pid_file' => dirname(__DIR__).'/server.pid',
 //        'chroot' => '/data/server/',
 //        'open_cpu_affinity' => true,
 //        'cpu_affinity_ignore' => [0, 1],
 
         'dispatch_mode'         => 2,
-        'max_request'           => 2000,
+        'max_request'           => 100000,
         'open_tcp_nodelay'      => true,
         'reload_async'          => true,
         'max_wait_time'         => 60,
@@ -26,7 +26,7 @@ $swoole_config = [
         'enable_static_handler' => true,
         'static_handler_locations' => ['/static', '/app/images', '/releases'],
         'http_compression'      => false,
-        'buffer_output_size'    => 4 * 1024 * 1024,
+        'buffer_output_size'    => 1024 * 1024 * 1024,
         'reactor_num' => 16,
         'worker_num'            => 4, // Each worker holds a connection pool
         'task_worker_num' => 8,  // The amount of task workers to start

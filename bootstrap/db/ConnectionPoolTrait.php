@@ -1,7 +1,10 @@
 <?php
 
 namespace DB;
-use Smf\ConnectionPool\ConnectionPool;
+use Smf\ConnectionPool\ConnectionPool as smfConnectionPool;
+use OpenSwoole\Core\Coroutine\Pool\ClientPool;
+use DB\SwoolePgConnectionPool;
+use Swoole\ConnectionPool as swConnectionPool;
 
 trait ConnectionPoolTrait
 {
@@ -15,7 +18,7 @@ trait ConnectionPoolTrait
      * @param string $key
      * @param ConnectionPool $pool
      */
-    public function addConnectionPool(int|string $key, ConnectionPool $pool)
+    public function addConnectionPool(int|string $key, smfConnectionPool|ClientPool|SwoolePgConnectionPool|swConnectionPool $pool)
     {
         self::$pools[$key] = $pool;
     }
