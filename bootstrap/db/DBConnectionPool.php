@@ -2,6 +2,7 @@
 
 namespace DB;
 
+use http\Exception\RuntimeException;
 use Swoole\Coroutine\PostgreSQL;
 use Smf\ConnectionPool\ConnectionPool;
 use Smf\ConnectionPool\Connectors\CoroutinePostgreSQLConnector;
@@ -24,20 +25,36 @@ class DBConnectionPool
 {
     use ConnectionPoolTrait;
 
-    private $pool_key;
-    private string $dbEngine = 'postgres';
-    private string $poolDriver = 'swoole';
-    private $swoole_ext;
+    protected $pool_key;
+    protected $isPdo;
+    protected string $dbEngine = 'postgres';
+    protected string $poolDriver = 'swoole';
+    protected $swoole_ext;
 
-    function __construct($poolDriver='smf', string $dbEngine='postgres') {
-        $this->poolDriver = strtolower($poolDriver);
+    function __construct($pool_key, string $dbEngine, $poolDriver='smf', bool $isPdo = true) {
+        $dbEngine = strtolower($dbEngine);
+        if ($dbEngine != 'postgres' && $dbEngine != 'mysql') {
+            throw new \RuntimeException('In DBConnectionPool Constructor: the value of $dbEngine should either be \'postgres\' or \'mysql\'');
+        }
+        $poolDriver = strtolower($poolDriver);
+        if ($poolDriver != 'smf' && $poolDriver != 'swoole' && $poolDriver!= 'openswoole') {
+            throw new \RuntimeException('In DBConnectionPool Constructor: the value of $poolDriver should either be \'smf\' or \'swoole\' or \'openswoole\'');
+        }
+        $this->poolDriver = $poolDriver;
         $this->dbEngine = $dbEngine;
+        $this->isPdo = $isPdo;
+        $this->pool_key = $pool_key;
         $this->swoole_ext = ($GLOBALS['swoole_ext'] ?? (extension_loaded('swoole') ? 1 : (
             extension_loaded('openswoole') ? 2 : 0)));
     }
 
-    public function create($pool_key, bool $isPdo = true)
-    {
+    function __destruct() {
+        if (isset(self::$pools[$this->pool_key])) {
+            $this->closeConnectionPool();
+        }
+    }
+
+    public function create() {
         global $swPostgresServerHost;
         global $swPostgresServerPort;
         global $swPostgresServerDB;
@@ -52,30 +69,23 @@ class DBConnectionPool
         global $swMysqlServerCharset;
         global $swMysqlServerPasswd;
 
-        // For Smf package based Connection Pool
-
-        $poolDriver = $this->poolDriver;
-        // Configure Connection Pool through SMF ConnectionPool class constructor
+        // Create Pool object, and configure Pool object with Database
         $obj_conn_pool = $this->create_connection_pool_object(
             $swPostgresServerHost,
             $swPostgresServerPort,
             $swPostgresServerDB,
             $swPostgresServerUser,
             $swPostgresServerPasswd,
-            $isPdo,
-            $poolDriver,
+            $this->isPdo,
+            $this->poolDriver,
             $this->dbEngine
         );
 
-        if ($poolDriver == 'smf') {
-            // Creates a Connection Pool (Channel) of Connections
-            $obj_conn_pool->init();
-        } else if ($poolDriver == 'swoole') {
-            $obj_conn_pool->fill();
-        }
+        // Actually create Database Connections, and fill the Pool with those connections
+        $this->fill_pool($obj_conn_pool);
 
-        // Key for Connection Pool through ConnectionPoolTrait
-        $this->addConnectionPool($pool_key, $obj_conn_pool);
+        // Key to access Connection Pool; through ConnectionPoolTrait
+        $this->add_pool_with_key($obj_conn_pool, $this->pool_key);
     }
 
     protected function create_connection_pool_object($serverHost, $serverPort, $serverDB, $serverUser, $serverPasswd,
@@ -160,24 +170,67 @@ class DBConnectionPool
         }
     }
 
-    public function create_pool($obj_conn_pool){
+    public function fill_pool($obj_conn_pool){
         // Creates a Connection Pool (Channel) of Connections
-        $obj_conn_pool->init();
+        if ($this->poolDriver == 'smf') {
+            // Creates a Connection Pool (Channel) of Connections
+            $obj_conn_pool->init();
+        } else if ($this->poolDriver == 'swoole' || $poolDriver=='openSwoole') {
+            $obj_conn_pool->fill();
+        } else {
+            throw new RuntimeException('');
+        }
     }
 
     public function add_pool_with_key($obj_conn_pool, $poolKey = null) {
         $this->addConnectionPool($poolKey ?? $this->pool_key, $obj_conn_pool);
     }
 
-    public function get_connection_pool_with_key($pool_key)
-    {
+    public function get_connection_pool_with_key($pool_key) {
         return $this->getConnectionPool($pool_key);
     }
 
-    public static function get_connection($pool_key)
-    {
-        $connectionPool = static::getConnectionPool($pool_key);
-        return $connectionPool->borrow();
+    public function get_dbObject_from_connection_pool($objConnectionPool) {
+        $poolDriver = $this->poolDriver;
+        if ($poolDriver == 'smf') {
+            // Creates a Connection Pool (Channel) of Connections
+            return $objConnectionPool->borrow();
+        } else if ($poolDriver == 'swoole' || $poolDriver=='openSwoole') {
+            // For swoole $objConnectionPool is of type SwoolePgConnectionPool, and ...
+            // for OpenSwoole it is of type OpenSwoole\Core\Coroutine\Pool\ClientPool
+            // For Swoole get() returns new Swoole\Coroutine\PostgreSQL();
+            // For OpenSwoole get() returns new OpenSwoole\Coroutine\PostgreSQL();
+            return $objConnectionPool->get();
+        }
+    }
+
+    public function get_dbObject_using_pool_key($pool_key) {
+        $objConnectionPool = $this->getConnectionPool($pool_key);
+        $poolDriver = $this->poolDriver;
+        if ($poolDriver == 'smf') {
+            // Creates a Connection Pool (Channel) of Connections
+            return $objConnectionPool->borrow();
+        } else if ($poolDriver == 'swoole' || $poolDriver=='openSwoole') {
+            // For swoole $objConnectionPool is of type SwoolePgConnectionPool, and ...
+            // for OpenSwoole it is of type OpenSwoole\Core\Coroutine\Pool\ClientPool
+            // For Swoole get() returns new Swoole\Coroutine\PostgreSQL();
+            // For OpenSwoole get() returns new OpenSwoole\Coroutine\PostgreSQL();
+            return $objConnectionPool->get();
+        }
+    }
+
+    public function put_dbObject_using_pool_key($dbObj, $pool_key) {
+        $objConnectionPool = $this->getConnectionPool($pool_key);
+        $poolDriver = $this->poolDriver;
+        try {
+            if ($poolDriver == 'smf') {
+                $objConnectionPool->return($dbObj);
+            } else if ($poolDriver == 'swoole' || $poolDriver=='openSwoole') {
+                $objConnectionPool->put($dbObj);
+            }
+        } catch (\Throwable $throwable) {
+            throw $throwable;
+        }
     }
 
     public function pool_exist($key)

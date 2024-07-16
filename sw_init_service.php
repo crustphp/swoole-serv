@@ -17,8 +17,8 @@
             $dotenv = Dotenv\Dotenv::createMutable(__DIR__);
             $dotenv->safeLoad();
         }
-        require_once(realpath(__DIR__ . '/config/app_config.php'));
         include('service_creation_params.php');
+        require_once(realpath(__DIR__ . '/config/app_config.php'));
         include('sw_service.php');
 
 //        Co\run (function($ip, $port, $serverMode) {
