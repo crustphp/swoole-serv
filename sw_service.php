@@ -11,6 +11,9 @@ use Swoole\Http\Response;
 use Swoole\Coroutine as swCo;
 use OpenSwoole\Coroutine as oswCo;
 
+use Swoole\Runtime as swRunTime;
+use OpenSwoole\Runtime as oswRunTime;
+
 use Swoole\Coroutine\Channel as swChannel;
 use OpenSwoole\Coroutine\Channel as oswChannel;
 
@@ -134,8 +137,10 @@ class sw_service {
         // Co\run can be used to create a context to execute coroutines.
         include_once './config/swoole_config.php';
         if ($this->swoole_ext == 1) {
+            $swoole_config['coroutine_settings']['hook_flags'] = SWOOLE_HOOK_ALL;
             swCo::set($swoole_config['coroutine_settings']);
         } else {
+            $swoole_config['coroutine_settings']['hook_flags'] = oswRunTime::HOOK_ALL;
             oswCo::set($swoole_config['coroutine_settings']);
         }
 
@@ -205,6 +210,10 @@ class sw_service {
         $init = function ($server, $worker_id) {
 
             global $argv;
+            global $app_type_database_driven;
+            global $swoole_pg_db_key;
+            global $swoole_mysql_db_key;
+
             if($worker_id >= $server->setting['worker_num']) {
                 if ($this->swoole_ext == 1) {
                     swoole_set_process_name("php {$argv[0]} Swoole task worker");
@@ -223,45 +232,74 @@ class sw_service {
             // For Smf package based Connection Pool
             // Configure Connection Pool through SMF ConnectionPool class constructor
             // OR Swoole / OpenSwoole Connection Pool
-            $this->dbConnectionPools[$this->postgresDbKey] = new DBConnectionPool('swoole','postgres');
-            try {
-                $this->dbConnectionPools[$this->postgresDbKey]->create($this->postgresDbKey.$worker_id, true); // initialize a DB Connections Pool, globally for a Worker
-            } catch (\Throwable $e) {
-                var_dump($e->getMessage());
-//                var_dump($e->getStatus() === 1);
-//                var_dump($e->getFlags() === SWOOLE_EXIT_IN_COROUTINE);
-            }
+            if ($app_type_database_driven) {
+                $poolKey = makePoolKey($worker_id, 'postgres');
+                try {
+                    // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
+                    $this->dbConnectionPools[$worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey,'postgres', 'swoole', true);
+                    $this->dbConnectionPools[$worker_id][$swoole_pg_db_key]->create();
+                } catch (\Throwable $e) {
+                    dump($e->getMessage());
+                    dump($e->getFile());
+                    dump($e->getLine());
+                    dump($e->getCode());
+                    dump($e->getTrace());
+//                    var_dump($e->getFlags() === SWOOLE_EXIT_IN_COROUTINE);
+                }
 
-            /////////////////////////////////////////////////////
-            //////// For Swoole Based PDO Connection Pool ///////
-            /////////////////////////////////////////////////////
+                /////////////////////////////////////////////////////
+                //////// For Swoole Based PDO Connection Pool ///////
+                /////////////////////////////////////////////////////
 //           if (!empty(MYSQL_SERVER_DB))
-              //$this->dbConnectionPools[$this->mySqlDbKey]->create(true);
+                //$this->dbConnectionPools[$this->mySqlDbKey]->create(true);
 //          require __DIR__.'/init_eloquent.php';
+            }
         };
 
         $revokeWorkerResources = function($server, $worker_id) {
-            if (isset($this->dbConnectionPools)) {
-                foreach ($this->dbConnectionPools as $key=>$dbConnectionPool) {
-                    $poolKey = $key.$worker_id;
-                    if ($dbConnectionPool->pool_exist($poolKey)) {
-                        echo "Closing Connection Pool: ".$poolKey.PHP_EOL;
-                        // Through ConnectionPoolTrait, as used in DBConnectionPool Class
-                        $dbConnectionPool->closeConnectionPool($poolKey);
+            global $app_type_database_driven;
+            if ($app_type_database_driven) {
+                if (isset($this->dbConnectionPools[$worker_id])) {
+                    $worker_dbConnectionPools = $this->dbConnectionPools[$worker_id];
+                    $mysqlPoolKey = makePoolKey($worker_id,'mysql');
+                    $pgPoolKey = makePoolKey($worker_id,'postgres');
+                    foreach ($worker_dbConnectionPools as $dbKey=>$dbConnectionPool) {
+                        if ($dbConnectionPool->pool_exist($pgPoolKey)) {
+                            echo "Closing Connection Pool: ".$pgPoolKey.PHP_EOL;
+                            // Through ConnectionPoolTrait, as used in DBConnectionPool Class
+                            $dbConnectionPool->closeConnectionPool($pgPoolKey);
+                        }
+
+                        if ($dbConnectionPool->pool_exist($mysqlPoolKey)) {
+                            echo "Closing Connection Pool: ".$mysqlPoolKey.PHP_EOL;
+                            // Through ConnectionPoolTrait, as used in DBConnectionPool Class
+                            $dbConnectionPool->closeConnectionPool($mysqlPoolKey);
+                        }
+                        unset($dbConnectionPool);
                     }
+                    unset($this->dbConnectionPools[$worker_id]);
                 }
             }
         };
 
         $revokeAllResources = function($server) {
-            if (isset($this->dbConnectionPools)) {
-                echo "Closing All Pools".PHP_EOL;
-                foreach ($this->dbConnectionPools as $dbConnectionPool) {
-                    $dbConnectionPool->closeConnectionPools();
+            global $app_type_database_driven;
+            if ($app_type_database_driven) {
+                if (isset($this->dbConnectionPools)) {
+                    echo "Closing All Pools, Pool Containing objects, and Arrays referencing to the pool containing objects".PHP_EOL;
+                    foreach ($this->dbConnectionPools as $worker_id=>$dbEngines_ConnectionPools) {
+                        foreach ($dbEngines_ConnectionPools as $poolKey => $connectionPool) {
+                            if ($worker_id = 0) { // Internal static array of connection pools can be closed through any one single $connectionPool object
+                                $connectionPool->closeConnectionPools();
+                            }
+                            unset($connectionPool);
+                        }
+                        unset($dbEngines_ConnectionPools);
+                    }
+                    $this->dbConnectionPools = null;
+                    unset($this->dbConnectionPools);
+                    echo "Shutting Down Server".PHP_EOL;
                 }
-                $this->dbConnectionPools = null;
-                unset($this->dbConnectionPools);
-                echo "Shutting Down Server".PHP_EOL;
             }
         };
 
@@ -290,7 +328,7 @@ class sw_service {
     protected function bindHttpRequestEvent() {
         $this->server->on('request', function (Swoole\Http\Request $request, Swoole\Http\Response $response) {
             include_once __DIR__ . '/Controllers/HttpRequestController.php';
-            $sw_http_controller = new HttpRequestController($this->server, $request, $this->dbConnectionPools);
+            $sw_http_controller = new HttpRequestController($this->server, $request, $this->dbConnectionPools[$this->server->worker_id]);
             $responseData = $sw_http_controller->handle();
             $response->header('Content-Type', 'application/json');
             $response->end(json_encode($responseData));
@@ -359,7 +397,7 @@ class sw_service {
                 }
 
                 include_once __DIR__ . '/Controllers/WebSocketController.php';
-                $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools);
+                $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
 
                 $timerTime = $_ENV['SWOOLE_TIMER_TIME1'];
                 if ($this->swoole_ext == 1) {
@@ -371,7 +409,7 @@ class sw_service {
         });
 
         $this->server->on('close', function($server, $fd, $reactorId) {
-            echo "client {$fd} closed\n ReactorId:{$reactorId}";
+            echo "client {$fd} closed\n in ReactorId:{$reactorId}";
             unset($this->fds[$fd]);
         });
 
@@ -456,6 +494,12 @@ https://openswoole.com/docs/modules/swoole-server-task
 // Track memory errors:
 // USE_ZEND_ALLOC=0 valgrind php your_file.php
 
+// Start Service
+// cd to swoole-serv foler
+// php sw_init_service.php websocket
+// php ./websocketclient/websocketclient_usage.php
+
+// Kill Service safely
 // Kill (SIGTERM) Swoole Service:
 // sudo kill -SIGTERM $(sudo lsof -t -i:9501)
 // OR

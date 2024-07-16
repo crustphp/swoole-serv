@@ -14,22 +14,25 @@ class HttpRequestController {
     protected Swoole\Http\Request $request;
     protected Swoole\Http\Response $response;
     protected $dbConnectionPools;
-    protected $postgresDbKey = 'pg';
-    protected $mySqlDbKey = 'mysql';
+    protected $postgresDbKey;
+    protected $mySqlDbKey;
 
     public function __construct(
         $httpServer,
         Request $request,
         $dbConnectionPools,
-        $postgresDbKey = 'pg',
-        $mySqlDbKey = 'mysql'
+        $postgresDbKey = null,
+        $mySqlDbKey = null
     )
     {
-        $this->httpServer = $httpServer;
+        global $swoole_pg_db_key;
+        global $swoole_mysql_db_key;
+        global $server;
+        $server = $this->httpServer = $httpServer;
         $this->request = $request;
         $this->dbConnectionPools = $dbConnectionPools;
-        $this->postgresDbKey = $postgresDbKey;
-        $this->mySqlDbKey = $mySqlDbKey;
+        $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
+        $this->mySqlDbKey = $mySqlDbKey ?? $swoole_mysql_db_key;
     }
 
     public function handle(){
@@ -45,7 +48,7 @@ class HttpRequestController {
             $this->httpServer->reload();
         } else {
             echo 'POST[\'message\']: '.$this->request->post['message'].PHP_EOL;
-            $conn_pool = $this->dbConnectionPools[$this->postgresDbKey]->get_connection_pool_with_key($this->postgresDbKey.$this->httpServer->worker_id);
+            $objDbPool = $this->dbConnectionPools[$this->postgresDbKey]; //->get_connection_pool_with_key($this->postgresDbKey.$this->httpServer->worker_id);
 
             // A coroutine context is created for each callback function of Swoole Server. So, no need to run co\run here
             $pcid = Coroutine::getCid();
@@ -92,12 +95,12 @@ class HttpRequestController {
             //// Get DB Connection from a Connection Pool created through 'smf' package ////
             ////////////////////////////////////////////////////////////////////////////////
             $record_set = new Swoole\Coroutine\Channel(1);
-            go(function() use ($record_set, $conn_pool) {
+            go(function() use ($record_set, $objDbPool) {
                 //$this->httpServer
                 //$this->request,
                 $db = new DBFacade();
                 $db_query = 'SELECT * FROM users;';
-                $db_result = $db->query($db_query, $conn_pool);
+                $db_result = $db->query($db_query, $objDbPool);
                 $record_set->push($db_result);
             });
 

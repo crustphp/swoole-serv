@@ -12,7 +12,7 @@ namespace DB;
 use Swoole\Runtime;
 
 class DBFacade {
-    public function query($db_query, $conn_pool, array $options=null, $transaction=false)
+    public function query($db_query, $objDbPool, array $options=null, $transaction=false)
     {
 
         ////////////////////////////////////////////////////////////////////////////////
@@ -20,13 +20,15 @@ class DBFacade {
         ////////////////////////////////////////////////////////////////////////////////
 
         /**@var POSTGRES $postgres */
-        $db_connection = $conn_pool->borrow();
+        global $server;
+        $dbPool_Key = makePoolKey($server->worker_id,'postgres');
+        $postgresClient = $objDbPool->get_dbObject_using_pool_key($dbPool_Key);
 
         if ($transaction){
-            $db_connection->query('BEGIN');
+            $postgresClient->query('BEGIN');
         }
-        if ($db_connection instanceof \PDO) {
-            $pdo_statement = $db_connection->prepare($db_query);
+        if ($postgresClient instanceof \PDO) {
+            $pdo_statement = $postgresClient->prepare($db_query);
 
             if (!$pdo_statement) {
 //                try {
@@ -43,7 +45,7 @@ class DBFacade {
                 throw new \RuntimeException('Execute failed');
             }
         } else { // For Non-pdo postgresql connection use below:
-            $pdo_statement = $db_connection->query($db_query);
+            $pdo_statement = $postgresClient->query($db_query);
             if (!$pdo_statement) {
 //                if ($ret === false) {
 //                    throw new \RuntimeException(sprintf('Failed to connect PostgreSQL server: %s', $connection->error));
@@ -54,11 +56,11 @@ class DBFacade {
         $data = $pdo_statement->fetchAll();
 
         if ($transaction){
-            $db_connection->query('COMMIT');
+            $postgresClient->query('COMMIT');
         }
 
         // Return the connection to pool as soon as possible
-        $conn_pool->return($db_connection);
+        $objDbPool->put_dbObject_using_pool_key($postgresClient, $dbPool_Key);
 
         return $data;
     }
