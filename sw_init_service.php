@@ -7,16 +7,28 @@
     $key_dir = __DIR__. '/ssl';
 
     if (isset($argc)) {
-        if (file_exists(realpath(__DIR__ . '/composer.json')) ||
-            file_exists(realpath(__DIR__ . '/package.json'))
-        ) {
+        // If swoole-srv is part of a parent project then use parent .env for accessing parent project / database
+        // This is because .env is not the part of git, hence changes to local .env can not be reflected just by changing it
+        // whereas on servers which use Ploi only one single .env configuration of the parent project is defined / changed.
+
+        if (realpath(dirname(__DIR__) . '/composer.json') ||
+            realpath(dirname(__DIR__) . '/package.json') || realpath(dirname(__DIR__) . '.env')
+        ) { // if swoole-serv is the part of a parent project
+            // set parent project's .env as default .env to use
             $dotenv = Dotenv\Dotenv::createMutable(dirname(__DIR__));
             $dotenv->safeLoad();
-        }
-        if (!isset($_ENV['APP_ENV']) || $_ENV['APP_ENV'] == 'local') {
+
+            // check further, if project is running in local environment, then use .env local to swoole-serv
+            if (!isset($_ENV['APP_ENV']) || $_ENV['APP_ENV'] == 'local') {
+                $dotenv = Dotenv\Dotenv::createMutable(__DIR__);
+                $dotenv->safeLoad();
+            }
+        } else {
             $dotenv = Dotenv\Dotenv::createMutable(__DIR__);
             $dotenv->safeLoad();
+            $local_env_is_set = true;
         }
+
         include('service_creation_params.php');
         require_once(realpath(__DIR__ . '/config/app_config.php'));
         include('sw_service.php');
