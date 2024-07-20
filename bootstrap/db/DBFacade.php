@@ -11,7 +11,7 @@ declare(strict_types=1);
 namespace DB;
 use Swoole\Runtime;
 
-class DBFacade {
+class DbFacade {
     public function query($db_query, $objDbPool, array $options=null, $transaction=false)
     {
 
@@ -19,10 +19,7 @@ class DBFacade {
         //// Get DB Connection from a Connection Pool created through 'smf' package ////
         ////////////////////////////////////////////////////////////////////////////////
 
-        /**@var POSTGRES $postgres */
-        global $server;
-        $dbPool_Key = makePoolKey($server->worker_id,'postgres');
-        $postgresClient = $objDbPool->get_dbObject_using_pool_key($dbPool_Key);
+        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
 
         if ($transaction){
             $postgresClient->query('BEGIN');
@@ -60,7 +57,7 @@ class DBFacade {
         }
 
         // Return the connection to pool as soon as possible
-        $objDbPool->put_dbObject_using_pool_key($postgresClient, $dbPool_Key);
+        $objDbPool->put_dbObject_using_pool_key($postgresClient);
 
         return $data;
     }

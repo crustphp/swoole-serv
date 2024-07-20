@@ -397,7 +397,13 @@ class sw_service {
                 }
 
                 include_once __DIR__ . '/Controllers/WebSocketController.php';
-                $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
+
+                global $app_type_database_driven;
+                if ($app_type_database_driven) {
+                    $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
+                } else {
+                    $sw_websocket_controller = new WebSocketController($webSocketServer, $frame);
+                }
 
                 $timerTime = $_ENV['SWOOLE_TIMER_TIME1'];
                 if ($this->swoole_ext == 1) {
