@@ -204,7 +204,10 @@ class DBConnectionPool
         }
     }
 
-    public function get_dbObject_using_pool_key($pool_key) {
+    public function get_dbObject_using_pool_key($pool_key=null) {
+        if (is_null($pool_key)) {
+            $pool_key = $this->pool_key;
+        }
         $objConnectionPool = $this->getConnectionPool($pool_key);
         $poolDriver = $this->poolDriver;
         if ($poolDriver == 'smf') {
@@ -219,7 +222,10 @@ class DBConnectionPool
         }
     }
 
-    public function put_dbObject_using_pool_key($dbObj, $pool_key) {
+    public function put_dbObject_using_pool_key($dbObj, $pool_key=null) {
+        if (is_null($pool_key)) {
+            $pool_key = $this->pool_key;
+        }
         $objConnectionPool = $this->getConnectionPool($pool_key);
         $poolDriver = $this->poolDriver;
         try {

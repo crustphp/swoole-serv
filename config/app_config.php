@@ -9,7 +9,7 @@ global $db_connection_pool_size;
 $db_connection_pool_size = (isset($_ENV['DB_CONNECTION_POOL_SIZE']) ? $_ENV['DB_CONNECTION_POOL_SIZE'] : 4);
 
 global $app_type_database_driven;
-$app_type_database_driven=(isset($_ENV['APP_TYPE_DATABASE_DRIVEN']) ?? true );
+$app_type_database_driven= $_ENV['APP_TYPE_DATABASE_DRIVEN'] ?? false ;
 
 global $swoole_pg_db_key;
 $swoole_pg_db_key=($_ENV['SWOOLE_PG_DB_KEY'] ?? 'pg');

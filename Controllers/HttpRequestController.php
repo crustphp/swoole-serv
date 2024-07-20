@@ -1,9 +1,12 @@
 <?php
 use Swoole\Coroutine;
 use Al\Swow\Context;
-use DB\DBFacade;
+use DB\DbFacade;
 use Swoole\Runtime;
-use Swoole\Http\Request;
+use Swoole\Http\Request as swRequest;
+use OpenSwoole\Http\Request as oswRequest;
+//use Swoole\Http\Response as swResponse;
+//use OpenSwoole\Http\Response as oswResponse;
 
 // Available Params
 //Swoole\Http\Request $request,
@@ -11,15 +14,15 @@ use Swoole\Http\Request;
 //this->httpServer
 class HttpRequestController {
     protected $httpServer;
-    protected Swoole\Http\Request $request;
-    protected Swoole\Http\Response $response;
+    protected swRequest | oswRequest $request;
+//    protected swResponse | oswResponse $response;
     protected $dbConnectionPools;
     protected $postgresDbKey;
     protected $mySqlDbKey;
 
     public function __construct(
         $httpServer,
-        Request $request,
+        swRequest | oswRequest $request,
         $dbConnectionPools,
         $postgresDbKey = null,
         $mySqlDbKey = null
@@ -27,8 +30,7 @@ class HttpRequestController {
     {
         global $swoole_pg_db_key;
         global $swoole_mysql_db_key;
-        global $server;
-        $server = $this->httpServer = $httpServer;
+        $this->httpServer = $httpServer;
         $this->request = $request;
         $this->dbConnectionPools = $dbConnectionPools;
         $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
@@ -48,7 +50,6 @@ class HttpRequestController {
             $this->httpServer->reload();
         } else {
             echo 'POST[\'message\']: '.$this->request->post['message'].PHP_EOL;
-            $objDbPool = $this->dbConnectionPools[$this->postgresDbKey]; //->get_connection_pool_with_key($this->postgresDbKey.$this->httpServer->worker_id);
 
             // A coroutine context is created for each callback function of Swoole Server. So, no need to run co\run here
             $pcid = Coroutine::getCid();
@@ -94,16 +95,17 @@ class HttpRequestController {
             ////////////////////////////////////////////////////////////////////////////////
             //// Get DB Connection from a Connection Pool created through 'smf' package ////
             ////////////////////////////////////////////////////////////////////////////////
-            $record_set = new Swoole\Coroutine\Channel(1);
-            go(function() use ($record_set, $objDbPool) {
-                //$this->httpServer
-                //$this->request,
-                $db = new DBFacade();
-                $db_query = 'SELECT * FROM users;';
-                $db_result = $db->query($db_query, $objDbPool);
-                $record_set->push($db_result);
-            });
-
+            if (!is_null($this->dbConnectionPools)) {
+                $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
+                $record_set = new Swoole\Coroutine\Channel(1);
+                go(function() use ($record_set, $objDbPool) {
+                    //$this->httpServer, $this->request are available here
+                    $db = new DbFacade();
+                    $db_query = 'SELECT * FROM users;';
+                    $db_result = $db->query($db_query, $objDbPool);
+                    $record_set->push($db_result);
+                });
+            }
 
             //////////////////////////////////////////////////////////////////////////////////////
             //// Get a Redis Connection from Connection Pool created through 'swoole library' ////
