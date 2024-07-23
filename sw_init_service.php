@@ -4,6 +4,7 @@
     include_once realpath(__DIR__.'/helper.php');
 
     ini_set('memory_limit', -1);
+
     $key_dir = __DIR__. '/ssl';
 
     if (isset($argc)) {

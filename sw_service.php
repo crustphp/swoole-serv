@@ -153,15 +153,34 @@ class sw_service {
 
         $this->server->set($swoole_config['server_settings']);
 
-        $this->server->on('Task', function (Swoole\Server $server, $task_id, $reactorId, $data)
-        {
-            include_once __DIR__ . '/Controllers/HttpRequestController.php';
-            $longTask = new LongTask($server, $task_id, $reactorId, $data);
-            $data = $longTask->handle();
-            $server->finish($data);
+//        // Use function-style below for onTask event, when co-touine inside task worker is not enabled in swoole configuration
+//        $this->server->on('task', function ($server, $task_id, $src_worker_id, $data) {
+//            include_once __DIR__ . '/Controllers/LongTasks.php';
+//            $longTask = new LongTasks($server, $task_id, $src_worker_id, $data);
+//            $data = $longTask->handle();
+//            $server->finish($data);
+//        });
+
+        $this->server->on('task', function($server, $task) {
+// Available parameters
+//        dump($this->task->data);
+//        $this->task->dispatch_time;
+//        $this->task->id;
+//        $this->task->worker_id;
+//        $this->task->flags;
+            include_once __DIR__ . '/Controllers/LongTasks.php';
+            $longTask = new LongTasks($server, $task);
+            $result = $longTask->handle();
+            $task->finish($result);
         });
 
-   //   $this->dbConnectionPools[$this->mySqlDbKey] = new DBConnectionPool('swoole', 'mysql');
+        $this->server->on('finish', function ($server, $task_id, $task_result)
+        {
+            echo "Task#$task_id finished, data_len=" . strlen($task_result[1]). PHP_EOL;
+            echo "\$result: {$task_result[1]} from inside onFinish"; dump($task_result);
+            $server->push($task_result[0],
+                json_encode(['data'=>$task_result[1].'from inside onFinish']));
+        });
 
         // channel stuff
 //        $consumeChannel = function () {
@@ -382,7 +401,7 @@ class sw_service {
             } else if ($frame === false) {
                 echo 'errorCode: ' . swoole_last_error() . "\n";
                 $webSocketServer->close();
-            } else if ($frame->data == 'close' || get_class($frame) === $closeFrameClass || $frame->opcode == 0x08) {
+            } else if (trim($frame->data) == 'close' || get_class($frame) === $closeFrameClass || $frame->opcode == 0x08) {
                 echo "Close frame received: Code {$frame->code} Reason {$frame->reason}\n";
             } else {
                 $i=0;
@@ -504,6 +523,11 @@ https://openswoole.com/docs/modules/swoole-server-task
 // cd to swoole-serv foler
 // php sw_init_service.php websocket
 // php ./websocketclient/websocketclient_usage.php
+
+// Reload Workers and Task Workers, both, gracefully; after completing current requests
+//kill -USR1 MASTER_PID
+// Reload Task Worker Gracefully by completing current task
+//kill -USR2 MASTER_PID
 
 // Kill Service safely
 // Kill (SIGTERM) Swoole Service:
