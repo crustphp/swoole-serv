@@ -149,6 +149,7 @@ class sw_service {
         }
         if ($this->serverProtocol=='websocket') {
             $swoole_config['server_settings']['open_websocket_protocol'] = true;
+            $swoole_config['server_settings']['enable_delay_receive'] = true;
         }
 
         $this->server->set($swoole_config['server_settings']);
@@ -355,10 +356,23 @@ class sw_service {
     }
 
     protected function bindWebSocketEvents() {
-        $this->server->on('open', function($server, $request) {
+        $this->server->on('connect', function($websocketserver, $fd) {
+            if (($fd % 3) === 0) {
+                // 1 of 3 of all requests have to wait for two seconds before being processed.
+                $timerClass = (($this->swoole_ext == 1) ? swTimer::class : oswTimer::class);
+                $timerClass::after(2000, function () use ($websocketserver, $fd) {
+                    $websocketserver->confirm($fd);
+                });
+            } else {
+                // 2 of 3 of all requests are processed immediately by the server.
+                $websocketserver->confirm($fd);
+            }
+        });
+
+        $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
 
-//            $server->tick(1000, function() use ($server, $request) {
+//            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
 //                $server->push($request->fd, json_encode(["hello", time()]));
 //            });
         });
@@ -378,7 +392,7 @@ class sw_service {
                     SWOOLE_WEBSOCKET_FLAG_FIN); // SWOOLE_WEBSOCKET_FLAG_FIN OR OpenSwoole\WebSocket\Server::WEBSOCKET_FLAG_FIN
 
             } else {
-                echo "Clearing Timer".$timerId.PHP_EOL;
+                echo "Clearing Timer ".$timerId.PHP_EOL;
                 if ($this->swoole_ext == 1) {
                     swTimer::clear($timerId);
                 } else {
