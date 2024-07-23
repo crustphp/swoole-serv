@@ -45,6 +45,15 @@ class WebSocketController
           echo "Received from frame->fd: {$this->frame->fd}, frame->data: {$this->frame->data}, 
           frame->opcode: {$this->frame->opcode}, frame->fin:{$this->frame->finish}, frame->flags:{$this->frame->flags}\n";
 
+          if ($this->frame->data == 'test1') {
+              $task_id = $this->webSocketServer->task([$this->frame->fd, $this->frame->data], -1);
+
+              $task_id = $this->webSocketServer->task([$this->frame->fd, $this->frame->data.' own-task-call-back'], 0, function (Swoole\Server $server, $task_id, $data) {
+                    echo "Task's own Result-Processing Callback: \n";
+                   var_dump($task_id, $data);
+              });
+          }
+
           return array('data'=>"You sent {$this->frame->data} to the server");
       }
   }

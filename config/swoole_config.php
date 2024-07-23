@@ -29,7 +29,7 @@ $swoole_config = [
         'buffer_output_size'    => 1024 * 1024 * 1024,
         'reactor_num' => 16,
         'worker_num'            => 4, // Each worker holds a connection pool
-        'task_worker_num' => 8,  // The amount of task workers to start
+        'task_worker_num'       => 8,  // The amount of task workers to start
         'task_enable_coroutine' => true,
 
         // Protocol
@@ -52,6 +52,13 @@ $swoole_config = [
         'http2_max_concurrent_streams' => 1281,
         'http2_max_frame_size' => 16383,
         'http2_max_header_list_size' => 4095,
+// OR
+//        'http2_header_table_size' => 2048,
+//        'http2_enable_push' => false,
+//        'http2_max_concurrent_streams' => 128,
+//        'http2_init_window_size' => 2 ** 24,
+//        'http2_max_frame_size' => 65536,
+//        'http2_max_header_list_size' => 2 ** 24,
 
         // HTTP Server
         'http_parse_post' => true,
