@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5b58895b1630538e62ed3d70bc7b7cae",
+    "content-hash": "2e74d215d020b786be2e2e2d4dc1c4dd",
     "packages": [
         {
             "name": "graham-campbell/result-type",
@@ -433,6 +433,82 @@
                 "source": "https://github.com/php-fig/http-server-middleware/tree/1.0.2"
             },
             "time": "2023-04-11T06:14:47+00:00"
+        },
+        {
+            "name": "small/collection",
+            "version": "2.3.0",
+            "source": {
+                "type": "git",
+                "url": "https://git.small-project.dev/lib/small-collection",
+                "reference": "0a768d7824e708a3c9dd449c8e2ca17f2ccd92c0"
+            },
+            "require": {
+                "ext-bcmath": "*",
+                "php": ">=8.3"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^1.10",
+                "phpunit/phpunit": "10.0.*",
+                "rector/rector": "0.19.*"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Small\\Collection\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "GPL-3.0-only"
+            ],
+            "authors": [
+                {
+                    "name": "Sébastien Kus",
+                    "email": "seb@small-project.dev"
+                }
+            ],
+            "description": "Provide PHP collection classes, with a selector to make complex queries on collections.",
+            "keywords": [
+                "collection",
+                "selector"
+            ],
+            "time": "2024-08-05T23:43:30+00:00"
+        },
+        {
+            "name": "small/swoole-db",
+            "version": "1.2.6",
+            "source": {
+                "type": "git",
+                "url": "https://git.small-project.dev/lib/small-swoole-db",
+                "reference": "8d75813bb2779f302ea93d34bc2df3fbbc38c172"
+            },
+            "require": {
+                "php": ">=8.3",
+                "small/collection": ">=2.1.0"
+            },
+            "require-dev": {
+                "openswoole/ide-helper": "*",
+                "phpstan/phpstan": "1.10.*",
+                "phpunit/phpunit": "10.4.*"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Small\\SwooleDb\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "GPL-3.0-only"
+            ],
+            "authors": [
+                {
+                    "name": "Sébastien Kus",
+                    "email": "seb@small-project.dev"
+                }
+            ],
+            "description": "This package provide advanced features to manipulate openswoole tables",
+            "time": "2024-07-03T22:50:48+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",
