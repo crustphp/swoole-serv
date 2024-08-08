@@ -533,10 +533,18 @@ https://openswoole.com/docs/modules/swoole-server-task
 // Track memory errors:
 // USE_ZEND_ALLOC=0 valgrind php your_file.php
 
-// Start Service
-// cd to swoole-serv foler
-// php sw_init_service.php websocket
-// php ./websocketclient/websocketclient_usage.php
+//To Start WebSocket Server:
+//cd to swoole-serv foler, and then run the command below
+//php sw_init_service.php websocket
+//
+//To send some messages from TCP Client use below:
+//sudo php ./websocketclient/websocketclient_usage.php
+//
+//To reload server's workers:
+//sudo php ./websocketclient/websocketclient_usage.php reload-code
+//
+//To Close Web Socker Server:
+//php sw_init_service.php close
 
 // Reload Workers and Task Workers, both, gracefully; after completing current requests
 //kill -USR1 MASTER_PID
