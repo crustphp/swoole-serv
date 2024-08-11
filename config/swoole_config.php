@@ -33,25 +33,31 @@ $swoole_config = [
         'task_enable_coroutine' => true,
 
         // Protocol
-//        'open_http_protocol' => true, // Being set in setDefault function in sw_service.php
-        'open_http2_protocol' => true,
+        'open_http_protocol' => false, // Being set in setDefault function in sw_service.php
+        // HTTP Server
+        'http_parse_post' => true,
+        'http_parse_cookie' => true,
+        'upload_tmp_dir' => '/tmp',
 
 //        'open_mqtt_protocol' => true,
 
         // Websocket
-        //'open_websocket_protocol' => true, // Being set in setDefault function in sw_service.php
+        'open_websocket_protocol' => false, // Being set in setDefault function in sw_service.php
         'websocket_compression' => true,
         'open_websocket_close_frame' => true,
         'open_websocket_ping_frame' => false, // added from v4.5.4
         'open_websocket_pong_frame' => false, // added from v4.5.4
+        'heartbeat_idle_time' => 20,
+        'heartbeat_check_interval' => 3,
 
         // HTTP2:
         // These configurations below are already initialized in Swoole and are not configurable, however these can be configured in OpenSwoole 4.11.1 as below
-        'http2_header_table_size' => 4095,
+//        'open_http2_protocol' => false,
+//        'http2_header_table_size' => 4095,
 //        'http2_initial_window_size' => 65534,
-        'http2_max_concurrent_streams' => 1281,
-        'http2_max_frame_size' => 16383,
-        'http2_max_header_list_size' => 4095,
+//        'http2_max_concurrent_streams' => 1281,
+//        'http2_max_frame_size' => 16383,
+//        'http2_max_header_list_size' => 4095,
 // OR
 //        'http2_header_table_size' => 2048,
 //        'http2_enable_push' => false,
@@ -59,11 +65,6 @@ $swoole_config = [
 //        'http2_init_window_size' => 2 ** 24,
 //        'http2_max_frame_size' => 65536,
 //        'http2_max_header_list_size' => 2 ** 24,
-
-        // HTTP Server
-        'http_parse_post' => true,
-        'http_parse_cookie' => true,
-        'upload_tmp_dir' => '/tmp',
 
         // Compression
         'http_compression' => false,

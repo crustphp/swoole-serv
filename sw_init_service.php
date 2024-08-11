@@ -1,5 +1,9 @@
 <?php
     declare(strict_types=1);
+
+use Swoole\Event;
+use Swoole\Process;
+
     require_once realpath(__DIR__ . '/vendor/autoload.php');
     include_once realpath(__DIR__.'/helper.php');
 
@@ -37,10 +41,28 @@
         require_once(realpath(__DIR__ . '/config/app_config.php'));
         include('sw_service.php');
 
-//        Co\run (function($ip, $port, $serverMode) {
-            $service  = new sw_service($ip, $port, $serverMode, $serverProtocol);
-            $service->start();
-//        }, $ip, $port, $serverMode);
+        if ($serverProtocol != 'close') {
+//            $serverProcess = new Process(function() use ($ip, $port, $serverMode, $serverProtocol) {
+                $service  = new sw_service($ip, $port, $serverMode, $serverProtocol);
+                $service->start();
+//                echo "Exiting";
+//                exit;
+//            }, false);
+//            $serverProcess->start();
+        } else {
+            // Stop the TCP server and the process created once PHP code finishes execution.
+            shell_exec('cd '.__DIR__.' && sudo kill -15 `cat sw-heartbeat.pid` && sudo rm -f sw-heartbeat.pid 2>&1 1> /dev/null&');
+        }
+//        register_shutdown_function(function () use ($serverProcess) {
+//            Process::kill(intval(shell_exec('cat '.__DIR__.'/sw-heartbeat.pid')), SIGTERM);
+//            sleep(1);
+//            Process::kill($serverProcess->pid);
+//        });
+
+
+        // NOTE: In most cases it's not necessary nor recommended to use method `Swoole\Event::wait()` directly in your code.
+        // The example in this file is just for demonstration purpose.
+//        Event::wait();
     } else {
         echo "argc and argv disabled\n";
     }

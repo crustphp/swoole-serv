@@ -24,10 +24,6 @@ class WebSocketController
   }
 
   public function handle() {
-      if ($this->frame->data == 'reload-code') {
-          echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
-          $this->webSocketServer->reload();
-      } else {
           if (!is_null($this->dbConnectionPools)) {
               $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
               $record_set = new Swoole\Coroutine\Channel(1);
@@ -55,6 +51,5 @@ class WebSocketController
           }
 
           return array('data'=>"You sent {$this->frame->data} to the server");
-      }
   }
 }
