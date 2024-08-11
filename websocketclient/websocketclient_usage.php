@@ -5,9 +5,17 @@ $ip = '127.0.0.1';
 if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
     $ip = '45.76.35.99';
 }
+
 $w = new WebSocketClient($ip, 9501);
 if ($x = $w->connect()) {
 //    var_dump($x);
+    //reload-code
+    if (isset($argv[1]) && in_array($argv[1], ['reload-code'])) { // Code Reloading
+        echo "sending ".$argv[1];
+        $w->send('reload-code', 'text', 1);
+        exit;
+    }
+
     for ($i=1;$i<4;$i++)
         $w->send('test'.$i, 'text', 0);
     $w->send('end', 'text', 1);
