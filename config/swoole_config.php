@@ -47,8 +47,8 @@ $swoole_config = [
         'open_websocket_close_frame' => true,
         'open_websocket_ping_frame' => false, // added from v4.5.4
         'open_websocket_pong_frame' => false, // added from v4.5.4
-        'heartbeat_idle_time' => 20,
-        'heartbeat_check_interval' => 3,
+        'heartbeat_idle_time' => 5,
+        'heartbeat_check_interval' => 2,
 
         // HTTP2:
         // These configurations below are already initialized in Swoole and are not configurable, however these can be configured in OpenSwoole 4.11.1 as below

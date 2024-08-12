@@ -10,9 +10,13 @@ $w = new WebSocketClient($ip, 9501);
 if ($x = $w->connect()) {
 //    var_dump($x);
     //reload-code
-    if (isset($argv[1]) && in_array($argv[1], ['reload-code'])) { // Code Reloading
-        echo "sending ".$argv[1];
-        $w->send('reload-code', 'text', 1);
+    if (isset($argv[1])) { // Code Reloading
+        $cmd = strtolower($argv[1]);
+        if (in_array($cmd, ['reload-code', 'shutdown'])) {
+
+        }
+        echo PHP_EOL."sending ".$cmd.PHP_EOL;
+        $w->send($cmd, 'text', 1);
         exit;
     }
 
