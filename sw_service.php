@@ -548,28 +548,6 @@ class sw_service {
     }
 }
 
-/*
- *
- * List of Server Events
-Swoole\Server->on('start', fn)
-Swoole\Server->on('shutdown', fn)
-Swoole\Server->on('workerstart', fn)
-Swoole\Server->on('workerstop', fn)
-Swoole\Server->on('timer', fn)
-Swoole\Server->on('connect', fn)
-Swoole\Server->on('receive', fn)
-Swoole\Server->on('packet', fn)
-Swoole\Server->on('close', fn)
-Swoole\Server->on('task', fn)
-Swoole\Server->on('finish', fn)
-Swoole\Server->on('pipemessage', fn)
-Swoole\Server->on('workererror', fn)
-Swoole\Server->on('managerstart', fn)
-Swoole\Server->on('managerstop', fn)
-Swoole\Server->on('beforereload', fn)
-Swoole\Server->on('afterreload', fn)
- */
-
 #################
 /*
  * Co-routine Available Methods
@@ -577,67 +555,8 @@ Swoole\Server->on('afterreload', fn)
  * https://openswoole.com/docs/modules/swoole-coroutine#available-methods
  */
 
-/* To-Dos :
-## Hot Server Reload
-https://openswoole.com/docs/modules/swoole-server-reload
-https://github.com/swoole/swoole-src/issues/4577
-
 ## Run as Systemd
-https://openswoole.com/docs/modules/swoole-server-construct#systemd-setup-for-swoole-server
-
-// Swoole Server Task
-https://openswoole.com/docs/modules/swoole-server-task
-*/
+//https://openswoole.com/docs/modules/swoole-server-construct#systemd-setup-for-swoole-server
 
 // swoole_last_error(), co::sleep(), co::yield(), co::resume($cid), co::select(), co::getCid(), co::getPcid(), $serv->shutdown();
 
-// Run-time Commands
-//Check the Swoole processes:
-// ps -aux | grep swool
-// ps faux | grep -i sw_init_service.php
-// sudo lsof -t -i:9501
-
-
-// Track memory errors:
-// USE_ZEND_ALLOC=0 valgrind php your_file.php
-
-//To Start WebSocket Server:
-//cd to swoole-serv foler, and then run the command below
-//php sw_init_service.php websocket
-//
-//To send some messages from TCP Client use below:
-//sudo php ./websocketclient/websocketclient_usage.php
-//
-//To reload server's workers:
-//sudo php ./websocketclient/websocketclient_usage.php reload-code
-//
-//To Close Web Socker Server:
-//php sw_init_service.php close
-
-// Reload Workers and Task Workers, both, gracefully; after completing current requests
-//kill -USR1 MASTER_PID
-// Reload Task Worker Gracefully by completing current task
-//kill -USR2 MASTER_PID
-
-// Kill Service safely
-// Kill (SIGTERM) Swoole Service:
-// sudo kill -SIGTERM $(sudo lsof -t -i:9501)
-// OR
-// sudo kill -15 $(sudo lsof -t -i:9501)
-// OR
-// Kill the process:
-// kill -15 [process_id]]
-// OR (for daemon = 1 (daemonize mode)
-// sudo kill `cat server.pid`
-
-// Switch from Swoole to OpenSwoole, and vice versa
-/*
-sudo phpdismod -s cli swoole && \
-sudo phpenmod -s cli openswoole
-*/
-
-// Switch from OpenSwoole to Swoole, and vice versa
-/*
-sudo phpdismod -s cli openswoole && \
-sudo phpenmod -s cli swoole
-*/

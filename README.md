@@ -93,3 +93,55 @@ sudo phpenmod -s cli -v 8.3 openswoole
 composer install
 composer dump-autoload
 ```
+
+### To Start WebSocket Server:
+cd to swoole-serv folder, and then run the command below;
+
+```php sw_start_service.php websocket```
+
+### To send some messages to Web Socket Server from TCP Client (Like, for Testing) use below:
+```sudo php ./websocketclient/websocketclient_usage.php```
+
+###To reload server's workers:
+```sudo php ./websocketclient/websocketclient_usage.php reload-code```
+
+###To Shutdown  Web Socker Server:
+```php sw_start_service.php close```
+
+### Reload Workers and Task Workers, both, gracefully; after completing current requests
+```kill -USR1 `cat sw-heartbeat.pid` ```
+### Reload Task Worker Gracefully by completing current task
+```kill -USR2 `cat sw-heartbeat.pid` ```
+
+### Kill Service safely
+
+```sudo kill -SIGTERM $(sudo lsof -t -i:9501)```
+ OR
+```sudo kill -15 $(sudo lsof -t -i:9501)```
+ OR
+```kill -15 [process_id]]```
+ OR (specially when daemon = 1 (daemonize mode))
+```sudo kill `cat sw-heartbeat.pid` ```
+
+
+## Other Useful Run-time Commands
+### Switch from Swoole to OpenSwoole, and vice versa
+
+```sh
+sudo phpdismod -s cli swoole && \
+sudo phpenmod -s cli openswoole
+```
+
+### Switch from OpenSwoole to Swoole, and vice versa
+
+```sh
+sudo phpdismod -s cli openswoole && \
+sudo phpenmod -s cli swoole
+```
+
+### Check the Swoole processes:
+
+```sh
+ ps -aux | grep swool
+ ps faux | grep -i sw_start_service.php
+ sudo lsof -t -i:9501
