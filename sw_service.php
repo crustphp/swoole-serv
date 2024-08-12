@@ -206,13 +206,30 @@ class sw_service {
             echo "Server: start.".PHP_EOL."Swoole version is [" . $this->swoole_version . "]\n".PHP_EOL;
         };
 
-        $my_onShutdown = function ($serv)
-        {
-            echo "Server Shutdown\n".PHP_EOL;
+        $revokeAllResources = function($server) {
+            echo "Shutting Down Server".PHP_EOL;
+            global $app_type_database_driven;
+            if ($app_type_database_driven) {
+                if (isset($this->dbConnectionPools)) {
+                    echo "Closing All Pools, Pool Containing objects, and Arrays referencing to the pool containing objects".PHP_EOL;
+                    foreach ($this->dbConnectionPools as $worker_id=>$dbEngines_ConnectionPools) {
+                        foreach ($dbEngines_ConnectionPools as $poolKey => $connectionPool) {
+                            if ($worker_id = 0) { // Internal static array of connection pools can be closed through any one single $connectionPool object
+                                $connectionPool->closeConnectionPools();
+                            }
+                            unset($connectionPool);
+                        }
+                        unset($dbEngines_ConnectionPools);
+                    }
+                    $this->dbConnectionPools = null;
+                    unset($this->dbConnectionPools);
+                }
+            }
+            shell_exec('cd '.__DIR__.' && rm -f sw-heartbeat.pid 2>&1 1> /dev/null&');
         };
 
         $this->server->on('start', $my_onStart);
-        $this->server->on('shutdown', $my_onShutdown);
+        $this->server->on('shutdown', $revokeAllResources);
     }
 
     protected function bindWorkerReloadEvents() {
@@ -303,27 +320,6 @@ class sw_service {
             }
         };
 
-        $revokeAllResources = function($server) {
-            global $app_type_database_driven;
-            if ($app_type_database_driven) {
-                if (isset($this->dbConnectionPools)) {
-                    echo "Closing All Pools, Pool Containing objects, and Arrays referencing to the pool containing objects".PHP_EOL;
-                    foreach ($this->dbConnectionPools as $worker_id=>$dbEngines_ConnectionPools) {
-                        foreach ($dbEngines_ConnectionPools as $poolKey => $connectionPool) {
-                            if ($worker_id = 0) { // Internal static array of connection pools can be closed through any one single $connectionPool object
-                                $connectionPool->closeConnectionPools();
-                            }
-                            unset($connectionPool);
-                        }
-                        unset($dbEngines_ConnectionPools);
-                    }
-                    $this->dbConnectionPools = null;
-                    unset($this->dbConnectionPools);
-                    echo "Shutting Down Server".PHP_EOL;
-                }
-            }
-        };
-
         $onWorkerError = function (OpenSwoole\Server $server, int $workerId) {
             echo "worker abnormal exit.".PHP_EOL."WorkerId=$worker_id|Pid=$worker_pid|ExitCode=$exit_code|ExitSignal=$signal\n".PHP_EOL;
             $revokeWorkerResources($serv, $worker_id);
@@ -339,7 +335,6 @@ class sw_service {
         //To Do: Upgrade code using https://wiki.swoole.com/en/#/server/events?id=onworkererror
         $this->server->on('workererror', $revokeWorkerResources);
         $this->server->on('workerexit', $revokeWorkerResources);
-        $this->server->on('shutdown', $revokeAllResources);
 
         // https://openswoole.com/docs/modules/swoole-server-on-task
         // https://openswoole.com/docs/modules/swoole-server-taskCo
@@ -381,7 +376,7 @@ class sw_service {
 
         // This callback will be used in callback for onMessage event. next
         $respond = function($timerId, $webSocketServer, $frame, $sw_websocket_controller) {
-            if ($webSocketServer->exists($frame->fd)) { // if the user / fd is connected then push else clear timer.
+            if ($webSocketServer->isEstablished($frame->fd)) { // if the user / fd is connected then push else clear timer.
                 if ($frame->data) { // when a new message arrives from connected client with some data in it
                     $bl_response = $sw_websocket_controller->handle();
                     $frame->data = false;
@@ -404,13 +399,8 @@ class sw_service {
             }
         };
         $this->server->on('message', function($webSocketServer, $frame) use($respond) {
-//            if (isset(self::$fds[$frame->fd])) {
-//                if(class_exists(swTimer::class) && swTimer::exists(self::$fds[$frame->fd])){
-//                    swTimer::clear(self::$fds[$frame->fd]);
-//                } else if (class_exists(oswTimer::class) && oswTimer::exists(self::$fds[$frame->fd])) {
-//                    oswTimer::clear(self::$fds[$frame->fd]);
-//                }
-//            }
+            $cmd = explode(" ", trim($frame->data));
+            $cmd_len = count($cmd);
 
             $closeFrameClass = (($this->swoole_ext == 1) ? swCloseFrame::class : oswCloseFrame::class);
             if ($frame === '') {
@@ -418,7 +408,7 @@ class sw_service {
             } else if ($frame === false) {
                 echo 'errorCode: ' . swoole_last_error() . "\n";
                 $webSocketServer->close();
-            } else if (trim($frame->data) == 'close' || get_class($frame) === $closeFrameClass || $frame->opcode == 0x08) {
+            } else if ( ($cmd_len==1 && $cmd[0] == 'close') || get_class($frame) === $closeFrameClass || $frame->opcode == 0x08) {
                 echo "Close frame received: Code {$frame->code} Reason {$frame->reason}\n";
             } else {
 //                $i=0;
@@ -432,7 +422,11 @@ class sw_service {
 //                    }
 //                }
 
-                if ($frame->data == 'reload-code') {
+                $mainCommand = strtolower($cmd[0]);
+                if ($mainCommand == 'shutdown') {
+                    // Turn off the server
+                    $webSocketServer->shutdown();
+                } else if ($mainCommand == 'reload-code') {
                     if ($this->swoole_ext == 1) { // for Swoole
                         echo PHP_EOL.'In Reload-Code: Clearing All Swoole-based Timers'.PHP_EOL;
                         swTimer::clearAll();
@@ -440,9 +434,6 @@ class sw_service {
                         echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
                         oswTimer::clearAll();
                     }
-                    var_dump(self::$fds);
-                    self::$fds = null;
-                    unset($frame);
                     echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
                     $webSocketServer->reload();
                 } else {
