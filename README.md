@@ -17,7 +17,8 @@ sudo apt-get install -y libc-ares2 -y && \
 sudo apt install libc-ares-dev -y && \
 sudo apt-get install libpq-dev -y && \
 sudo apt-get install libcurl4-openssl-dev -y && \
-sudo apt-get install inotify-tools -y
+sudo apt-get install inotify-tools -y && \
+sudo apt install libbrotli-dev -y
 ```
 
 ## STEP-2: Swoole Installation
@@ -38,17 +39,14 @@ To install Swoole on PHP 8.3, use command below (For a different version of php 
 cd /tmp && \
 git clone https://github.com/swoole/swoole-src && \
 cd swoole-src && \
-git checkout v5.1.2 && \
+git checkout v6.0.0-alpha && \
 phpize8.3 clean && \
 phpize8.3 && \
 ./configure --enable-openssl \
         --enable-mysqlnd \
         --enable-sockets \
-        --enable-http2 \
         --enable-swoole-curl \
-        --enable-swoole-json \
         --enable-swoole-pgsql \
-        --with-postgres \
         --enable-debug \
         --enable-debug-log \
         --enable-trace-log \
@@ -70,7 +68,7 @@ sudo phpenmod -s cli -v 8.3 openswoole
 ```sh
 sudo pear channel-update pear.php.net  && \
 sudo pecl channel-update pecl.php.net  && \
-sudo pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-pgsql="yes" enable-swoole-json="yes" enable-swoole-curl="yes" enable-debug="yes" enable-swoole-trace="yes" enable-thread-context="yes" enable-debug-log="yes" enable-trace-log="yes" enable-cares="yes"' openswoole-22.1.2  && \
+sudo pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-pgsql="yes" enable-swoole-json="yes" enable-swoole-curl="yes" enable-debug="yes" enable-swoole-trace="yes" enable-thread-context="yes" enable-debug-log="yes" enable-trace-log="yes" enable-cares="yes"' openswoole-22.1.5  && \
 sudo bash -c "cat > /etc/php/8.3/mods-available/openswoole.ini << EOF
 ; Configuration for OpenSwoole
 ; priority=25
