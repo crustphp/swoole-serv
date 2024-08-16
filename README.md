@@ -39,7 +39,7 @@ To install Swoole on PHP 8.3, use command below (For a different version of php 
 cd /tmp && \
 git clone https://github.com/swoole/swoole-src && \
 cd swoole-src && \
-git checkout v6.0.0-alpha && \
+git checkout v5.1.3 && \
 phpize8.3 clean && \
 phpize8.3 && \
 ./configure --enable-openssl \
@@ -53,7 +53,7 @@ phpize8.3 && \
         --enable-thread-context \
         --enable-cares \
         --with-php-config=/usr/bin/php-config8.3 && \
-sudo make && sudo make install && \
+sudo make clean && make && sudo make install && \
 sudo bash -c "cat > /etc/php/8.3/mods-available/swoole.ini << EOF
 ; Configuration for OpenSwoole
 ; priority=25
