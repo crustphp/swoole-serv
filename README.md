@@ -95,7 +95,7 @@ composer dump-autoload
 ##### To Start WebSocket Server:
 cd to swoole-serv folder, and then run the command below;
 
-```php sw_start_service.php websocket```
+```php sw_service.php websocket```
 
 ##### To send some messages to Web Socket Server from TCP Client (Like, for Testing) use below:
 ```sudo php ./websocketclient/websocketclient_usage.php```
@@ -104,7 +104,7 @@ cd to swoole-serv folder, and then run the command below;
 ```sudo php ./websocketclient/websocketclient_usage.php reload-code```
 
 ##### To Shutdown  Web Socker Server:
-```php sw_start_service.php close```
+```php sw_service.php close```
 
 ##### Reload Workers and Task Workers, both, gracefully; after completing current requests
 ```kill -USR1 `cat sw-heartbeat.pid` ```
@@ -142,5 +142,5 @@ sudo phpenmod -s cli swoole
 
 ```sh
  ps -aux | grep swool
- ps faux | grep -i sw_start_service.php
+ ps faux | grep -i sw_service.php
  sudo lsof -t -i:9501
