@@ -45,8 +45,8 @@ $swoole_config = [
         'open_websocket_protocol' => false, // Being set in setDefault function in sw_service.php
         'websocket_compression' => true,
         'open_websocket_close_frame' => true,
-        'open_websocket_ping_frame' => false, // added from v4.5.4
-        'open_websocket_pong_frame' => false, // added from v4.5.4
+        'open_websocket_ping_frame' => true, // added from v4.5.4
+        'open_websocket_pong_frame' => true, // added from v4.5.4
         'heartbeat_idle_time' => 5,
         'heartbeat_check_interval' => 2,
 

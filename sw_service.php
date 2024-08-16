@@ -410,18 +410,14 @@ class sw_service {
                 $webSocketServer->close();
             } else if ( ($cmd_len==1 && $cmd[0] == 'close') || get_class($frame) === $closeFrameClass || $frame->opcode == 0x08) {
                 echo "Close frame received: Code {$frame->code} Reason {$frame->reason}\n";
+                $webSocketServer->disconnect($frame->fd, SWOOLE_WEBSOCKET_CLOSE_NORMAL, 'Client Disconnected');
+            } else if ($frame->opcode === WEBSOCKET_OPCODE_PING) { // WEBSOCKET_OPCODE_PING is 0x09
+                echo "Ping frame received: Code {$frame->opcode}\n";
+                // Reply with Pong frame
+                $pongFrame = (($this->extension=1) ? new swFrame() : new oswFrame());
+                $pongFrame->opcode = WEBSOCKET_OPCODE_PONG;
+                $webSocketServer->push($frame->fd, $pongFrame);
             } else {
-//                $i=0;
-//                while (!$frame->finish) {
-//                    if ($i > 4000) {
-//                        $server->disconnect($frame->fd, SWOOLE_WEBSOCKET_CLOSE_NORMAL, "Frame Finish Time Exceeded.");
-//                    } else {
-//                        $i++;
-//                        echo "Frame is not Finished".PHP_EOL;
-//                        continue;
-//                    }
-//                }
-
                 $mainCommand = strtolower($cmd[0]);
                 if ($mainCommand == 'shutdown') {
                     // Turn off the server
