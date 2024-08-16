@@ -92,26 +92,27 @@ composer install
 composer dump-autoload
 ```
 
-### To Start WebSocket Server:
+##### To Start WebSocket Server:
 cd to swoole-serv folder, and then run the command below;
 
 ```php sw_start_service.php websocket```
 
-### To send some messages to Web Socket Server from TCP Client (Like, for Testing) use below:
+##### To send some messages to Web Socket Server from TCP Client (Like, for Testing) use below:
 ```sudo php ./websocketclient/websocketclient_usage.php```
 
-###To reload server's workers:
+##### To reload server's workers:
 ```sudo php ./websocketclient/websocketclient_usage.php reload-code```
 
-###To Shutdown  Web Socker Server:
+##### To Shutdown  Web Socker Server:
 ```php sw_start_service.php close```
 
-### Reload Workers and Task Workers, both, gracefully; after completing current requests
+##### Reload Workers and Task Workers, both, gracefully; after completing current requests
 ```kill -USR1 `cat sw-heartbeat.pid` ```
-### Reload Task Worker Gracefully by completing current task
+
+##### Reload Task Worker Gracefully by completing current task
 ```kill -USR2 `cat sw-heartbeat.pid` ```
 
-### Kill Service safely
+##### Kill Service safely
 
 ```sudo kill -SIGTERM $(sudo lsof -t -i:9501)```
  OR
@@ -123,21 +124,21 @@ cd to swoole-serv folder, and then run the command below;
 
 
 ## Other Useful Run-time Commands
-### Switch from Swoole to OpenSwoole, and vice versa
+##### Switch from Swoole to OpenSwoole, and vice versa
 
 ```sh
 sudo phpdismod -s cli swoole && \
 sudo phpenmod -s cli openswoole
 ```
 
-### Switch from OpenSwoole to Swoole, and vice versa
+##### Switch from OpenSwoole to Swoole, and vice versa
 
 ```sh
 sudo phpdismod -s cli openswoole && \
 sudo phpenmod -s cli swoole
 ```
 
-### Check the Swoole processes:
+##### Check the Swoole processes:
 
 ```sh
  ps -aux | grep swool
