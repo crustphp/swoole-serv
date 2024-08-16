@@ -198,9 +198,10 @@ class sw_service_core {
     protected function bindServerEvents() {
         $my_onStart = function ($server)
         {
-            $this->swoole_version = (($this->swoole_ext == 1) ? SWOOLE_VERSION : '22.1.2');
-
-            file_put_contents(__DIR__.'/sw-heartbeat.pid', $server->master_pid);
+            $this->swoole_version = (($this->swoole_ext == 1) ? SWOOLE_VERSION : '22.1.5');
+            if (!file_exists("server.pid")) {
+                file_put_contents(__DIR__.'/server.pid', $server->master_pid);
+            }
             echo "Asynch ". ucfirst($this->serverProtocol)." Server started at $this->ip:$this->port in Server Mode:$this->serverMode\n";
             echo "MasterPid={$server->master_pid}|Manager_pid={$server->manager_pid}\n".PHP_EOL;
             echo "Server: start.".PHP_EOL."Swoole version is [" . $this->swoole_version . "]\n".PHP_EOL;
@@ -225,7 +226,9 @@ class sw_service_core {
                     unset($this->dbConnectionPools);
                 }
             }
-            shell_exec('cd '.__DIR__.' && rm -f sw-heartbeat.pid 2>&1 1> /dev/null&');
+            if (file_exists('server.pid')) {
+                shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
+            }
         };
 
         $this->server->on('start', $my_onStart);
