@@ -1,8 +1,8 @@
 <?php
     declare(strict_types=1);
 
-use Swoole\Event;
-use Swoole\Process;
+    use Swoole\Event;
+    use Swoole\Process;
 
     require_once realpath(__DIR__ . '/vendor/autoload.php');
     include_once realpath(__DIR__.'/helper.php');
@@ -41,7 +41,7 @@ use Swoole\Process;
         require_once(realpath(__DIR__ . '/config/app_config.php'));
         include('sw_service_core.php');
 
-        if ($serverProtocol != 'close') {
+        if ($serverProtocol != 'shutdown') {
 //            $serverProcess = new Process(function() use ($ip, $port, $serverMode, $serverProtocol) {
                 $sw_service  = new sw_service_core($ip, $port, $serverMode, $serverProtocol);
                 $sw_service->start();
@@ -50,8 +50,8 @@ use Swoole\Process;
 //            }, false);
 //            $serverProcess->start();
         } else {
-            // Stop the TCP server and the process created once PHP code finishes execution.
-            shell_exec('cd '.__DIR__.' && sudo kill -15 `cat sw-heartbeat.pid` && sudo rm -f sw-heartbeat.pid 2>&1 1> /dev/null&');
+            // Stop the the server
+            shell_exec('cd '.__DIR__.' && sudo kill -15 `cat server.pid` && sudo rm -f server.pid 2>&1 1> /dev/null&');
         }
 //        register_shutdown_function(function () use ($serverProcess) {
 //            Process::kill(intval(shell_exec('cat '.__DIR__.'/sw-heartbeat.pid')), SIGTERM);
