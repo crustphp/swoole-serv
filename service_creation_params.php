@@ -1,6 +1,6 @@
 <?php
 ini_set("register_argc_argv", true);
-if (isset($argv[1]) && in_array($argv[1], ['close', 'websocket', 'http','http2', 'tcp', 'udp', 'mqtt', 'grpc', 'socket'])) { // Set Default IP
+if (isset($argv[1]) && in_array($argv[1], ['shutdown', 'websocket', 'http','http2', 'tcp', 'udp', 'mqtt', 'grpc', 'socket'])) { // Set Default IP
    $serverProtocol = $argv[1];
 } else {
     $serverProtocol = 'http';
