@@ -68,7 +68,7 @@ sudo phpenmod -s cli -v 8.3 openswoole
 ```sh
 sudo pear channel-update pear.php.net  && \
 sudo pecl channel-update pecl.php.net  && \
-sudo pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-pgsql="yes" enable-swoole-json="yes" enable-swoole-curl="yes" enable-debug="yes" enable-swoole-trace="yes" enable-thread-context="yes" enable-debug-log="yes" enable-trace-log="yes" enable-cares="yes"' openswoole-22.1.5  && \
+sudo pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-pgsql="yes" with-postgres="yes" enable-swoole-json="yes" enable-hook-curl="yes" enable-swoole-curl="yes" enable-debug="yes" enable-swoole-trace="yes" enable-thread-context="yes" enable-debug-log="yes" enable-trace-log="yes" enable-cares="yes"' openswoole-22.1.2 && \
 sudo bash -c "cat > /etc/php/8.3/mods-available/openswoole.ini << EOF
 ; Configuration for OpenSwoole
 ; priority=25
