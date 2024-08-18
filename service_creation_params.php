@@ -1,6 +1,7 @@
 <?php
 ini_set("register_argc_argv", true);
-if (isset($argv[1]) && in_array($argv[1], ['shutdown', 'websocket', 'http','http2', 'tcp', 'udp', 'mqtt', 'grpc', 'socket'])) { // Set Default IP
+$serverProtocol='';
+if (isset($argv[1]) && in_array($argv[1], ['restart', 'shutdown', 'websocket', 'http','http2', 'tcp', 'udp', 'mqtt', 'grpc', 'socket'])) { // Set Default IP
    $serverProtocol = $argv[1];
 } else {
     $serverProtocol = 'http';
@@ -23,6 +24,7 @@ if (isset($argv[3]) &&
    $port = $argv[3];
 }
 
+$serverMode='';
 // Default Server Mode
 // Ref.: https://openswoole.com/docs/modules/swoole-server-construct
 if (isset($argv[3])) {
