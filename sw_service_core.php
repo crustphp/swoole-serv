@@ -226,7 +226,7 @@ class sw_service_core {
                     unset($this->dbConnectionPools);
                 }
             }
-            if (file_exists('server.pid')) {
+            if ($_ENV['SWOOLE_DAEMONIZE'] == false && file_exists('server.pid')) {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
         };
@@ -435,6 +435,16 @@ class sw_service_core {
                     }
                     echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
                     $webSocketServer->reload();
+                } else if ($mainCommand == 'get-server-params') {
+                    $server_params = [
+                        'ip' => $this->ip,
+                        'port' => $this->port,
+                        'serverMode' => $this->serverMode,
+                        'serverProtocol' => $this->serverProtocol,
+                    ];
+                    if ($webSocketServer->isEstablished($frame->fd)) {
+                        $webSocketServer->push($frame->fd, json_encode($server_params));
+                    }
                 } else {
                     include_once __DIR__ . '/Controllers/WebSocketController.php';
 
@@ -535,6 +545,15 @@ class sw_service_core {
 
     public function start() {
         return $this->server->start();
+    }
+
+    public function getServerParams() {
+       return [
+           'ip' => $this->ip,
+           'port' => $this->port,
+           'serverMode' => $this->serverMode,
+           'serverProtocol' => $this->serverProtocol,
+       ];
     }
 }
 

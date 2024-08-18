@@ -6,6 +6,7 @@
 
     require_once realpath(__DIR__ . '/vendor/autoload.php');
     include_once realpath(__DIR__.'/helper.php');
+    include_once realpath(__DIR__.'/websocketclient/wbsocketclient.php');
 
     ini_set('memory_limit', -1);
 
@@ -15,7 +16,7 @@
         // If swoole-srv is part of a parent project then use parent .env for accessing parent project / database
         // This is because .env is not the part of git, hence changes to local .env can not be reflected just by changing it
         // whereas on servers which use Ploi only one single .env configuration of the parent project is defined / changed.
-
+        global $sw_service;
         if (realpath(dirname(__DIR__) . '/composer.json') ||
             realpath(dirname(__DIR__) . '/package.json') || realpath(dirname(__DIR__) . '.env')
         ) { // if swoole-serv is the part of a parent project
@@ -41,17 +42,40 @@
         require_once(realpath(__DIR__ . '/config/app_config.php'));
         include('sw_service_core.php');
 
-        if ($serverProtocol != 'shutdown') {
-//            $serverProcess = new Process(function() use ($ip, $port, $serverMode, $serverProtocol) {
-                $sw_service  = new sw_service_core($ip, $port, $serverMode, $serverProtocol);
-                $sw_service->start();
+        if ($serverProtocol == 'shutdown') {
+            // Stop the the server
+            shutdown_swoole_server();
+        } else if ($serverProtocol == 'restart') {
+                // Stop the the server
+
+            $ip = '127.0.0.1';
+            if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
+                $ip = '45.76.35.99';
+            }
+
+            $w = new WebSocketClient($ip, 9501);
+            if ($x = $w->connect()) {
+                $w->send('get-server-params', 'text', 1);
+                $data = $w->recv();
+                if ($data) {
+                    echo PHP_EOL.'Shutting Down The Server'.PHP_EOL;
+                    $data = json_decode($data, true);
+                    shutdown_swoole_server();
+                    sleep(1);
+                    create_swoole_server($data['ip'], $data['port'], $data['serverMode'], $data['serverProtocol']);
+                } else {
+                    echo PHP_EOL.'Failed to get server params'.PHP_EOL;
+                }
+            } else {
+                echo PHP_EOL.'Failed to connect WebSocket Server using TCP Client'.PHP_EOL;
+            }
+        } else {
+            //    $serverProcess = new Process(function() use ($ip, $port, $serverMode, $serverProtocol) {
+            create_swoole_server($ip, $port, $serverMode, $serverProtocol);
 //                echo "Exiting";
 //                exit;
 //            }, false);
 //            $serverProcess->start();
-        } else {
-            // Stop the the server
-            shell_exec('cd '.__DIR__.' && sudo kill -15 `cat server.pid` && sudo rm -f server.pid 2>&1 1> /dev/null&');
         }
 //        register_shutdown_function(function () use ($serverProcess) {
 //            Process::kill(intval(shell_exec('cat '.__DIR__.'/sw-heartbeat.pid')), SIGTERM);
@@ -65,4 +89,18 @@
 //        Event::wait();
     } else {
         echo "argc and argv disabled\n";
+    }
+
+    function shutdown_swoole_server() {
+        if (file_exists('server.pid')){
+            shell_exec('cd '.__DIR__.' && kill -15 `cat server.pid` 2>&1 1> /dev/null&'); //&& sudo rm -f server.pid
+        } else {
+            echo PHP_EOL.'server.pid file not found. Looks like server is not running already.'.PHP_EOL;
+        }
+    }
+
+    function create_swoole_server($ip, $port, $serverMode, $serverProtocol) {
+        global $sw_service;
+        $sw_service  = new sw_service_core($ip, $port, $serverMode, $serverProtocol);
+        $sw_service->start();
     }
