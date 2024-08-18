@@ -54,20 +54,24 @@
             }
 
             $w = new WebSocketClient($ip, 9501);
-            if ($x = $w->connect()) {
-                $w->send('get-server-params', 'text', 1);
-                $data = $w->recv();
-                if ($data) {
-                    echo PHP_EOL.'Shutting Down The Server'.PHP_EOL;
-                    $data = json_decode($data, true);
-                    shutdown_swoole_server();
-                    sleep(1);
-                    create_swoole_server($data['ip'], $data['port'], $data['serverMode'], $data['serverProtocol']);
+            try {
+                if ($x = $w->connect()) {
+                    $w->send('get-server-params', 'text', 1);
+                    $data = $w->recv();
+                    if ($data) {
+                        echo PHP_EOL.'Shutting Down The Server'.PHP_EOL;
+                        $data = json_decode($data, true);
+                        shutdown_swoole_server();
+                        sleep(1);
+                        create_swoole_server($data['ip'], $data['port'], $data['serverMode'], $data['serverProtocol']);
+                    } else {
+                        echo PHP_EOL.'Failed to get server params'.PHP_EOL;
+                    }
                 } else {
-                    echo PHP_EOL.'Failed to get server params'.PHP_EOL;
+                    echo PHP_EOL.'Failed to connect WebSocket Server using TCP Client'.PHP_EOL;
                 }
-            } else {
-                echo PHP_EOL.'Failed to connect WebSocket Server using TCP Client'.PHP_EOL;
+            } catch (\RuntimeException $e) {
+                echo PHP_EOL.$e->getMessage().PHP_EOL;
             }
         } else {
             //    $serverProcess = new Process(function() use ($ip, $port, $serverMode, $serverProtocol) {
