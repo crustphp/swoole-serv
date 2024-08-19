@@ -100,11 +100,17 @@ cd to swoole-serv folder, and then run the command below;
 ##### To send some messages to Web Socket Server from TCP Client (Like, for Testing) use below:
 ```sudo php ./websocketclient/websocketclient_usage.php```
 
-##### To reload server's workers:
+##### To reload server workers from server-side script (after code changes):
+```php sw_service.php reload```
+
+##### To reload server workers from client-side script (after code changes):
 ```sudo php ./websocketclient/websocketclient_usage.php reload-code```
 
-##### To Shutdown  Web Socker Server:
-```php sw_service.php close```
+##### To Shutdown  Swoole Server:
+```php sw_service.php shutdown```
+
+##### To Restart the  Swoole Server:
+```php sw_service.php restart```
 
 ##### Reload Workers and Task Workers, both, gracefully; after completing current requests
 ```kill -USR1 `cat sw-heartbeat.pid` ```
