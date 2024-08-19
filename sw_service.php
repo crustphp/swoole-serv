@@ -73,6 +73,24 @@
             } catch (\RuntimeException $e) {
                 echo PHP_EOL.$e->getMessage().PHP_EOL;
             }
+        }  else if ($serverProtocol == 'reload-code') {
+            // Stop the the server
+
+            $ip = '127.0.0.1';
+            if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
+                $ip = '45.76.35.99';
+            }
+
+            $w = new WebSocketClient($ip, 9501);
+            try {
+                if ($x = $w->connect()) {
+                    $w->send('reload-code', 'text', 1);
+                } else {
+                    echo PHP_EOL.'Failed to connect WebSocket Server using TCP Client'.PHP_EOL;
+                }
+            } catch (\RuntimeException $e) {
+                echo PHP_EOL.$e->getMessage().PHP_EOL;
+            }
         } else {
             //    $serverProcess = new Process(function() use ($ip, $port, $serverMode, $serverProtocol) {
             create_swoole_server($ip, $port, $serverMode, $serverProtocol);
