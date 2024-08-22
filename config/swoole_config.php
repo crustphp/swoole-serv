@@ -1,4 +1,5 @@
 <?php
+global $swoole_daemonize;
 $swoole_config = [
     'coroutine_settings' => [
         'max_concurrency' => 100,
@@ -8,7 +9,7 @@ $swoole_config = [
 //         'hook_flags' => SWOOLE_HOOK_ALL,
     ],
     'server_settings' => [
-        'daemonize'             => $_ENV['SWOOLE_DAEMONIZE'],
+        'daemonize'             => $swoole_daemonize,
 //        'user' => 'www-data',
 //        'group' => 'www-data',
         'pid_file' => dirname(__DIR__).'/server.pid',
