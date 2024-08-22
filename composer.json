@@ -13,7 +13,8 @@
     },
     "autoload": {
         "psr-4": {
-            "DB\\": "bootstrap/db/"
+            "DB\\": "bootstrap/db/",
+            "Bootstrap\\": "bootstrap/"
         }
     }
 }
