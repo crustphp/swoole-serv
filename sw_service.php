@@ -32,6 +32,7 @@
                 $dotenv->safeLoad();
             }
         } else {
+            // The project is an independent project, means not installed in a sub-directory of "external" MVC-Framework project
             //echo PHP_EOL.'Picking .env from within: '.__DIR__.PHP_EOL;
             $dotenv = Dotenv\Dotenv::createMutable(__DIR__);
             $dotenv->safeLoad();

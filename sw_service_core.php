@@ -226,7 +226,8 @@ class sw_service_core {
                     unset($this->dbConnectionPools);
                 }
             }
-            if ($_ENV['SWOOLE_DAEMONIZE'] == false && file_exists('server.pid')) {
+            global $swoole_daemonize;
+            if ($swoole_daemonize == false && file_exists('server.pid')) {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
         };
@@ -455,7 +456,8 @@ class sw_service_core {
                         $sw_websocket_controller = new WebSocketController($webSocketServer, $frame);
                     }
 
-                    $timerTime = $_ENV['SWOOLE_TIMER_TIME1'];
+                    global $swoole_timer_time1;
+                    $timerTime = $swoole_timer_time1;
                     if ($this->swoole_ext == 1) {
                         $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
                         self::$fds[$frame->fd][$timerId] = 1;
