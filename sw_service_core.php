@@ -1,9 +1,30 @@
 <?php
 
+//if (!\class_exists('\OpenSwoole\Table')) {
+//    \class_alias('\Swoole\Table', '\OpenSwoole\Table');
+//}
+
+//$swoole_ext_loaded = (extension_loaded('swoole') ? true : false);
+//if (!$swoole_ext_loaded) {
+//    foreach(get_declared_classes() as $declared_class) {
+//        if (strpos($declared_class, 'OpenSwoole') === 0) {
+//            $openswoole_declared_classa= explode('\\', $declared_class);
+//            $openswoole_declared_classa[0] = 'swoole';
+//            $swoole_declared_class= implode('\\', $openswoole_declared_classa);
+//            print_r($openswoole_declared_classa);
+//            echo $declared_class . PHP_EOL;
+//            echo $swoole_declared_class . PHP_EOL;
+//            if (!\class_exists($swoole_declared_class)) {
+//                \class_alias($declared_class, $swoole_declared_class);
+//            }
+//        }
+//    }
+//}
+
 use Swoole\Runtime;
 
 use Swoole\Http\Server as swHttpServer;
-use OpenSwoole\Http\Server as oswHttpServer;
+//use OpenSwoole\Http\Server as oswHttpServer;
 
 use Swoole\Http\Request;
 use Swoole\Http\Response;
@@ -12,27 +33,27 @@ use Swoole\Coroutine as swCo;
 use OpenSwoole\Coroutine as oswCo;
 
 use Swoole\Runtime as swRunTime;
-use OpenSwoole\Runtime as oswRunTime;
+//use OpenSwoole\Runtime as oswRunTime;
 
 use Swoole\Coroutine\Channel as swChannel;
-use OpenSwoole\Coroutine\Channel as oswChannel;
+//use OpenSwoole\Coroutine\Channel as oswChannel;
 
 use DB\DBConnectionPool;
 
 use Swoole\WebSocket\Server as swWebSocketServer;
-use OpenSwoole\WebSocket\Server as oswWebSocketServer;
+//use OpenSwoole\WebSocket\Server as oswWebSocketServer;
 
 use Swoole\WebSocket\Frame as swFrame;
-use OpenSwoole\WebSocket\Frame as oswFrame;
+//use OpenSwoole\WebSocket\Frame as oswFrame;
 
-use Swoole\WebSocket\CloseFrame as swCloseFrame;
-use OpenSwoole\WebSocket\CloseFrame as oswCloseFrame;
+use Swoole\WebSocket\CloseFrame;// as swCloseFrame;
+//use OpenSwoole\WebSocket\CloseFrame as oswCloseFrame;
 
 use Swoole\Timer as swTimer;
-use OpenSwoole\Timer as oswTimer;
+//use OpenSwoole\Timer as oswTimer;
 
 use Swoole\Constant as swConstant;
-use OpenSwoole\Constant as oswConstant;
+//use OpenSwoole\Constant as oswConstant;
 
 // OR Through Scheduler
 //$sch = new Swoole\Coroutine\Scheduler();
@@ -71,6 +92,7 @@ class sw_service_core {
        $this->port = $port;
        $this->serverMode = $serverMode;
        $this->serverProtocol = $serverProtocol;
+
        $this->swoole_ext = ($GLOBALS['swoole_ext'] ?? (extension_loaded('swoole') ? 1 : (
            extension_loaded('openswoole') ? 2 : 0)));
 
@@ -83,52 +105,24 @@ class sw_service_core {
        if ($this->serverProtocol=='http') {
            // Ref: https://openswoole.com/docs/modules/swoole-server-construct
 
-           if ($this->swoole_ext == 1) {
-               $this->server = new swHttpServer($ip, $port, $serverMode); // for http2 also pass last parameter as SWOOLE_SOCK_TCP | SWOOLE_SSL
-           } else if ($this->swoole_ext == 2) {
-               $this->server = new oswHttpServer($ip, $port, $serverMode); // for http2 also pass last parameter as SWOOLE_SOCK_TCP | SWOOLE_SSL
-           } else {
-               echo "Swoole Or OpenSwoole Extension is Missing\n".PHP_EOL;
-               return false;
-           }
+          $this->server = new swHttpServer($ip, $port, $serverMode); // for http2 also pass last parameter as SWOOLE_SOCK_TCP | SWOOLE_SSL
 
            $this->bindHttpRequestEvent();
 
        }
        if ($this->serverProtocol=='websocket') {
            // Ref: https://openswoole.com/docs/modules/swoole-server-construct
-           if ($this->swoole_ext == 1) {
-               $this->server = new swWebSocketServer($ip, $port, $serverMode); // for http2 also pass last parameter as SWOOLE_SOCK_TCP | SWOOLE_SSL
-           } else if ($this->swoole_ext == 2) {
-               $this->server = new oswWebSocketServer($ip, $port, $serverMode); // for http2 also pass last parameter as SWOOLE_SOCK_TCP | SWOOLE_SSL
-           } else {
-               echo "Swoole Or OpenSwoole Extension is Missing\n".PHP_EOL;
-               return false;
-           }
-
+           $this->server = new swWebSocketServer($ip, $port, $serverMode); // for http2 also pass last parameter as SWOOLE_SOCK_TCP | SWOOLE_SSL
            $this->bindWebSocketEvents();
        }
-
-//       if ($this->swoole_ext == 1) {
-//           swTimer::set([
-//               'enable_coroutine' => true,
-//           ]);
-//       } else {
-//           oswTimer::set([
-//               'enable_coroutine' => true,
-//           ]);
-//       }
 
        $this->setDefault();
        $this->bindServerEvents();
        $this->bindWorkerEvents();
        $this->bindWorkerReloadEvents();
 
-//       if ($this->swoole_ext == 1) {
-//           $this->channel = new swChannel(3);
-//       } else {
-//           $this->channel = new oswChannel(3);
-//       }
+//    $this->channel = new swChannel(3);
+
 
     }
 
@@ -137,13 +131,9 @@ class sw_service_core {
         // go() can be used to create new coroutine which is the short name of Swoole\Coroutine::create
         // Co\run can be used to create a context to execute coroutines.
         include_once './config/swoole_config.php';
-        if ($this->swoole_ext == 1) {
-            $swoole_config['coroutine_settings']['hook_flags'] = SWOOLE_HOOK_ALL;
-            swCo::set($swoole_config['coroutine_settings']);
-        } else {
-            $swoole_config['coroutine_settings']['hook_flags'] = oswRunTime::HOOK_ALL;
-            oswCo::set($swoole_config['coroutine_settings']);
-        }
+
+        $swoole_config['coroutine_settings']['hook_flags'] = SWOOLE_HOOK_ALL;
+        swCo::set($swoole_config['coroutine_settings']);
 
         if ($this->serverProtocol=='http') {
             $swoole_config['server_settings']['open_http_protocol'] = true;
@@ -359,7 +349,7 @@ class sw_service_core {
         $this->server->on('connect', function($websocketserver, $fd) {
             if (($fd % 3) === 0) {
                 // 1 of 3 of all requests have to wait for two seconds before being processed.
-                $timerClass = (($this->swoole_ext == 1) ? swTimer::class : oswTimer::class);
+                $timerClass = swTimer::class;
                 $timerClass::after(2000, function () use ($websocketserver, $fd) {
                     $websocketserver->confirm($fd);
                 });
@@ -395,18 +385,14 @@ class sw_service_core {
 
             } else {
                 echo "Inside Event's Callback: Clearing Timer ".$timerId.PHP_EOL;
-                if ($this->swoole_ext == 1) {
-                    swTimer::clear($timerId);
-                } else {
-                    oswTimer::clear($timerId);
-                }
+                swTimer::clear($timerId);
             }
         };
         $this->server->on('message', function($webSocketServer, $frame) use($respond) {
             $cmd = explode(" ", trim($frame->data));
             $cmd_len = count($cmd);
 
-            $closeFrameClass = (($this->swoole_ext == 1) ? swCloseFrame::class : oswCloseFrame::class);
+            $closeFrameClass = swCloseFrame::class;
             if ($frame === '') {
                 $webSocketServer->close();
             } else if ($frame === false) {
@@ -427,13 +413,12 @@ class sw_service_core {
                     // Turn off the server
                     $webSocketServer->shutdown();
                 } else if ($mainCommand == 'reload-code') {
-                    if ($this->swoole_ext == 1) { // for Swoole
-                        echo PHP_EOL.'In Reload-Code: Clearing All Swoole-based Timers'.PHP_EOL;
-                        swTimer::clearAll();
-                    } else { // for openSwoole
-                        echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
-                        oswTimer::clearAll();
-                    }
+                    swTimer::clearAll();
+//                    if ($this->swoole_ext == 1) { // for Swoole
+                    echo PHP_EOL.'In Reload-Code: Clearing All Swoole-based Timers'.PHP_EOL;
+//                    } else { // for openSwoole
+//                        echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
+//                    }
                     echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
                     $webSocketServer->reload();
                 } else if ($mainCommand == 'get-server-params') {
@@ -458,13 +443,8 @@ class sw_service_core {
 
                     global $swoole_timer_time1;
                     $timerTime = $swoole_timer_time1;
-                    if ($this->swoole_ext == 1) {
-                        $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
-                        self::$fds[$frame->fd][$timerId] = 1;
-                    } else {
-                        $timerId = oswTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
-                        self::$fds[$frame->fd][$timerId] = 1;
-                    }
+                    $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
+                    self::$fds[$frame->fd][$timerId] = 1;
                 }
             }
         });
@@ -472,7 +452,6 @@ class sw_service_core {
         $this->server->on('close', function($server, $fd, $reactorId) {
             echo PHP_EOL."client {$fd} closed in ReactorId:{$reactorId}".PHP_EOL;
 
-            if ($this->swoole_ext == 1) {
                 if (isset(self::$fds[$fd])) {
                     echo PHP_EOL.'On Close: Clearing Swoole-based Timers for Connection-'.$fd.PHP_EOL;
                     $fd_timers = self::$fds[$fd];
@@ -483,43 +462,18 @@ class sw_service_core {
                         }
                     }
                 }
-            } else {
-                if (isset(self::$fds[$fd])) {
-                    echo PHP_EOL.'On Close: Clearing OpenSwoole-based Timers for Connection-'.$fd.PHP_EOL;
-                    $fd_timers = self::$fds[$fd];
-                    foreach ($fd_timers as $fd_timer=>$value){
-                        if (oswTimer::exists($fd_timer)) {
-                            echo PHP_EOL."In Connection-Close: clearing timer: ".$fd_timer.PHP_EOL;
-                            oswTimer::clear($fd_timer);
-                        }
-                    }
-                }
-            }
             unset(self::$fds[$fd]);
         });
 
         $this->server->on('disconnect', function(Server $server, int $fd) {
             echo "connection disconnect: {$fd}\n";
-            if ($this->swoole_ext == 1) {
-                if (isset(self::$fds[$fd])) {
-                    echo PHP_EOL.'On Disconnect: Clearing Swoole-based Timers for Connection-'.$fd.PHP_EOL;
-                    $fd_timers = self::$fds[$fd];
-                    foreach ($fd_timers as $fd_timer){
-                        if (swTimer::exists($fd_timer)) {
-                            echo PHP_EOL."In Disconnect: clearing timer: ".$fd_timer.PHP_EOL;
-                            swTimer::clear($fd_timer);
-                        }
-                    }
-                }
-            } else {
-                if (isset(self::$fds[$fd])) {
-                    echo PHP_EOL.'On Disconnect: Clearing OpenSwoole-based Timers for Connection-'.$fd.PHP_EOL;
-                    $fd_timers = self::$fds[$fd];
-                    foreach ($fd_timers as $fd_timer){
-                        if (oswTimer::exists($fd_timer)) {
-                            echo PHP_EOL."In Disconnect: clearing timer: ".$fd_timer.PHP_EOL;
-                            oswTimer::clear($fd_timer);
-                        }
+            if (isset(self::$fds[$fd])) {
+                echo PHP_EOL.'On Disconnect: Clearing Swoole-based Timers for Connection-'.$fd.PHP_EOL;
+                $fd_timers = self::$fds[$fd];
+                foreach ($fd_timers as $fd_timer){
+                    if (swTimer::exists($fd_timer)) {
+                        echo PHP_EOL."In Disconnect: clearing timer: ".$fd_timer.PHP_EOL;
+                        swTimer::clear($fd_timer);
                     }
                 }
             }
