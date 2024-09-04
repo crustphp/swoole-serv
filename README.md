@@ -113,10 +113,10 @@ cd to swoole-serv folder, and then run the command below;
 ```php sw_service.php restart```
 
 ##### Reload Workers and Task Workers, both, gracefully; after completing current requests
-```kill -USR1 `cat sw-heartbeat.pid` ```
+```kill -USR1 `cat server.pid` ```
 
 ##### Reload Task Worker Gracefully by completing current task
-```kill -USR2 `cat sw-heartbeat.pid` ```
+```kill -USR2 `cat server.pid` ```
 
 ##### Kill Service safely
 
@@ -126,7 +126,7 @@ cd to swoole-serv folder, and then run the command below;
  OR
 ```kill -15 [process_id]]```
  OR (specially when daemon = 1 (daemonize mode))
-```sudo kill `cat sw-heartbeat.pid` ```
+```sudo kill `cat server.pid` ```
 
 
 ## Other Useful Run-time Commands
