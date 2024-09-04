@@ -28,8 +28,8 @@ class HttpRequestController {
         $mySqlDbKey = null
     )
     {
-        global $swoole_pg_db_key;
-        global $swoole_mysql_db_key;
+        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
+        $swoole_mysql_db_key = config('app_config.swoole_mysql_db_key');
         $this->httpServer = $httpServer;
         $this->request = $request;
         $this->dbConnectionPools = $dbConnectionPools;
