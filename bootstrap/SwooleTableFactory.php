@@ -62,5 +62,4 @@ class SwooleTableFactory
     public function getTableFactory() {
         return TableRegistry::getInstance();
     }
-
 }
