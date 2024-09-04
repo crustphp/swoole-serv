@@ -1,46 +1,50 @@
 <?php
-global $swoole_daemonize;
-$swoole_config = [
+return [
     'coroutine_settings' => [
         'max_concurrency' => 100,
         'max_coroutine' => 10000,
 
         // Can also be set using Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
-//         'hook_flags' => SWOOLE_HOOK_ALL,
+        //'hook_flags' => SWOOLE_HOOK_ALL,
     ],
-    'server_settings' => [
-        'daemonize'             => $swoole_daemonize,
-//        'user' => 'www-data',
-//        'group' => 'www-data',
-        'pid_file' => dirname(__DIR__).'/server.pid',
-//        'chroot' => '/data/server/',
-//        'open_cpu_affinity' => true,
-//        'cpu_affinity_ignore' => [0, 1],
 
-        'dispatch_mode'         => 2,
-        'max_request'           => 100000,
-        'open_tcp_nodelay'      => true,
-        'reload_async'          => true,
-        'max_wait_time'         => 60,
-        'enable_reuse_port'     => true,
-        'enable_coroutine'      => true,
+    'server_settings' => [
+        'daemonize' => intval($_ENV['SWOOLE_DAEMONIZE']) ?? 0,
+
+        // 'user' => 'www-data',
+        // 'group' => 'www-data',
+
+        'pid_file' => dirname(__DIR__) . '/server.pid',
+
+        // 'chroot' => '/data/server/',
+        // 'open_cpu_affinity' => true,
+        // 'cpu_affinity_ignore' => [0, 1],
+
+        'dispatch_mode' => 2,
+        'max_request' => 100000,
+        'open_tcp_nodelay' => true,
+        'reload_async' => true,
+        'max_wait_time' => 60,
+        'enable_reuse_port' => true,
+        'enable_coroutine' => true,
         'enable_static_handler' => true,
         'static_handler_locations' => ['/static', '/app/images', '/releases'],
-        'http_compression'      => false,
-        'buffer_output_size'    => 1024 * 1024 * 1024,
+        // 'http_compression'      => false, This Key already exists Compression config
+        'buffer_output_size' => 1024 * 1024 * 1024,
         'reactor_num' => 16,
-        'worker_num'            => 4, // Each worker holds a connection pool
-        'task_worker_num'       => 8,  // The amount of task workers to start
+        'worker_num' => 4, // Each worker holds a connection pool
+        'task_worker_num' => 8,  // The amount of task workers to start
         'task_enable_coroutine' => true,
 
         // Protocol
         'open_http_protocol' => false, // Being set in setDefault function in sw_service.php
+        
         // HTTP Server
         'http_parse_post' => true,
         'http_parse_cookie' => true,
         'upload_tmp_dir' => '/tmp',
 
-//        'open_mqtt_protocol' => true,
+        // 'open_mqtt_protocol' => true,
 
         // Websocket
         'open_websocket_protocol' => false, // Being set in setDefault function in sw_service.php
@@ -48,24 +52,24 @@ $swoole_config = [
         'open_websocket_close_frame' => true,
         'open_websocket_ping_frame' => true, // added from v4.5.4
         'open_websocket_pong_frame' => true, // added from v4.5.4
-        'heartbeat_idle_time' => 5,
-        'heartbeat_check_interval' => 2,
+        // 'heartbeat_idle_time' => 5,
+        // 'heartbeat_check_interval' => 2,
 
         // HTTP2:
         // These configurations below are already initialized in Swoole and are not configurable, however these can be configured in OpenSwoole 4.11.1 as below
-//        'open_http2_protocol' => false,
-//        'http2_header_table_size' => 4095,
-//        'http2_initial_window_size' => 65534,
-//        'http2_max_concurrent_streams' => 1281,
-//        'http2_max_frame_size' => 16383,
-//        'http2_max_header_list_size' => 4095,
-// OR
-//        'http2_header_table_size' => 2048,
-//        'http2_enable_push' => false,
-//        'http2_max_concurrent_streams' => 128,
-//        'http2_init_window_size' => 2 ** 24,
-//        'http2_max_frame_size' => 65536,
-//        'http2_max_header_list_size' => 2 ** 24,
+        // 'open_http2_protocol' => false,
+        // 'http2_header_table_size' => 4095,
+        // 'http2_initial_window_size' => 65534,
+        // 'http2_max_concurrent_streams' => 1281,
+        // 'http2_max_frame_size' => 16383,
+        // 'http2_max_header_list_size' => 4095,
+        // OR
+        // 'http2_header_table_size' => 2048,
+        // 'http2_enable_push' => false,
+        // 'http2_max_concurrent_streams' => 128,
+        // 'http2_init_window_size' => 2 ** 24,
+        // 'http2_max_frame_size' => 65536,
+        // 'http2_max_header_list_size' => 2 ** 24,
 
         // Compression
         'http_compression' => false,
@@ -78,15 +82,15 @@ $swoole_config = [
         'static_handler_locations' => ['/static', '/app/images'],
         'http_index_files' => ['index.html', 'index.txt'],
 
-//            // Source File Reloading
-//            'reload_async' => true,
-//            'max_wait_time' => 3,
+        // Source File Reloading
+        // 'reload_async' => true,
+        // 'max_wait_time' => 3,
 
         // Logging
         // Ref: https://openswoole.com/docs/modules/swoole-server/configuration#log_level
         'log_level' => SWOOLE_LOG_ERROR, //SWOOLE_LOG_DEBUG
         //'log_level' => SWOOLE_LOG_DEBUG,
-        'log_file' => dirname(__DIR__).'/logs/swoole.log',
+        'log_file' => dirname(__DIR__) . '/logs/swoole.log',
         'log_rotation' => SWOOLE_LOG_ROTATION_HOURLY,
         'log_date_format' => '%Y-%m-%d %H:%M:%S',
         'log_date_with_microseconds' => true,
@@ -94,15 +98,12 @@ $swoole_config = [
         // Enable trace logs
         // Ref: https://openswoole.com/docs/modules/swoole-server/configuration#trace_flags
         'trace_flags' => SWOOLE_TRACE_ALL,
+
+        // If extension swoole is loaded
+        'enable_preemptive_scheduler' => extension_loaded('swoole') ? true : false,
+        'enable_deadlock_check' => extension_loaded('swoole') ? true : false,
     ],
 ];
-
-if (extension_loaded('swoole')) {
-    $swoole_config['server_settings'] ['enable_preemptive_scheduler'] = true;
-    $swoole_config['server_settings'] ['enable_deadlock_check'] = true;
-}
-
-
 
 /*
  * Swoole Server Configurations

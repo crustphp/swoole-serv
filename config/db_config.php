@@ -1,33 +1,21 @@
 <?php
-global $db_engine;
-$db_engine = 'postgresql'; // Other Values: 'mysql' or 'both'
 
-global $swMysqlServerDriver;
-global $swMysqlServerHost;
-global $swMysqlServerPort;
-global $swMysqlServerDb;
-global $swMysqlServerUser;
-global $swMysqlServerPasswd;
-global $swMysqlServerCharset;
+return [
+   'db_engine' => 'postgresql', // Other values: 'mysql' or 'both'
 
-$swMysqlServerDriver = ''; // $_ENV['SWOOLE_MYSQL_DB_DRIVER'] //'mysql';
-$swMysqlServerHost = $_ENV['SWOOLE_MYSQL_DB_HOST'];
-$swMysqlServerPort = $_ENV['SWOOLE_MYSQL_DB_PORT'];
-$swMysqlServerDb = $_ENV['SWOOLE_MYSQL_DB_DATABASE'];
-$swMysqlServerUser= $_ENV['SWOOLE_MYSQL_DB_USERNAME']; //'root';
-$swMysqlServerPasswd = $_ENV['SWOOLE_MYSQL_DB_PASSWORD'];
-$swMysqlServerCharset = $_ENV['SWOOLE_MYSQL_DB_CHARSET'];
+   'sw_mysql_server_driver' => $_ENV['SWOOLE_MYSQL_DB_DRIVER'] ?? 'mysql',
+   'sw_mysql_server_host' => $_ENV['SWOOLE_MYSQL_DB_HOST'] ?? 'localhost',
+   'sw_mysql_server_port' => $_ENV['SWOOLE_MYSQL_DB_PORT'] ?? '3306',
+   'sw_mysql_server_db' => $_ENV['SWOOLE_MYSQL_DB_DATABASE'] ?? 'database_name',
+   'sw_mysql_server_user' => $_ENV['SWOOLE_MYSQL_DB_USERNAME'] ?? 'database_user',
+   'sw_mysql_server_passwd' => $_ENV['SWOOLE_MYSQL_DB_PASSWORD'] ?? 'database_password',
+   'sw_mysql_server_charset' => $_ENV['SWOOLE_MYSQL_DB_CHARSET'] ?? 'utf8mb4',
 
 
-global $swPostgresServerHost;
-global $swPostgresServerPort;
-global $swPostgresServerDB;
-global $swPostgresServerUser;
-global $swPostgresServerPasswd;
-
-//$swPostgresServerDriver = $_ENV['DB_CONNECTION']; // This is already defined internally by Swoole, so not required as of version 4.11.1
-$swPostgresServerHost = $_ENV['SWOOLE_PG_DB_HOST'];
-$swPostgresServerPort = $_ENV['SWOOLE_PG_DB_PORT'];
-$swPostgresServerDB = $_ENV['SWOOLE_PG_DB_DATABASE'];
-$swPostgresServerUser = $_ENV['SWOOLE_PG_DB_USERNAME'];
-$swPostgresServerPasswd = $_ENV['SWOOLE_PG_DB_PASSWORD'];
+    // 'sw_postgres_server_driver' => $_ENV['DB_CONNECTION'], // This is already defined internally by Swoole, so not required as of version 4.11.1
+    'sw_postgres_server_host' => $_ENV['SWOOLE_PG_DB_HOST'] ?? 'localhost',
+    'sw_postgres_server_port' => $_ENV['SWOOLE_PG_DB_PORT'] ?? '5432',
+    'sw_postgres_server_db' => $_ENV['SWOOLE_PG_DB_DATABASE'] ?? 'database_name',
+    'sw_postgres_server_user' => $_ENV['SWOOLE_PG_DB_USERNAME'] ?? 'database_user',
+    'sw_postgres_server_passwd' => $_ENV['SWOOLE_PG_DB_PASSWORD'] ?? 'database_password',
+];
