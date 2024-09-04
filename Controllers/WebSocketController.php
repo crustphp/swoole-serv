@@ -14,8 +14,8 @@ class WebSocketController
     protected $mySqlDbKey;
 
   public function __construct($webSocketServer, $frame, $dbConnectionPools = null, $postgresDbKey = null, $mySqlDbKey = null) {
-      global $swoole_pg_db_key;
-      global $swoole_mysql_db_key;
+      $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
+      $swoole_mysql_db_key = config('app_config.swoole_mysql_db_key');
       $this->webSocketServer = $webSocketServer;
       $this->frame = $frame;
       $this->dbConnectionPools = $dbConnectionPools;

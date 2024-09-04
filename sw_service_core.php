@@ -93,8 +93,7 @@ class sw_service_core {
        $this->serverMode = $serverMode;
        $this->serverProtocol = $serverProtocol;
 
-       $this->swoole_ext = ($GLOBALS['swoole_ext'] ?? (extension_loaded('swoole') ? 1 : (
-           extension_loaded('openswoole') ? 2 : 0)));
+       $this->swoole_ext = config('app_config.swoole_ext');
 
        Swoole\Coroutine::enableScheduler();
         //OR
@@ -130,7 +129,7 @@ class sw_service_core {
         // Co is the short name of Swoole\Coroutine.
         // go() can be used to create new coroutine which is the short name of Swoole\Coroutine::create
         // Co\run can be used to create a context to execute coroutines.
-        include_once './config/swoole_config.php';
+        $swoole_config = config('swoole_config');
 
         $swoole_config['coroutine_settings']['hook_flags'] = SWOOLE_HOOK_ALL;
         swCo::set($swoole_config['coroutine_settings']);
@@ -199,7 +198,7 @@ class sw_service_core {
 
         $revokeAllResources = function($server) {
             echo "Shutting Down Server".PHP_EOL;
-            global $app_type_database_driven;
+            $app_type_database_driven = config('app_config.app_type_database_driven');
             if ($app_type_database_driven) {
                 if (isset($this->dbConnectionPools)) {
                     echo "Closing All Pools, Pool Containing objects, and Arrays referencing to the pool containing objects".PHP_EOL;
@@ -216,7 +215,7 @@ class sw_service_core {
                     unset($this->dbConnectionPools);
                 }
             }
-            global $swoole_daemonize;
+            $swoole_daemonize = config('app_config.swoole_daemonize');
             if ($swoole_daemonize == false && file_exists('server.pid')) {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
@@ -242,9 +241,9 @@ class sw_service_core {
         $init = function ($server, $worker_id) {
 
             global $argv;
-            global $app_type_database_driven;
-            global $swoole_pg_db_key;
-            global $swoole_mysql_db_key;
+            $app_type_database_driven = config('app_config.app_type_database_driven');
+            $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
+            $swoole_mysql_db_key = config('app_config.swoole_mysql_db_key');
 
             if($worker_id >= $server->setting['worker_num']) {
                 if ($this->swoole_ext == 1) {
@@ -289,7 +288,7 @@ class sw_service_core {
         };
 
         $revokeWorkerResources = function($server, $worker_id) {
-            global $app_type_database_driven;
+            $app_type_database_driven = config('app_config.app_type_database_driven');
             if ($app_type_database_driven) {
                 if (isset($this->dbConnectionPools[$worker_id])) {
                     $worker_dbConnectionPools = $this->dbConnectionPools[$worker_id];
@@ -434,15 +433,14 @@ class sw_service_core {
                 } else {
                     include_once __DIR__ . '/Controllers/WebSocketController.php';
 
-                    global $app_type_database_driven;
+                    $app_type_database_driven = config('app_config.app_type_database_driven');
                     if ($app_type_database_driven) {
                         $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
                     } else {
                         $sw_websocket_controller = new WebSocketController($webSocketServer, $frame);
                     }
 
-                    global $swoole_timer_time1;
-                    $timerTime = $swoole_timer_time1;
+                    $timerTime = config('app_config.swoole_timer_time1');
                     $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
                     self::$fds[$frame->fd][$timerId] = 1;
                 }

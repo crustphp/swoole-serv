@@ -44,8 +44,7 @@ class DBConnectionPool
         $this->dbEngine = $dbEngine;
         $this->isPdo = $isPdo;
         $this->pool_key = $pool_key;
-        $this->swoole_ext = ($GLOBALS['swoole_ext'] ?? (extension_loaded('swoole') ? 1 : (
-            extension_loaded('openswoole') ? 2 : 0)));
+        $this->swoole_ext = config('app_config.swoole_ext');
     }
 
     function __destruct() {
@@ -55,19 +54,19 @@ class DBConnectionPool
     }
 
     public function create() {
-        global $swPostgresServerHost;
-        global $swPostgresServerPort;
-        global $swPostgresServerDB;
-        global $swPostgresServerUser;
-        global $swPostgresServerPasswd;
+        $swPostgresServerHost = config('db_config.sw_postgres_server_host');
+        $swPostgresServerPort = config('db_config.sw_postgres_server_port');
+        $swPostgresServerDB = config('db_config.sw_postgres_server_db');
+        $swPostgresServerUser = config('db_config.sw_postgres_server_user');
+        $swPostgresServerPasswd = config('db_config.sw_postgres_server_passwd');
 
-        global $swMysqlServerDriver;
-        global $swMysqlServerHost;
-        global $swMysqlServerPort;
-        global $swMysqlServerDb;
-        global $swMysqlServerUser;
-        global $swMysqlServerCharset;
-        global $swMysqlServerPasswd;
+        $swMysqlServerDriver = config('db_config.sw_mysql_server_driver');
+        $swMysqlServerHost = config('db_config.sw_mysql_server_host');
+        $swMysqlServerPort = config('db_config.sw_mysql_server_port');
+        $swMysqlServerDb = config('db_config.sw_mysql_server_db');
+        $swMysqlServerUser = config('db_config.sw_mysql_server_user');
+        $swMysqlServerCharset = config('db_config.sw_mysql_server_charset');
+        $swMysqlServerPasswd = config('db_config.sw_mysql_server_passwd');
 
         // Create Pool object, and configure Pool object with Database
         $obj_conn_pool = $this->create_connection_pool_object(
@@ -134,7 +133,7 @@ class DBConnectionPool
                         ->withDbname($serverDB)
                         ->withUsername($serverUser)
                         ->withPassword($serverPasswd);
-                    return new SwoolePgConnectionPool($config, $GLOBALS['db_connection_pool_size']);
+                    return new SwoolePgConnectionPool($config, config('app_config.db_connection_pool_size'));
                 } else if ($this->swoole_ext = 2) {
                     $config = (
                     (new oswPostgresConfig())
@@ -144,7 +143,7 @@ class DBConnectionPool
                         ->withUsername($serverUser)
                         ->withPassword($serverPasswd)
                     );
-                    return new oswClientPool(oswPostgresClientFactory::class, $config, $GLOBALS['db_connection_pool_size']);
+                    return new oswClientPool(oswPostgresClientFactory::class, $config, config('app_config.db_connection_pool_size'));
                 } else {
 //                    throw new \Swoole\ExitException("Swoole Extension Not Found");
                     throw new \RuntimeException("Swoole Extension Not Found.".PHP_EOL." File: ".__FILE__.PHP_EOL." Line: ".__LINE__);

@@ -1,5 +1,5 @@
 <?php
-return [
+$swoole_config = [
     'coroutine_settings' => [
         'max_concurrency' => 100,
         'max_coroutine' => 10000,
@@ -98,12 +98,16 @@ return [
         // Enable trace logs
         // Ref: https://openswoole.com/docs/modules/swoole-server/configuration#trace_flags
         'trace_flags' => SWOOLE_TRACE_ALL,
-
-        // If extension swoole is loaded
-        'enable_preemptive_scheduler' => extension_loaded('swoole') ? true : false,
-        'enable_deadlock_check' => extension_loaded('swoole') ? true : false,
     ],
 ];
+
+// If extension swoole is loaded
+if (extension_loaded('swoole')) {
+    $swoole_config['server_settings'] ['enable_preemptive_scheduler'] = true;
+    $swoole_config['server_settings'] ['enable_deadlock_check'] = true;
+}
+
+return $swoole_config;
 
 /*
  * Swoole Server Configurations
