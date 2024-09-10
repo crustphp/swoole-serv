@@ -238,7 +238,18 @@ class sw_service_core {
     }
 
     protected function bindWorkerEvents() {
-        $init = function ($server, $worker_id) {
+        $inotify_handle = inotify_init();
+        $init = function ($server, $worker_id) use ($inotify_handle) {
+
+            if (function_exists( 'opcache_get_status' ) && is_array(opcache_get_status())) {
+                    opcache_reset();
+            }
+
+            // Add $inotify_handle to Swoole's EventLoop: To be Tested Further
+            Swoole\Event::add($inotify_handle, function () use ($inotify_handle){
+                $var = inotify_read($inotify_handle); // Read the changed file after a file change.
+            });
+            Swoole\Event::set($inotify_handle, null, null, SWOOLE_EVENT_READ);
 
             global $argv;
             $app_type_database_driven = config('app_config.app_type_database_driven');
@@ -287,7 +298,7 @@ class sw_service_core {
             }
         };
 
-        $revokeWorkerResources = function($server, $worker_id) {
+        $revokeWorkerResources = function($server, $worker_id) use ($inotify_handle) {
             $app_type_database_driven = config('app_config.app_type_database_driven');
             if ($app_type_database_driven) {
                 if (isset($this->dbConnectionPools[$worker_id])) {
@@ -311,6 +322,12 @@ class sw_service_core {
                     unset($this->dbConnectionPools[$worker_id]);
                 }
             }
+
+            if (Swoole\Event::isset($inotify_handle)) {
+                Swoole\Event::del($inotify_handle);
+                unset($inotify_handle);
+            }
+
         };
 
         $onWorkerError = function (OpenSwoole\Server $server, int $workerId) {
@@ -419,7 +436,8 @@ class sw_service_core {
 //                        echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
 //                    }
                     echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
-                    $webSocketServer->reload();
+                    $reloadStatus = $webSocketServer->reload();
+                    echo (($reloadStatus === true) ? PHP_EOL.'Code Reloaded'.PHP_EOL  :  PHP_EOL.'Code Not Reloaded').PHP_EOL;
                 } else if ($mainCommand == 'get-server-params') {
                     $server_params = [
                         'ip' => $this->ip,
@@ -431,18 +449,32 @@ class sw_service_core {
                         $webSocketServer->push($frame->fd, json_encode($server_params));
                     }
                 } else {
-                    include_once __DIR__ . '/Controllers/WebSocketController.php';
-
-                    $app_type_database_driven = config('app_config.app_type_database_driven');
-                    if ($app_type_database_driven) {
-                        $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
-                    } else {
-                        $sw_websocket_controller = new WebSocketController($webSocketServer, $frame);
+                    $frameData = json_decode($frame->data, true) ?? [];
+                    if (array_key_exists('command', $frameData)) {
+                        switch($frameData['command']) {
+                            case 'boiler-http-client':
+                                include_once __DIR__ . '/app/Services/HttpClientTestService.php';
+                                $service = new HttpClientTestService($webSocketServer, $frame);
+                                $service->handle();
+                                break;
+                            default:
+                                $webSocketServer->push($frame->fd, 'Invalid command given');
+                        }
                     }
+                    else {
+                        include_once __DIR__ . '/Controllers/WebSocketController.php';
+                        echo PHP_EOL.'starting websocket controller'.PHP_EOL;
+                        $app_type_database_driven = config('app_config.app_type_database_driven');
+                        if ($app_type_database_driven) {
+                            $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
+                        } else {
+                            $sw_websocket_controller = new WebSocketController($webSocketServer, $frame);
+                        }
 
-                    $timerTime = config('app_config.swoole_timer_time1');
-                    $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
-                    self::$fds[$frame->fd][$timerId] = 1;
+                        $timerTime = config('app_config.swoole_timer_time1');
+                        $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
+                        self::$fds[$frame->fd][$timerId] = 1;
+                    }
                 }
             }
         });

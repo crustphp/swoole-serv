@@ -16,13 +16,13 @@ if ($x = $w->connect()) {
 
         }
         echo PHP_EOL."sending ".$cmd.PHP_EOL;
-        $w->send($cmd, 'text', 1);
+        $w->send($cmd, 'text', false);
         exit;
     }
 
     for ($i=1;$i<4;$i++)
-        $w->send('test'.$i, 'text', 0);
-    $w->send('end', 'text', 1);
+        $w->send('test'.$i, 'text', false);
+    $w->send('end', 'text', false);
     while(true) {
         $data = $w->recv();
         if ($data) {
