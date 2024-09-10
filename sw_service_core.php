@@ -457,6 +457,11 @@ class sw_service_core {
                                 $service = new HttpClientTestService($webSocketServer, $frame);
                                 $service->handle();
                                 break;
+                            case 'boiler-swoole-table':
+                                include_once __DIR__ . '/app/Services/SwooleTableTestService.php';
+                                $service = new SwooleTableTestService($webSocketServer, $frame);
+                                $service->handle();
+                                break;
                             default:
                                 $webSocketServer->push($frame->fd, 'Invalid command given');
                         }
