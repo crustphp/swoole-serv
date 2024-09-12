@@ -5,6 +5,7 @@ namespace Bootstrap;
 
 use \Small\SwooleDb\Core\Column;
 use \Small\SwooleDb\Core\Enum\ColumnType;
+use Small\SwooleDb\Selector\TableSelector;
 use \Small\SwooleDb\Registry\TableRegistry;
 use Small\SwooleDb\Exception\TableNotExists;
 
@@ -64,7 +65,8 @@ class SwooleTableFactory
             echo $e->getCode();
             echo $e->getFile();
             echo $e->getLine();
-            TableRegistry::getInstance()->destroy($tableName);
+
+            self::destroyTable($tableName);
         }
     }
 
@@ -96,5 +98,88 @@ class SwooleTableFactory
     public static function getTableFactory()
     {
         return TableRegistry::getInstance();
+    }
+
+    /**
+     * The function updates the size of a table by creating a new table with the
+     * specified size and transferring the data from the original table to the new one.
+     * 
+     * @param mixed $table Instance/Object of Swoole Table
+     * @param int $newSize The new size that you want to set for the table
+     * 
+     * @return mixed 
+     */
+    public static function updateTableSize(mixed $table, int $newSize)
+    {
+        if ($table->getMaxSize() > $newSize) {
+            throw new \RuntimeException('Current table size is already greater than new size');
+        }
+
+        // We cannot create a new table with same name so first we have to take Backup of current Table data
+        $tableName = $table->getName();
+        $columnsDefinition = self::getColumnsStructure($table);
+
+        $selector = new TableSelector($tableName);
+        $records = $selector->execute();
+
+        $columns = array_column($columnsDefinition, 'name');
+
+        $data = [];
+        foreach ($records as $record) {
+            $d = [];
+            foreach ($columns as $col) {
+                $d[$col] = $record[$tableName]->getValue($col);
+            }
+
+            array_push($data, $d);
+        }
+
+        // Destroy the current Table
+        self::destroyTable($tableName);
+
+        // Create a new table with new size
+        $newTable = self::createTable($tableName, $newSize, $columnsDefinition);
+
+        // Store the data to new Table
+        foreach ($data as $key => $d) {
+            $newTable->set($key, $d);
+        }
+
+        return $newTable;
+    }
+
+    /**
+     * This function will generate the array structure of columns from the Table Instance
+     *
+     * @param  mixed $table Instance/Object of Swoole Table
+     * @return array
+     */
+    public static function getColumnsStructure(mixed $table)
+    {
+        $columnsStructure = [];
+        $columns = $table->getColumns();
+        foreach ($columns as $column) {
+            $structure['name'] = $column->getName();
+            $structure['type'] = $column->getType()->name;
+            $structure['size'] = $column->getSize();
+            if ($structure['type'] === 'float') {
+                unset($structure['size']);
+            }
+
+            array_push($columnsStructure, $structure);
+        }
+
+        return $columnsStructure;
+    }
+
+    /**
+     * This function will destroy/delete the the table
+     *
+     * @param  string $tableName Name of the table
+     * @return void
+     */
+    public static function destroyTable(string $tableName)
+    {
+        TableRegistry::getInstance()->destroy($tableName);
     }
 }
