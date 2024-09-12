@@ -25,6 +25,9 @@ class SwooleTableFactory
      */
     public static function createTable(string $tableName, int $rows = 1024, array $columns_defs = [])
     {
+        // For avoiding memory allocation error we will set the min rows to 1024
+        $rows = $rows > 1024 ? $rows : 1024;
+
         try {
             $table = TableRegistry::getInstance()->createTable($tableName, $rows);
 
@@ -181,5 +184,47 @@ class SwooleTableFactory
     public static function destroyTable(string $tableName)
     {
         TableRegistry::getInstance()->destroy($tableName);
+    }
+
+    /**
+     * Check if the table exists
+     *
+     * @param  string $tableName
+     * @return bool
+     */
+    public static function tableExists(string $tableName): bool
+    {
+        try {
+            return (bool) TableRegistry::getInstance()->getTable($tableName);
+        } catch (TableNotExists $e) {
+            return false;
+        }
+    }
+
+    /**
+     * This function adds the data to the Swoole Table.
+     * It also checks if the max rows size of Table is reached than it updates the table size
+     *
+     * @param  mixed $table Swoole Table
+     * @param  mixed $key The key of the row
+     * @param  array $data The array of data. It should be according to table Schema/Column Definition
+     * @return mixed returns the table after adding the data
+     */
+    public static function addData($table, $key, array $data)
+    {
+        $added = $table->set($key, $data);
+
+        // If the record is not added we will update the table size and re-call this function
+        // We have added the second condition to check table count with table max size because single condition was not enough
+        // With this second condition it will PHP Warning but we avoid Fetal Error when size is not enough
+
+        // Swoole Small DB package returns null in case of failure instead of false (false return by Swoole/Table)
+        if (is_null($added) || $table->count() == $table->getMaxSize()) {
+            $newSize = $table->getMaxSize() * 2;
+            $table = self::updateTableSize($table, $newSize);
+            self::addData($table, $key, $data);
+        }
+
+        return $table;
     }
 }
