@@ -24,7 +24,7 @@ class SwooleTableTestService
         ];
 
         // Create table (TableName, TotalRows, ColumnDefinitions)
-        if (SwooleTableFactory::getTable('test_table') === false) {
+        if (!SwooleTableFactory::tableExists('test_table')) {
             // dump('creating table');
             $this->swooleTableFactory = SwooleTableFactory::createTable('test_table', 32, $columns);
         }
@@ -61,27 +61,37 @@ class SwooleTableTestService
         // In Swoole Table we have a limit on number of rows
         // So in-case we have more data rows, we can use the Update Table Size function to set the new size/length
         // In following example we have a table with 32 rows, then we will increase the size to 100
-        $table = SwooleTableFactory::updateTableSize($table, 100);
+        // $table = SwooleTableFactory::updateTableSize($table, 1024);
 
         // Now we can store more than 32 rows into the table
-        $size = 50;
+        $size = 10000;
         for ($i = 0; $i < $size; $i++) {
-            $table->set($i, ['email' => 'mohsin.' . $i . '@gmail.com', 'rollno' => 16 + $i, 'height' => 5.8]);
+            $key = $i;
+            $table = SwooleTableFactory::addData($table, $key, ['email' => 'mohsin.' . $i . '@gmail.com', 'rollno' => $i + 1, 'height' => 5.8]);
+            // $table->set($i, ['email' => 'mohsin.' . $i . '@gmail.com', 'rollno' => 16 + $i, 'height' => 5.8]);
         }
 
         // We can check the size of the table using $table->getMaxSize()
-        // dump($table->getMaxSize());
+        dump($table->count());
+        dump($table->getMaxSize());
 
         go(function () use ($table, $size) {
             // We can get the record using get() passing the key of record/row
             // Following code will return us all the columns of row 0
             var_dump($table->get(0));
-            
+
             // To get specific column/field we can pass that column name as second parameter in get()
             var_dump($table->get(1, 'rollno'));
 
             // To get data of associated key row. e.g below
             // var_dump($table->get('key_one', 'email'));
+
+            dump('---------------------------');
+            dump('For dynamic size update, we verify if the table has store all of our data');
+            dump('---------------------------');
+            for ($i = 0; $i < $size; $i++) {
+                dump($table->get($i, 'rollno'));
+            }
         });
     }
 }
