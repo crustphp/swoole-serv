@@ -9,7 +9,7 @@ $swoole_config = [
     ],
 
     'server_settings' => [
-        'daemonize' => intval($_ENV['SWOOLE_DAEMONIZE']) ?? 0,
+        'daemonize' => config('swoole_daemonize') ?? 0,
 
         // 'user' => 'www-data',
         // 'group' => 'www-data',
@@ -38,7 +38,7 @@ $swoole_config = [
 
         // Protocol
         'open_http_protocol' => false, // Being set in setDefault function in sw_service.php
-        
+
         // HTTP Server
         'http_parse_post' => true,
         'http_parse_cookie' => true,
