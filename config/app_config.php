@@ -15,4 +15,6 @@ return [
     'swoole_mysql_db_key' => $_ENV['SWOOLE_MYSQL_DB_KEY'] ?? 'mysql',
     'swoole_timer_time1' => intval($_ENV['SWOOLE_TIMER_TIME1']) ?? 1000,
     'swoole_daemonize' => intval($_ENV['SWOOLE_DAEMONIZE']) ?? 0,
+    'fds_table_name' => $_ENV['FDS_TABLE_NAME'] ?? 'fds_table',
+    'fds_table_size' => intval($_ENV['FDS_TABLE_SIZE']) ?? 8192, // in Bytes
 ];

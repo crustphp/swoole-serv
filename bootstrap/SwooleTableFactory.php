@@ -16,11 +16,11 @@ class SwooleTableFactory
 
     /**
      * The function creates a swoole table with specified name, rows, and column definitions
-     * 
+     *
      * @param string tableName The name of the table that you want to create
      * @param int rows The number of rows that the table should have. Default 1024
      * @param array columns_defs Contains definitions for the columns of the table being created
-     * 
+     *
      * @return mixed Returns the table that is created or false if it fails
      */
     public static function createTable(string $tableName, int $rows = 1024, array $columns_defs = [])
@@ -70,6 +70,8 @@ class SwooleTableFactory
             echo $e->getLine();
 
             self::destroyTable($tableName);
+
+            throw $e;
         }
     }
 
@@ -106,11 +108,11 @@ class SwooleTableFactory
     /**
      * The function updates the size of a table by creating a new table with the
      * specified size and transferring the data from the original table to the new one.
-     * 
+     *
      * @param mixed $table Instance/Object of Swoole Table
      * @param int $newSize The new size that you want to set for the table
-     * 
-     * @return mixed 
+     *
+     * @return mixed
      */
     public static function updateTableSize(mixed $table, int $newSize)
     {

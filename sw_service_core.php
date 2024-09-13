@@ -55,6 +55,13 @@ use Swoole\Timer as swTimer;
 use Swoole\Constant as swConstant;
 //use OpenSwoole\Constant as oswConstant;
 
+use Small\SwooleDb\Selector\Enum\ConditionElementType;
+use Small\SwooleDb\Selector\Bean\ConditionElement;
+use Small\SwooleDb\Selector\Enum\ConditionOperator;
+use Small\SwooleDb\Selector\Bean\Condition;
+use Small\SwooleDb\Selector\TableSelector;
+use Bootstrap\SwooleTableFactory;
+
 // OR Through Scheduler
 //$sch = new Swoole\Coroutine\Scheduler();
 //$sch->set(['hook_flags' => SWOOLE_HOOK_ALL]);
@@ -86,6 +93,8 @@ class sw_service_core {
     protected $serverProtocol;
     protected static $fds=[];
 
+    protected $fdsTableName = "";
+
    function __construct($ip, $port, $serverMode, $serverProtocol) {
 
        $this->ip = $ip;
@@ -95,11 +104,32 @@ class sw_service_core {
 
        $this->swoole_ext = config('app_config.swoole_ext');
 
+       $this->fdsTableName = config('app_config.fds_table_name', 'fds_table');
+
        Swoole\Coroutine::enableScheduler();
         //OR
         //ini_set("swoole.enable_preemptive_scheduler", "1");
         // Opposite
         // Swoole\Coroutine::disableScheduler();
+
+       // We have to Create the Tables here before creating Server Instances
+       // First check if FDs Table is already created
+       if (!SwooleTableFactory::tableExists($this->fdsTableName)) {
+           $colDef = [
+               ['name' => 'fd', 'type' => 'int', 'size' => 8],
+               ['name' => 'worker_id', 'type' => 'int', 'size' => 4],
+           ];
+
+           try {
+               SwooleTableFactory::createTable($this->fdsTableName, config('app_config.fds_table_size'), $colDef);
+           } catch (\Throwable $e) {
+               echo $e->getMessage();
+               echo $e->getCode();
+               echo $e->getFile();
+               echo $e->getLine();
+           }
+
+       }
 
        if ($this->serverProtocol=='http') {
            // Ref: https://openswoole.com/docs/modules/swoole-server-construct
@@ -381,6 +411,25 @@ class sw_service_core {
 //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
 //                $server->push($request->fd, json_encode(["hello", time()]));
 //            });
+
+            // Here we will add the FD into the Swoole FDs Table
+            $table = SwooleTableFactory::getTable($this->fdsTableName);
+
+            // Now we will check if the FD already exists in table
+            $selector = new TableSelector($this->fdsTableName);
+            $selector->where()
+                ->firstCondition(new Condition(
+                    new ConditionElement(ConditionElementType::var, 'fd', $this->fdsTableName),
+                    ConditionOperator::equal,
+                    new ConditionElement(ConditionElementType::const, $request->fd)
+                ));
+
+            $fdRecord = $selector->execute();
+
+            // If we don't find the FD record than we will add it
+            if (count($fdRecord) == 0) {
+                SwooleTableFactory::addData($table, $request->fd, ['fd' => $request->fd, 'worker_id' => $websocketserver->worker_id]);
+            }
         });
 
 
@@ -462,6 +511,18 @@ class sw_service_core {
                                 $service = new SwooleTableTestService($webSocketServer, $frame);
                                 $service->handle();
                                 break;
+                            case 'get-fds':
+                                $selector = new TableSelector($this->fdsTableName);
+                                $records = $selector->execute();
+                                $fdsData = [];
+                                foreach ($records as $record) {
+                                    $fdsData[] = [
+                                        'fd' => $record[$this->fdsTableName]->getValue('fd'),
+                                        'worker_id' => $record[$this->fdsTableName]->getValue('worker_id'),
+                                    ];
+                                }
+                                $webSocketServer->push($frame->fd, json_encode($fdsData));
+                                break;
                             default:
                                 $webSocketServer->push($frame->fd, 'Invalid command given');
                         }
@@ -498,6 +559,9 @@ class sw_service_core {
                     }
                 }
             unset(self::$fds[$fd]);
+            // Remove the FD from the Table
+            $table = SwooleTableFactory::getTable($this->fdsTableName);
+            $table->del($fd);
         });
 
         $this->server->on('disconnect', function(Server $server, int $fd) {
