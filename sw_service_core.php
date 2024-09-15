@@ -167,6 +167,7 @@ class sw_service_core {
 
         $this->server->on('finish', function ($server, $task_id, $task_result)
         {
+//            co::sleep(3); // Added delay only to demonstrate Asynchronous Processing. Next call to task (the one having own callback to process results) will still be processed, and due to this sleep that will call complete before this.
             echo "Task#$task_id finished, data_len=" . strlen($task_result[1]). PHP_EOL;
             echo "\$result: {$task_result[1]} from inside onFinish"; dump($task_result);
             $server->push($task_result[0],
@@ -468,7 +469,7 @@ class sw_service_core {
                     }
                     else {
                         include_once __DIR__ . '/Controllers/WebSocketController.php';
-                        echo PHP_EOL.'starting websocket controller'.PHP_EOL;
+//                        echo PHP_EOL.'starting websocket controller'.PHP_EOL;
                         $app_type_database_driven = config('app_config.app_type_database_driven');
                         if ($app_type_database_driven) {
                             $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
