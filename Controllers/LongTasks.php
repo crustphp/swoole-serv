@@ -17,7 +17,9 @@ class LongTasks
 //        $this->task->worker_id;
 //        $this->task->flags;
 
-        echo "Task Worker Process received data".PHP_EOL;
+        echo PHP_EOL."\nTask Worker ID {$this->server->worker_id} received data...
+        from Event Worker ID {$this->task->worker_id} ...
+        to process Task# {$this->task->id}\n".PHP_EOL;
 //        echo "#{$this->server->worker_id}\tonTask: [PID={$this->server->worker_pid}]:
 //        task_id=$this->task_id, data_len=" . strlen($this->data) . "." . PHP_EOL;
         return $this->task->data;
