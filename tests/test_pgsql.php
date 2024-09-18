@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/vendor/autoload.php';
-require __DIR__.'/helper.php';
+require __DIR__ . '/helper.php';
 
 ini_set('memory_limit', -1);
 use Swoole\Coroutine;

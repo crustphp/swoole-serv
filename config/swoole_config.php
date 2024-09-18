@@ -97,6 +97,7 @@ $swoole_config = [
 
         // Enable trace logs
         // Ref: https://openswoole.com/docs/modules/swoole-server/configuration#trace_flags
+        //https://wiki.swoole.com/en/#/consts?id=trace-flags
         'trace_flags' => SWOOLE_TRACE_ALL,
     ],
 ];
