@@ -167,7 +167,7 @@ class sw_service_core {
 
         $this->server->on('finish', function ($server, $task_id, $task_result)
         {
-//            co::sleep(3); // Added delay only to demonstrate Asynchronous Processing. Next call to task (the one having own callback to process results) will still be processed, and due to this sleep that will call complete before this.
+            //co::sleep(3); // Added delay only to demonstrate Asynchronous Processing. Next call to task (the one having own callback to process results) will still be processed, and due to this sleep that will call complete before this.
             echo "Task#$task_id finished, data_len=" . strlen($task_result[1]). PHP_EOL;
             echo "\$result: {$task_result[1]} from inside onFinish"; dump($task_result);
             $server->push($task_result[0],
@@ -183,6 +183,21 @@ class sw_service_core {
 //                var_dump($data);
 //            }
 //        };
+
+        // Server FDs (We use this to store the FDs each worker has)
+        $this->server->fds = [];
+
+        // Broadcasting Process will be used to broadcast the backend events
+        $broadcastingProcess = new Swoole\Process(function ($process)  {
+            swTimer::tick(15000, function() {
+                for ($i = 0; $i < $this->server->setting['worker_num']; $i++) {
+                    $message = 'From Backend | For Worker: '.$i;
+                    $this->server->sendMessage($message , $i);
+                }
+            });
+        }, false, SOCK_DGRAM, true);
+
+        $this->server->addProcess($broadcastingProcess);
     }
 
     protected function bindServerEvents() {
@@ -222,8 +237,26 @@ class sw_service_core {
             }
         };
 
+
+        $onPipeMessage = function($server, $src_worker_id, $message): void 
+        {
+            // Source Worker ID is the ID of the process from which we call sendMessage() function
+            $message .= ' | Server FDs: '.implode(',', $server->fds). ' | Source Worker ID: '.$src_worker_id;
+            
+            // send to your known fds in worker scope
+            $this->broadcastDataToFDs($server,$message);
+        };
+
+        
+        $this->server->on('pipeMessage', $onPipeMessage);
         $this->server->on('start', $my_onStart);
         $this->server->on('shutdown', $revokeAllResources);
+    }
+
+    protected function broadcastDataToFDs(&$server, $message) {
+        foreach($server->fds as $fd => $dummyBool) {
+            $server->push($fd, $message);
+        }
     }
 
     protected function bindWorkerReloadEvents() {
@@ -243,7 +276,7 @@ class sw_service_core {
         $init = function ($server, $worker_id) use ($inotify_handle) {
 
             if (function_exists( 'opcache_get_status' ) && is_array(opcache_get_status())) {
-                    opcache_reset();
+                opcache_reset();
             }
 
             // Add $inotify_handle to Swoole's EventLoop: To be Tested Further
@@ -328,7 +361,6 @@ class sw_service_core {
                 Swoole\Event::del($inotify_handle);
                 unset($inotify_handle);
             }
-
         };
 
         $onWorkerError = function (OpenSwoole\Server $server, int $workerId) {
@@ -378,6 +410,10 @@ class sw_service_core {
 
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
+
+            // Add fd to scope
+            // Here I am storing the FD in array index also as FD for directly accessing it in array.
+            $websocketserver->fds[$request->fd] = $request->fd;
 
 //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
 //                $server->push($request->fd, json_encode(["hello", time()]));
@@ -468,8 +504,9 @@ class sw_service_core {
                         }
                     }
                     else {
+                        // Default Code
                         include_once __DIR__ . '/Controllers/WebSocketController.php';
-//                        echo PHP_EOL.'starting websocket controller'.PHP_EOL;
+
                         $app_type_database_driven = config('app_config.app_type_database_driven');
                         if ($app_type_database_driven) {
                             $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
@@ -499,6 +536,9 @@ class sw_service_core {
                     }
                 }
             unset(self::$fds[$fd]);
+
+            // delete fd from scope
+            unset($server->fds[$fd]);
         });
 
         $this->server->on('disconnect', function(Server $server, int $fd) {
@@ -514,6 +554,9 @@ class sw_service_core {
                 }
             }
             unset(self::$fds[$fd]);
+
+            // delete fd from scope
+            unset($server->fds[$fd]);
         });
 
 // The Request event closure callback is passed the context of $server
