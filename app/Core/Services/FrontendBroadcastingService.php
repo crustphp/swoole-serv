@@ -21,7 +21,7 @@ class FrontendBroadcastingService {
      * @param string|array $message The message to broadcast, either as a string or array.
      * @return void
      */
-    public function __invoke(string|array $message, callable $callback = null): void {
+    public function __invoke(string|array $message, callable $callback = null): mixed {
 
        if (!is_null($callback)) {
            if (is_array($message)) {
