@@ -9,10 +9,10 @@ use Small\SwooleDb\Selector\TableSelector;
 use \Small\SwooleDb\Registry\TableRegistry;
 use Small\SwooleDb\Exception\TableNotExists;
 
-
 class SwooleTableFactory
 {
     const ALLOWED_TYPES = ['int', 'float', 'string'];
+    static $migrationsExecuted = false;
 
     /**
      * The function creates a swoole table with specified name, rows, and column definitions
@@ -70,6 +70,8 @@ class SwooleTableFactory
             echo $e->getLine();
 
             self::destroyTable($tableName);
+
+            throw $e;
         }
     }
 
@@ -226,5 +228,59 @@ class SwooleTableFactory
         }
 
         return $table;
+    }
+
+    /**
+     * This function executes migrations for Swoole Tables
+     * 
+     * @return void
+     */
+    public static function migrate(): void
+    {
+        // Migrations should be executed only once
+        if (self::$migrationsExecuted) {
+            dump('Swoole Table migrations are already executed');
+            return;
+        }
+
+        $migrations = [];
+
+        // Define the config directory path
+        $migrationsPath = __DIR__ . '/../migrations/swoole/';
+
+        // Load all migration files
+        if (empty($config)) {
+            foreach (glob($migrationsPath . '*.php') as $file) {
+                $filename = basename($file, '.php');
+                $migrations[$filename] = include $file;
+            }
+        }
+
+        try {
+            foreach ($migrations as $migrationFileName => $migration) {
+                if (!array_key_exists('table_name', $migration) || !array_key_exists('table_size', $migration)) {
+                    throw new \Exception("Swoole Table Migration: $migrationFileName is missing required 'table_name' or 'table_size' keys");
+                }
+
+                if (empty($migration['columns']) || !is_array($migration['columns'])) {
+                    throw new \Exception("Swoole Table Migration: $migrationFileName must contain a valid 'columns' array");
+                }
+
+                if (self::tableExists($migration['table_name'])) {
+                    throw new \Exception("Swoole Table Migration: $migrationFileName | Table " . $migration['name'] . " already exists");
+                }
+
+                self::createTable($migration['table_name'], $migration['table_size'], $migration['columns']);
+            }
+
+            self::$migrationsExecuted = true;
+            dump('Swoole Table migrations migrated successfully');
+        } catch (\Throwable $e) {
+            dump('Swoole Table Migrations Failed');
+            dump($e->getMessage());
+            dump($e->getCode());
+            dump($e->getFile());
+            dump($e->getLine());
+        }
     }
 }
