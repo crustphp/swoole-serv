@@ -185,6 +185,8 @@ class sw_service_core {
 //        };
 
         // Server FDs (We use this to store the FDs each worker has)
+        // WebSocket FDs are registered in this array in onOpen event's callback
+        // $websocketserver->fds[$request->fd] = $request->fd;
         $this->server->fds = [];
 
         // Broadcasting Process will be used to broadcast the backend events
@@ -237,26 +239,8 @@ class sw_service_core {
             }
         };
 
-
-        $onPipeMessage = function($server, $src_worker_id, $message): void 
-        {
-            // Source Worker ID is the ID of the process from which we call sendMessage() function
-            $message .= ' | Server FDs: '.implode(',', $server->fds). ' | Source Worker ID: '.$src_worker_id;
-            
-            // send to your known fds in worker scope
-            $this->broadcastDataToFDs($server,$message);
-        };
-
-        
-        $this->server->on('pipeMessage', $onPipeMessage);
         $this->server->on('start', $my_onStart);
         $this->server->on('shutdown', $revokeAllResources);
-    }
-
-    protected function broadcastDataToFDs(&$server, $message) {
-        foreach($server->fds as $fd => $dummyBool) {
-            $server->push($fd, $message);
-        }
     }
 
     protected function bindWorkerReloadEvents() {
@@ -373,11 +357,21 @@ class sw_service_core {
             $revokeWorkerResources($serv, $worker_id);
         };
 
+        $onPipeMessage = function($server, $src_worker_id, $message): void
+        {
+            // Source Worker ID is the ID of the process from which we call sendMessage() function
+            $message .= ' | Server FDs: '.implode(',', $server->fds). ' | Source Worker ID: '.$src_worker_id;
+
+            // send to your known fds in worker scope
+            $this->broadcastDataToFDs($server,$message);
+        };
+
         $this->server->on('workerstart', $init);
         $this->server->on('workerstop', $revokeWorkerResources);
         //To Do: Upgrade code using https://wiki.swoole.com/en/#/server/events?id=onworkererror
         $this->server->on('workererror', $revokeWorkerResources);
         $this->server->on('workerexit', $revokeWorkerResources);
+        $this->server->on('pipeMessage', $onPipeMessage);
 
         // https://openswoole.com/docs/modules/swoole-server-on-task
         // https://openswoole.com/docs/modules/swoole-server-taskCo
@@ -589,6 +583,12 @@ class sw_service_core {
            'serverMode' => $this->serverMode,
            'serverProtocol' => $this->serverProtocol,
        ];
+    }
+
+    protected function broadcastDataToFDs(&$server, $message) {
+        foreach($server->fds as $fd => $dummyBool) {
+            $server->push($fd, $message);
+        }
     }
 }
 
