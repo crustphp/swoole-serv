@@ -612,7 +612,7 @@ class sw_service_core {
 
     protected function broadcastDataToFDs(&$server, $message) {
         foreach($server->fds as $fd => $dummyBool) {
-            if ($server->isEstablished($frame->fd)){
+            if ($server->isEstablished($fd)){
                 $server->push($fd, $message);
             }
         }
