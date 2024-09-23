@@ -184,6 +184,10 @@ class sw_service_core {
 //            }
 //        };
 
+        // The server can contain built-in (or, user-defined) Services
+        // Used in $init (onWorkerStart event's cllback)
+        $this->server->services = [];
+
         // Server FDs (We use this to store the FDs each worker has)
         // WebSocket FDs are registered in this array in onOpen event's callback
         // $websocketserver->fds[$request->fd] = $request->fd;
@@ -314,6 +318,9 @@ class sw_service_core {
                 //$this->dbConnectionPools[$this->mySqlDbKey]->create(true);
 //          require __DIR__.'/init_eloquent.php';
             }
+
+            // declared as $this->server->services = []; in setDefault() function.
+            $server->services['frontend_broadcasting'] = new \App\Core\Services\FrontendBroadcastingService($server);
         };
 
         $revokeWorkerResources = function($server, $worker_id) use ($inotify_handle) {
@@ -453,7 +460,9 @@ class sw_service_core {
                 // Reply with Pong frame
                 $pongFrame = (($this->extension=1) ? new swFrame() : new oswFrame());
                 $pongFrame->opcode = WEBSOCKET_OPCODE_PONG;
-                $webSocketServer->push($frame->fd, $pongFrame);
+                if ($webSocketServer->isEstablished($frame->fd)){
+                    $webSocketServer->push($frame->fd, $pongFrame);
+                }
             } else {
                 $mainCommand = strtolower($cmd[0]);
                 if ($mainCommand == 'shutdown') {
@@ -493,8 +502,24 @@ class sw_service_core {
                                 $service = new SwooleTableTestService($webSocketServer, $frame);
                                 $service->handle();
                                 break;
+                            case 'frontend-broadcasting-eg':
+                                $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;
+                                // Here $message is the data to be broadcasted. (Can be string or an array)
+                                $webSocketServer->services['frontend_broadcasting']($message);
+
+                                // Following Message will be broadcasted only to the FDs of current worker (Example usecase of callback)
+                                $message = 'For FDs of Worker:' .$webSocketServer->worker_id . ' only';
+                                $webSocketServer->services['frontend_broadcasting']($message, function($server, $msg) {
+                                    foreach($server->fds as $fd){
+                                        $server->push($fd, $msg);
+                                    }
+                                });
+                                break;
                             default:
-                                $webSocketServer->push($frame->fd, 'Invalid command given');
+                                if ($webSocketServer->isEstablished($frame->fd)){
+                                    $webSocketServer->push($frame->fd, 'Invalid command given');
+                                }
+
                         }
                     }
                     else {
@@ -587,7 +612,9 @@ class sw_service_core {
 
     protected function broadcastDataToFDs(&$server, $message) {
         foreach($server->fds as $fd => $dummyBool) {
-            $server->push($fd, $message);
+            if ($server->isEstablished($frame->fd)){
+                $server->push($fd, $message);
+            }
         }
     }
 }

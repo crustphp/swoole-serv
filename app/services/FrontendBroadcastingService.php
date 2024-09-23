@@ -21,7 +21,16 @@ class FrontendBroadcastingService {
      * @param string|array $message The message to broadcast, either as a string or array.
      * @return void
      */
-    public function __invoke(string|array $message):void {
+    public function __invoke(string|array $message, callable $callback = null): void {
+
+       if (!is_null($callback)) {
+           if (is_array($message)) {
+                 return call_user_func_array($callback, $message);
+            } else {
+                 return call_user_func($callback, $message);
+            }
+        }
+
         // Convert array message to JSON string if necessary
         if (is_array($message)) {
             $message = json_encode($message);
@@ -37,7 +46,9 @@ class FrontendBroadcastingService {
 
         // message to all fds in this scope (Worker Process)
         foreach($this->webSocketServer->fds as $fd) {
-            $this->webSocketServer->push($fd, $message);
+            if ($server->isEstablished($frame->fd)){
+                $this->webSocketServer->push($fd, $message);
+            }
         }
     }
 }
