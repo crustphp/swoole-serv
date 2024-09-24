@@ -101,6 +101,9 @@ class sw_service_core {
         // Opposite
         // Swoole\Coroutine::disableScheduler();
 
+       // Migrate the Swoole Table Migrations
+       \Bootstrap\SwooleTableFactory::migrate();
+
        if ($this->serverProtocol=='http') {
            // Ref: https://openswoole.com/docs/modules/swoole-server-construct
 
@@ -501,6 +504,30 @@ class sw_service_core {
                                 include_once __DIR__ . '/app/Services/SwooleTableTestService.php';
                                 $service = new SwooleTableTestService($webSocketServer, $frame);
                                 $service->handle();
+                                break;
+                            case 'users':
+                                $table = \Bootstrap\SwooleTableFactory::getTable('users');
+                                if (isset($frameData['add_data'])) {
+                                    // Add Data to Table
+                                    $table->set($table->count(), $frameData['add_data']);
+                                    $webSocketServer->push($frame->fd, "Data Added");
+                                }
+                                else {
+                                    // Fetch all the records saved in table
+                                    $selector = new \Small\SwooleDb\Selector\TableSelector('users');
+                                    $records = $selector->execute();
+
+                                    foreach ($records as $record) {
+                                        $data = [
+                                            'id' => $record['users']->getValue('id'),
+                                            'name' => $record['users']->getValue('name'),
+                                            'email' => $record['users']->getValue('email'),
+                                        ];
+
+                                        $webSocketServer->push($frame->fd, json_encode($data));
+                                    }
+
+                                }
                                 break;
                             case 'frontend-broadcasting-eg':
                                 $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;
