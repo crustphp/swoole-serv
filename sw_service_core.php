@@ -497,7 +497,7 @@ class sw_service_core {
                         switch($frameData['command']) {
                             case 'boiler-http-client':
                                 include_once __DIR__ . '/app/Services/HttpClientTestService.php';
-                                $service = new HttpClientTestService($webSocketServer, $frame);
+                                $service = new HttpClientTestService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
                                 $service->handle();
                                 break;
                             case 'boiler-swoole-table':
