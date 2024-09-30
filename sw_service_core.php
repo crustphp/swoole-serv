@@ -196,17 +196,10 @@ class sw_service_core {
         // $websocketserver->fds[$request->fd] = $request->fd;
         $this->server->fds = [];
 
-        // Broadcasting Process will be used to broadcast the backend events
-        $broadcastingProcess = new Swoole\Process(function ($process)  {
-            swTimer::tick(15000, function() {
-                for ($i = 0; $i < $this->server->setting['worker_num']; $i++) {
-                    $message = 'From Backend | For Worker: '.$i;
-                    $this->server->sendMessage($message , $i);
-                }
-            });
-        }, false, SOCK_DGRAM, true);
-
-        $this->server->addProcess($broadcastingProcess);
+        // Background processes
+        include_once __DIR__ . '/app/Services/BackgroundProcessService.php';
+        $backgroundProcessService = new  BackgroundProcessService($this->server);
+        $backgroundProcessService->handle();
     }
 
     protected function bindServerEvents() {
