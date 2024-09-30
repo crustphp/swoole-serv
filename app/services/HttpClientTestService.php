@@ -1,6 +1,7 @@
 <?php
 
 use DB\DbFacade;
+use Swoole\Coroutine\Barrier;
 use Swoole\Coroutine\Http\Client;
 
 class HttpClientTestService
@@ -39,9 +40,10 @@ class HttpClientTestService
         $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
         $companiesRics = new Swoole\Coroutine\Channel(1);
         $refinitivToken = new Swoole\Coroutine\Channel(1);
+        $barrier = Barrier::make();
 
         // Fetch the companies RICs from the database
-        go(function () use ($companiesRics, $objDbPool) {
+        go(function () use ($companiesRics, $objDbPool, $barrier) {
             $dbQuery = "SELECT ric FROM companies
                 WHERE ric IS NOT NULL
                 AND ric NOT LIKE '%^%'";
@@ -52,44 +54,64 @@ class HttpClientTestService
         });
 
         // Fetch the Refinitiv AuthToken
-        go(function () use ($refinitivToken) {
+        go(function () use ($refinitivToken, $barrier) {
             $token = $this->getRefinitivToken();
             $refinitivToken->push($token);
         });
 
-        while (true) {
-            //  We should have both Company RICs and Refinitiv Access Token
-            if (!$companiesRics->isEmpty() && !$refinitivToken->isEmpty()) {
-                $ricsChunk = array_chunk($companiesRics->pop(), 100);
 
-                $queryParams = [
-                    "fields" => self::FIELDS,
-                    "count" => 1,
-                    "interval" => "P1D",
-                    "sessions" => "normal",
-                    "adjustments" => [
-                        "exchangeCorrection",
-                        "manualCorrection",
-                        "CCH",
-                        "CRE",
-                        "RTS",
-                        "RPO"
-                    ]
-                ];
+        // Wait until we have both Company RICs and Refinitiv Access Token
+        Barrier::wait($barrier);
 
-                $accessToken = $refinitivToken->pop();
+        $ricsChunk = array_chunk($companiesRics->pop(), 100);
 
-                // We will execute each chunk in Corroutine to get data parallelly
-                foreach ($ricsChunk as $chunk) {
-                    go(function () use ($chunk, $queryParams, $accessToken) {
-                        $queryParams['universe'] = '/' . implode(',/', $chunk);
-                        $snapshots = $this->getSnapshotData($accessToken, $queryParams);
-                        $this->webSocketServer->push($this->frame->fd, $snapshots);
-                    });
-                }
+        $queryParams = [
+            "fields" => self::FIELDS,
+            "count" => 1,
+            "interval" => "P1D",
+            "sessions" => "normal",
+            "adjustments" => [
+                "exchangeCorrection",
+                "manualCorrection",
+                "CCH",
+                "CRE",
+                "RTS",
+                "RPO"
+            ]
+        ];
 
-                break;
-            }
+        $accessToken = $refinitivToken->pop();
+
+        // We will execute each chunk in Corroutine to get data parallelly
+        $dataChannel = new Swoole\Coroutine\Channel(count($ricsChunk));
+
+        // Here we needed to create a new Barrier
+        $barrier = new Barrier();
+        foreach ($ricsChunk as $chunk) {
+            go(function () use ($chunk, $queryParams, $accessToken, $dataChannel, $barrier) {
+                $queryParams['universe'] = '/' . implode(',/', $chunk);
+                $snapshots = $this->getSnapshotData($accessToken, $queryParams);
+
+                $dataChannel->push($snapshots);
+            });
+        }
+
+        // Wait until we receive the data from all go()
+        Barrier::wait($barrier);
+
+        // Store all data in single variable and send it to FD
+        // Using channel->length() to get number of elements in channel:
+        // More Details: https://wiki.swoole.com/en/#/coroutine/channel?id=length
+        // Avoid using length() directly in a loop, e.g., for ($i = 0; $i < $dataChannel->length(); $i++) {}
+        // When using pop() inside the loop, the length decreases, causing the loop to run for fewer iterations than expected.
+        $data = [];
+        $channelLength = $dataChannel->length();
+        for ($i = 0; $i < $channelLength; $i++) {
+            $data = array_merge($data, json_decode($dataChannel->pop()));
+        }
+
+        if ($this->webSocketServer->isEstablished($this->frame->fd)) {
+            $this->webSocketServer->push($this->frame->fd, json_encode($data));
         }
     }
 
