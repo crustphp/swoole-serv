@@ -312,6 +312,7 @@ class sw_service_core {
 //          require __DIR__.'/init_eloquent.php';
             }
 
+            // Get the Service Container Instance
             $this->serviceContainer = ServiceContainer::get_instance();
         };
 
@@ -524,15 +525,18 @@ class sw_service_core {
                                     $registeredServices = $this->serviceContainer->get_registered_services();
                                     dump($registeredServices);
 
+                                    // Create a Service Using Default Factory
+                                    $serviceContainer = $this->serviceContainer;
+
 
                                     // Following code demonstrate how we can get the service instance using our custom factory in invokeable function
-                                    $serviceContainer = $this->serviceContainer;
-                                    $frontendBraodcastingService = $serviceContainer('FrontendBroadcastingService', function($webSocketServer) {
-                                        return new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
-                                    }, $webSocketServer);
+                                    // $frontendBraodcastingService = $serviceContainer('FrontendBroadcastingService', function($webSocketServer) {
+                                    //     return new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
+                                    // }, $webSocketServer);
 
-                                    // You can alswo get the instance of frontend broadcasting service by providing alias and constructor params to get()
-                                    // $frontendBraodcastingService = $this->serviceContainer->create_service_object('FrontendBroadcastingService', $webSocketServer);
+                                    // You can also get the instance of frontend broadcasting service by providing alias and constructor params to create_service_object()
+                                    // In this sepecific example create_service_object will use the factory FrontendBroadcastingFactory as it is configured as default factory for FrontendBroadcastingService
+                                    $frontendBraodcastingService = $serviceContainer->create_service_object('FrontendBroadcastingService', $webSocketServer);
 
                                     // ----------- Code related to frontend-broadcasting-eg command ----------------------
                                     $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;

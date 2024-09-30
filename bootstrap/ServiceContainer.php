@@ -88,7 +88,7 @@ class ServiceContainer
      */
     public function __get(string $alias): mixed
     {
-        if (in_array($alias, self::$services)) {
+        if (array_key_exists($alias, self::$services)) {
             return self::$services[$alias];
         }
 
@@ -107,17 +107,21 @@ class ServiceContainer
      * 
      * @param string $alias The key/alias to register the service.
      * @param string $serviceClassName The qualified class name of the service class to register.
+     * @param mixed $factory Optional: The default factory that will be used to create the service class instance.
      * 
      * @return void
      */
-    public function add_service(string $alias, string $serviceClassName): void
+    public function add_service(string $alias, string $serviceClassName, mixed $factory = null): void
     {
         // If Service class is already registered than throw the exception instead of overriding
         if (array_key_exists($alias, self::$services)) {
             throw new \RuntimeException('Service class is already registered on provided alias (' . $alias . ') in ' . __CLASS__);
         }
 
-        self::$services[$alias] = $serviceClassName;
+        self::$services[$alias] = [
+            'class' => $serviceClassName,
+            'factory' => $factory
+        ];
     }
 
     /**
@@ -130,13 +134,32 @@ class ServiceContainer
     public function create_service_object(string $serviceClassAlias, ...$constructorParams): mixed
     {
         if (array_key_exists($serviceClassAlias, self::$services)) {
+            $serviceData = self::$services[$serviceClassAlias];
+            $factory = $serviceData['factory'] ?? null;
+
             try {
-                // Here we create an instance of the service class
+                // If a factory is provided, use it to create the instance
+                if ($factory !== null) {
+                    if (is_array($factory)) {
+                        // Create the object of the factory and pass it as callback
+                        $factoryInstance = new $factory[0]();
+                        return call_user_func_array([$factoryInstance, $factory[1]], $constructorParams);
+                    } else if (is_callable($factory)) {
+                        // If Factory is a callable function instead of class
+                        return call_user_func_array($factory, $constructorParams);
+                    }
+
+                    throw new \RuntimeException('Invalid Factory given for service class having alias (' . $serviceClassAlias . ') in ' . __CLASS__);
+                }
+
+                // Otherwise create service class object directly
+                $class = $serviceData['class'];
+
                 // If constructor parameters are given we create object with Params otherwise create simple object
-                if (isset($constructorParams) && count($constructorParams) > 0) {
-                    return new self::$services[$serviceClassAlias](...$constructorParams);
+                if (count($constructorParams) > 0) {
+                    return new $class(...$constructorParams);
                 } else {
-                    return new self::$services[$serviceClassAlias];
+                    return new $class();
                 }
             } catch (\Throwable $e) {
                 echo PHP_EOL;
@@ -180,7 +203,6 @@ class ServiceContainer
 
         // Default case we will create the object of the Service Class and return it
         return $this->create_service_object($serviceClassAlias, ...$constructorParams);
-
 
         // Old Code
         // if (isset($serviceKey)) {
@@ -235,7 +257,20 @@ class ServiceContainer
     {
         self::$services = [
             // Hint: Alias => ServiceClass Namespace::class
-            'FrontendBroadcastingService' => \App\Core\Services\FrontendBroadcastingService::class,
+            'FrontendBroadcastingService' => [
+                'class' => \App\Core\Services\FrontendBroadcastingService::class,
+
+                // You can either pass a factory with factory class and method name
+                // or by directly adding a callback function
+
+                // Using Factory Class and its Method/Function
+                'factory' => [\App\Core\Factories\FrontendBroadcastingFactory::class, 'build'],
+
+                // Using a callback function
+                // 'factory' => function ($websocketserver) {
+                //     return new \App\Core\Services\FrontendBroadcastingService($websocketserver);
+                // },
+            ],
 
             // Add More Services Here
         ];
