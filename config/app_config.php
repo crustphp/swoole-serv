@@ -18,6 +18,6 @@ return [
 //    'fds_table_name' => $_ENV['FDS_TABLE_NAME'] ?? 'fds_table',
 //    'fds_table_size' => intval($_ENV['FDS_TABLE_SIZE'] ?? 8192), // in Bytes
     'app_url' => $_ENV['APP_URL'] ?? 'api.muachrat.com',
-    'most_active_refinitive_timespan' => intval($_ENV['MOST_ACTIVE_REFINITIVE_TIMESPAN']) ?? 300000,
+    'most_active_refinitive_timespan' => intval($_ENV['MOST_ACTIVE_REFINITIVE_TIMESPAN'] ?? 300000),
 ];
 
