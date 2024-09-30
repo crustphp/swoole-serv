@@ -70,6 +70,8 @@ use Swoole\Constant as swConstant;
 
 //Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
 
+use Bootstrap\ServiceContainer;
+
 class sw_service_core {
 
     protected $swoole_vesion;
@@ -85,6 +87,7 @@ class sw_service_core {
     protected $serverMode;
     protected $serverProtocol;
     protected static $fds=[];
+    protected $serviceContainer;
 
    function __construct($ip, $port, $serverMode, $serverProtocol) {
 
@@ -124,8 +127,6 @@ class sw_service_core {
        $this->bindWorkerReloadEvents();
 
 //    $this->channel = new swChannel(3);
-
-
     }
 
     protected function setDefault()  {
@@ -186,10 +187,6 @@ class sw_service_core {
 //                var_dump($data);
 //            }
 //        };
-
-        // The server can contain built-in (or, user-defined) Services
-        // Used in $init (onWorkerStart event's cllback)
-        $this->server->services = [];
 
         // Server FDs (We use this to store the FDs each worker has)
         // WebSocket FDs are registered in this array in onOpen event's callback
@@ -315,8 +312,7 @@ class sw_service_core {
 //          require __DIR__.'/init_eloquent.php';
             }
 
-            // declared as $this->server->services = []; in setDefault() function.
-            $server->services['frontend_broadcasting'] = new \App\Core\Services\FrontendBroadcastingService($server);
+            $this->serviceContainer = ServiceContainer::get_instance();
         };
 
         $revokeWorkerResources = function($server, $worker_id) use ($inotify_handle) {
@@ -523,23 +519,46 @@ class sw_service_core {
                                 }
                                 break;
                             case 'frontend-broadcasting-eg':
-                                $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;
-                                // Here $message is the data to be broadcasted. (Can be string or an array)
-                                $webSocketServer->services['frontend_broadcasting']($message);
+                                try {
+                                    // You can get the list of registered services using get_registered_services() method
+                                    $registeredServices = $this->serviceContainer->get_registered_services();
+                                    dump($registeredServices);
 
-                                // Following Message will be broadcasted only to the FDs of current worker (Example usecase of callback)
-                                $message = 'For FDs of Worker:' .$webSocketServer->worker_id . ' only';
-                                $webSocketServer->services['frontend_broadcasting']($message, function($server, $msg) {
-                                    foreach($server->fds as $fd){
-                                        $server->push($fd, $msg);
-                                    }
-                                });
+
+                                    // Following code demonstrate how we can get the service instance using our custom factory in invokeable function
+                                    $serviceContainer = $this->serviceContainer;
+                                    $frontendBraodcastingService = $serviceContainer('FrontendBroadcastingService', function($webSocketServer) {
+                                        return new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
+                                    }, $webSocketServer);
+
+                                    // You can alswo get the instance of frontend broadcasting service by providing alias and constructor params to get()
+                                    // $frontendBraodcastingService = $this->serviceContainer->create_service_object('FrontendBroadcastingService', $webSocketServer);
+
+                                    // ----------- Code related to frontend-broadcasting-eg command ----------------------
+                                    $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;
+                                    // Here $message is the data to be broadcasted. (Can be string or an array)
+                                    $frontendBraodcastingService($message);
+
+                                    // Following Message will be broadcasted only to the FDs of current worker (Example usecase of callback)
+                                    $message = 'For FDs of Worker:' .$webSocketServer->worker_id . ' only';
+                                    $frontendBraodcastingService($message, function($server, $msg) {
+                                        foreach($server->fds as $fd){
+                                            $server->push($fd, $msg);
+                                        }
+                                    });
+                                } catch (\Throwable $e) {
+                                    dump($e->getMessage());
+                                    dump($e->getFile());
+                                    dump($e->getLine());
+                                    dump($e->getCode());
+                                    dump($e->getTrace());
+                                }
+
                                 break;
                             default:
                                 if ($webSocketServer->isEstablished($frame->fd)){
                                     $webSocketServer->push($frame->fd, 'Invalid command given');
                                 }
-
                         }
                     }
                     else {

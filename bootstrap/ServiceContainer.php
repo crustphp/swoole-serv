@@ -1,103 +1,269 @@
 <?php
 
-use Swoole\Runtime;
+namespace Bootstrap;
 
-class ServiceContainer {
-    private static $instances = [];
-    private static $callback;
+// use Swoole\Runtime;
 
-    protected function __construct()  {
-    }
+/**
+ * Class ServiceContainer
+ * 
+ * This class implements a service container and allows registering and retrieving instances of registered services
+ * It is implements the Singleton Design Pattern
+ */
+class ServiceContainer
+{
+    // The $instance will hold the instance of ServiceContainer. Although it is any array but will have only one value.
+    private static $instance = [];
+
+    // Services will contain the registered Service Classes
+    private static $services = [];
+
+    /**
+     * Protected contructor is used to prevent creating the object of ServiceContainer (Singleton)
+     *
+     * @return void
+     */
+    protected function __construct() {}
 
     /**
      * Singletons should not be cloneable.
      */
-    protected function __clone() { }
+    protected function __clone() {}
 
     /**
      * Singletons should not be restorable from strings.
      */
-    public function __wakeup() {
+    public function __wakeup()
+    {
         throw new \Exception("Cannot unserialize a singleton.");
     }
 
-    public static function getInstance($key=null, $factory = null) {
-        self::$callback[$key] = $factory ?? 'defaultFactory';
-        $cls = static::class; // string name of the class 'ServiceContainer'
-        if (!isset(self::$instances[$cls])) {
-            self::$instances[$cls] = new static();
-        }
-
-        return self::$instances[$cls];
-    }
-
-    public function __set($key, $factory)
+    /**
+     * Retrieves the singleton instance of the ServiceContainer.
+     * 
+     * @return self The singleton instance of ServiceContainer.
+     */
+    public static function get_instance()
     {
-        self::$callback[$key] = $factory;
-    }
+        // // Check if Key is provided to register the service
+        // if (trim($key) !== "" && $service) {
+        //     self::$services[$key] = $service;
+        // } else if (trim($key) !== "") {
+        //     self::$services[$key] = 'defaultServices';
+        // }
 
-    public function __get($key) {
-        if (array_key_exists($key, self::$callback)) {
-            return self::$callback[$key];
+        $cls = static::class; // string name of the class 'ServiceContainer'
+        if (!isset(self::$instance[$cls])) {
+            self::$instance[$cls] = new static();
+            self::registerServices();
         }
 
-        $trace = debug_backtrace();
-        trigger_error(
-            'Undefined property via __get(): ' . $key .
-            ' in ' . $trace[0]['file'] .
-            ' on line ' . $trace[0]['line'],
-            E_USER_NOTICE);
-        return null;
+        return self::$instance[$cls];
     }
 
-    public function __invoke($key, $val=null) {
-        if (isset($key)) {
-            if (isset(self::$callback[$key])) {
-                try {
-                    if (isset($val)) {
-                        if (is_array($val)) {
-                            call_user_func_array(self::$callback[$key], $val);
-                        } else {
-                            call_user_func(self::$callback[$key]($val));
-                        }
-                    }
+    /**
+     * Registers a service with a specified alias.
+     * 
+     * @param string $alias The key/alias to register the service.
+     * @param string $serviceClassName The qualified class name of the service class to register.
+     */
+    public function __set(string $alias, string $serviceClassName)
+    {
+        // If Service class is already registered than throw the exception instead of overriding
+        if (array_key_exists($alias, self::$services)) {
+            throw new \RuntimeException('Service class is already registered on provided alias (' . $alias . ') in ' . __CLASS__);
+        }
 
-                } catch (\Throwable $e) {
-                    $trace = debug_backtrace();
-                    trigger_error(
-                        'call_user_func('.$key.', '.$val.')'.
-                        ' in ' . $trace[0]['file'] .
-                        ' on line ' . $trace[0]['line'],
-                        E_USER_NOTICE);
-                    return null;
-//                    $logger->log(
-//                        'Error occurred',
-//                        ['exception' => $e, 'callable' => $this->getCallableContext(self::$callback[$key])]
-//                    );
-//                    //In case we can use string only
-//                    $logger->log('Error occurred: ' . \print_r($this->getCallableContext(self::$callback[$key]), true));
+        self::$services[$alias] = $serviceClassName;
+    }
+
+
+    // Note: __get() can only take one parameter and so we cannot use it to return the instance of service class (if service class contructor needs params)
+    // I am keeping it so in-case consumer does not want the Service Container to create the instance of service. He/she can use it.
+    /**
+     * Get the service instances by Service Name
+     * 
+     * @param string $alias The key/alias of the service to retrieve.
+     * @return mixed The service class qualified name
+     */
+    public function __get(string $alias): mixed
+    {
+        if (in_array($alias, self::$services)) {
+            return self::$services[$alias];
+        }
+
+        throw new \RuntimeException('Undefined property via __get(): ' . $alias . ' in ' . __CLASS__);
+        // $trace = debug_backtrace();
+        // trigger_error(
+        //     'Undefined property via __get(): ' . $alias .
+        //     ' in ' . $trace[0]['file'] .
+        //     ' on line ' . $trace[0]['line'],
+        //     E_USER_NOTICE);
+        // return null;
+    }
+
+    /**
+     * Registers a service with a specified alias.
+     * 
+     * @param string $alias The key/alias to register the service.
+     * @param string $serviceClassName The qualified class name of the service class to register.
+     * 
+     * @return void
+     */
+    public function add_service(string $alias, string $serviceClassName): void
+    {
+        // If Service class is already registered than throw the exception instead of overriding
+        if (array_key_exists($alias, self::$services)) {
+            throw new \RuntimeException('Service class is already registered on provided alias (' . $alias . ') in ' . __CLASS__);
+        }
+
+        self::$services[$alias] = $serviceClassName;
+    }
+
+    /**
+     * Get the instance of the Service Class
+     *
+     * @param  string $serviceClassAlias Name of the Service Class
+     * @param  mixed $constructorParams Optional parameters if required by the Service Class
+     * @return mixed;
+     */
+    public function create_service_object(string $serviceClassAlias, ...$constructorParams): mixed
+    {
+        if (array_key_exists($serviceClassAlias, self::$services)) {
+            try {
+                // Here we create an instance of the service class
+                // If constructor parameters are given we create object with Params otherwise create simple object
+                if (isset($constructorParams) && count($constructorParams) > 0) {
+                    return new self::$services[$serviceClassAlias](...$constructorParams);
+                } else {
+                    return new self::$services[$serviceClassAlias];
                 }
-            } else {
-                throw new RuntimeException('No factory / callback provided for the key '.$key.'.');
+            } catch (\Throwable $e) {
+                echo PHP_EOL;
+                echo 'Error Code: ' . $e->getCode() . PHP_EOL;
+                echo 'In File: ' . $e->getFile() . PHP_EOL;
+                echo 'On Line: ' . $e->getLine() . PHP_EOL;
+                echo 'Error Message: ' . $e->getMessage() . PHP_EOL;
+                echo PHP_EOL;
+                throw $e;
             }
-        } else {
-            throw new RuntimeException('Key '.$key.' does not exist. Please, set the key');
         }
+
+        throw new \RuntimeException('Service class is not registered on provided alias (' . $serviceClassAlias . ') in ' . __CLASS__);
+    }
+
+
+    /**
+     * __invoke function returns the instance of the registered service class.
+     * Additionaly you can pass the custom factory as callback to override the default funcationality
+     *
+     * @param  mixed $serviceClassAlias
+     * @param  mixed $customFactoryAsCallback
+     * @param  mixed $constructorParams
+     * @return mixed
+     */
+    public function __invoke(string $serviceClassAlias, callable $customFactoryAsCallback = null, ...$constructorParams): mixed
+    {
+        if (!array_key_exists($serviceClassAlias, self::$services)) {
+            throw new \RuntimeException('Service class is not registered on provided alias (' . $serviceClassAlias . ') in ' . __CLASS__);
+        }
+
+        // Execute the callback function if provided, otherwise run the default functionality
+        if (!is_null($customFactoryAsCallback)) {
+            // Here we will pass constructorParams to callback;
+            if (isset($constructorParams)) {
+                return call_user_func_array($customFactoryAsCallback, $constructorParams);
+            } else {
+                return call_user_func($customFactoryAsCallback);
+            }
+        }
+
+        // Default case we will create the object of the Service Class and return it
+        return $this->create_service_object($serviceClassAlias, ...$constructorParams);
+
+
+        // Old Code
+        // if (isset($serviceKey)) {
+        //     if (isset(self::$services[$serviceKey])) {
+        //         $service = self::$services[$serviceKey];
+
+        //         // Check if the provided method exists in the registered Service Class
+        //         if (!method_exists($service, $fnName)) {
+        //             throw new \RuntimeException("Call to undefined function ($fnName) of class ($serviceKey) in " . __CLASS__);
+        //         }
+
+        //         try {
+        //             if (is_array($args)) {
+        //                 return call_user_func_array([$service, $fnName], $args);
+        //             } else {
+        //                 return call_user_func([$service, $fnName]);
+        //             }
+        //         } catch (\Throwable $e) {
+        //             echo PHP_EOL;
+        //             echo $e->getMessage();
+        //             throw $e;
+
+        //             // $trace = debug_backtrace();
+        //             // trigger_error(
+        //             //     'call_user_func('.$serviceKey.', '.$args.')'.
+        //             //     ' in ' . $trace[0]['file'] .
+        //             //     ' on line ' . $trace[0]['line'],
+        //             //     E_USER_NOTICE);
+        //             // return null;
+
+        //             // $logger->log(
+        //             //     'Error occurred',
+        //             //     ['exception' => $e, 'callable' => $this->getCallableContext(self::$services[$key])]
+        //             // );
+        //             // In case we can use string only
+        //             // $logger->log('Error occurred: ' . \print_r($this->getCallableContext(self::$services[$key]), true));
+        //         }
+        //     } else {
+        //         throw new \RuntimeException('No factory / callback provided for the key ' . $serviceKey . '.');
+        //     }
+        // } else {
+        //     throw new \RuntimeException('Key ' . $serviceKey . ' does not registered in ' . __CLASS__ . '. Please, set the key');
+        // }
+    }
+
+    /**
+     * This function is used to register the services. You can add your services here to register.
+     *
+     * @return void
+     */
+    private static function registerServices(): void
+    {
+        self::$services = [
+            // Hint: Alias => ServiceClass Namespace::class
+            'FrontendBroadcastingService' => \App\Core\Services\FrontendBroadcastingService::class,
+
+            // Add More Services Here
+        ];
+    }
+
+    /**
+     * Get the list of the registered classes
+     *
+     * @return mixed
+     */
+    public function get_registered_services(): mixed
+    {
+        return self::$services;
     }
 
     private function getCallableType($callable): string
     {
         switch (true) {
-            // string: MyClass::myCallbackMethod
+                // string: MyClass::myCallbackMethod
             case \is_string($callable) && \strpos($callable, '::'):
                 return 'static_method';
-            // string: 'my_callback_function'
+                // string: 'my_callback_function'
             case \is_string($callable):
                 return 'function';
-            // array($obj, 'myCallbackMethod')
+                // array($obj, 'myCallbackMethod')
             case \is_array($callable) && \is_object($callable[0]):
                 return 'class_method';
-            // array('MyClass', 'myCallbackMethod')
+                // array('MyClass', 'myCallbackMethod')
             case \is_array($callable):
                 return 'class_static method';
             case $callable instanceof \Closure:
