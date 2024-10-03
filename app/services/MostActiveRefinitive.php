@@ -2,6 +2,9 @@
 
 use DB\DbFacade;
 use Swoole\Coroutine\Http\Client;
+use Swoole\Coroutine\Barrier;
+
+
 
 class MostActiveRefinitive
 {
@@ -9,8 +12,8 @@ class MostActiveRefinitive
     protected $dbConnectionPools;
     protected $postgresDbKey;
     protected $mySqlDbKey;
-
     protected $muasheratUserToken;
+    protected $chunkSize = 100;
 
     const FIELDS = 'CF_VOLUME,NUM_MOVES,PCTCHNG,TRDPRC_1,TURNOVER';
 
@@ -29,71 +32,71 @@ class MostActiveRefinitive
 
     public function handle()
     {
-
-        // Usecase:
-        // We will fetch the company rics from the Database
-        // Than we will make chunks of 100 as Refinitiv API can fetch the maximum data of 100 rics/universe.
-        // We use execute the refinitiv API asynchronously for all the chunks and push the data to fd.
-
+        // Database connection pool and channel initialization
         $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
+
+        $tokenCompanyBerrier = Barrier::make();
         $companiesRics = new Swoole\Coroutine\Channel(1);
         $refinitivToken = new Swoole\Coroutine\Channel(1);
+        // Coroutine to fetch company RICs from the database
+        go(function () use ($objDbPool, $companiesRics, $tokenCompanyBerrier) {
+            $dbQuery = "SELECT ric FROM companies WHERE ric IS NOT NULL AND ric NOT LIKE '%^%'";
+            $dbFacade = new DbFacade();
+            $rics = $dbFacade->query($dbQuery, $objDbPool);
 
-        // Fetch the companies RICs from the database
-        go(function () use ($companiesRics, $objDbPool) {
-                $dbQuery = "SELECT ric FROM companies
-                WHERE ric IS NOT NULL
-                AND ric NOT LIKE '%^%'";
-
-                $dbFacade = new DbFacade();
-                $rics = $dbFacade->query($dbQuery, $objDbPool);
-                $companiesRics->push(array_column($rics, 'ric'));
+            // Split the RICs into chunks and push to the channel
+            $chunkedRics = array_column($rics, 'ric');
+            if ($chunkedRics) {
+                $companiesRics->push($chunkedRics);
+            }
         });
 
-        // Fetch the Refinitiv AuthToken
-        go(function () use ($refinitivToken) {
-                $token = $this->getRefinitivToken();
-                $refinitivToken->push($token);
+        // Coroutine to fetch the Refinitiv Auth Token
+        go(function () use ($refinitivToken, $tokenCompanyBerrier) {
+            $token = $this->getRefinitivToken();
+            $refinitivToken->push($token);
         });
 
-        while(true)
-        {
-            if (!$companiesRics->isEmpty() && !$refinitivToken->isEmpty()) {
+        Barrier::wait($tokenCompanyBerrier);
 
-                $ricsChunk = array_chunk($companiesRics->pop(), 100);
+        if (!$companiesRics->isEmpty() && !$refinitivToken->isEmpty()) {
+            $ricsChunks =  array_chunk($companiesRics->pop(), $this->chunkSize);
+            $accessToken = $refinitivToken->pop();
 
-                $queryParams = [
-                    "fields" => self::FIELDS,
-                    "count" => 1,
-                    "interval" => "P1D",
-                    "sessions" => "normal",
-                    "adjustments" => [
-                        "exchangeCorrection",
-                        "manualCorrection",
-                        "CCH",
-                        "CRE",
-                        "RTS",
-                        "RPO"
-                    ]
-                ];
+            // Proceed if both RICs and token are available
+            $queryParams = [
+                "fields" => self::FIELDS,
+                "count" => 1,
+                "interval" => "P1D",
+                "sessions" => "normal",
+                "adjustments" => [
+                    "exchangeCorrection",
+                    "manualCorrection",
+                    "CCH",
+                    "CRE",
+                    "RTS",
+                    "RPO"
+                ]
+            ];
 
-                $accessToken = $refinitivToken->pop();
-
-                // We will execute each chunk in Corroutine to get data parallelly
-                foreach ($ricsChunk as $chunk) {
-                    go(function () use ($chunk, $queryParams, $accessToken) {
-                        $queryParams['universe'] = '/' . implode(',/', $chunk);
-                        $mostActiveData = $this->getMostActiveData($accessToken, $queryParams);
-
-                    });
-                }
-
-                break;
-
+            $mostActiveBarrier = Barrier::make();
+            $mostActiveData = [];
+            // Process each chunk asynchronously using coroutines
+            foreach ($ricsChunks as $chunk) {
+                go(function () use ($chunk, $queryParams, $accessToken, &$mostActiveData, $mostActiveBarrier) {
+                    $queryParams['universe'] = '/' . implode(',/', $chunk);
+                    // Fetch the data for this chunk
+                    $response = $this->getMostActiveData($accessToken, $queryParams);
+                    $response = json_decode($response, true);
+                    $mostActiveData = array_merge($mostActiveData, $response);
+                });
             }
 
+            Barrier::wait($mostActiveBarrier);
 
+            return $mostActiveData;
         }
+        throw new \RuntimeException('Failed to retrieve data of most active.');
     }
 
 
