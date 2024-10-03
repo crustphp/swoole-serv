@@ -9,7 +9,7 @@ $swoole_config = [
     ],
 
     'server_settings' => [
-        'daemonize' => config('swoole_daemonize') ?? 0,
+        'daemonize' => config('app_config.swoole_daemonize') ?? 0,
 
         // 'user' => 'www-data',
         // 'group' => 'www-data',
