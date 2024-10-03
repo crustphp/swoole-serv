@@ -15,9 +15,7 @@
     "autoload": {
         "psr-4": {
             "DB\\": "bootstrap/db/",
-            "Bootstrap\\": "bootstrap/",
-            "App\\Core\\Services\\": "app/Core/Services/",
-            "App\\Core\\Factories\\": "app/Core/Factories/"
+            "Bootstrap\\": "bootstrap/"
         }
     }
 }
