@@ -115,7 +115,7 @@ class MostActiveRefinitive
         $client = new Client($host, $port, true);
 
         // https://openswoole.com/docs/modules/swoole-client-overall-config-set-options
-        $client->set(['timeout' => 1]);
+        $client->set(['timeout' => config('app_config.refinitiv_req_timeout')]);
 
         // Better form to set header
         // Few Headers are commented as the client is fetching the data even without specifying these headers
@@ -190,7 +190,7 @@ class MostActiveRefinitive
 
         // OpenSwoole: https://openswoole.com/docs/modules/swoole-client-overall-config-set-options
         // Swoole: https://wiki.swoole.com/en/#/client?id=configuration
-        $client->set(['timeout' => 2]);
+        $client->set(['timeout' => config('app_config.refinitiv_req_timeout')]);
 
 
         $headers = [
