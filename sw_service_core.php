@@ -98,6 +98,8 @@ class sw_service_core {
 
        $this->swoole_ext = config('app_config.swoole_ext');
 
+       date_default_timezone_set(config('app_config.time_zone')); // Set default timezone globally
+
        Swoole\Coroutine::enableScheduler();
         //OR
         //ini_set("swoole.enable_preemptive_scheduler", "1");
