@@ -7,7 +7,8 @@
         "symfony/var-dumper": "^7.1",
         "small/swoole-db": "^1.2",
         "phpseclib/phpseclib": "^3.0",
-        "peppeocchi/php-cron-scheduler": "^4.0"
+        "peppeocchi/php-cron-scheduler": "^4.0",
+        "nesbot/carbon": "^3.8"
     },
     "require-dev": {
         "swoole/ide-helper": "~5.0.0"
