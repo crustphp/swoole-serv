@@ -1,8 +1,12 @@
 <?php
 
-use Swoole\Timer as swTimer;
+namespace App\Services;
+
 use Swoole\Process;
 use DB\DBConnectionPool;
+
+use Swoole\Timer as swTimer;
+use App\Services\MostActiveRefinitive;
 use DB\DbFacade;
 use Carbon\Carbon;
 use Bootstrap\SwooleTableFactory;
@@ -68,7 +72,6 @@ class BackgroundProcessService
             }
 
             swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($worker_id, $companyDetail, $objDbPool, $dbFacade) {
-                include_once __DIR__ . '/MostActiveRefinitive.php';
                 $service = new MostActiveRefinitive($this->server, $this->dbConnectionPools[$worker_id]);
                 $responses = $service->handle();
                 $date = Carbon::now();

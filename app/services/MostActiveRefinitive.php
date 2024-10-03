@@ -1,10 +1,11 @@
 <?php
 
+namespace App\Services;
+
 use DB\DbFacade;
-use Swoole\Coroutine\Http\Client;
 use Swoole\Coroutine\Barrier;
-
-
+use Swoole\Coroutine\Channel;
+use Swoole\Coroutine\Http\Client;
 
 class MostActiveRefinitive
 {
@@ -36,8 +37,8 @@ class MostActiveRefinitive
         $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
 
         $tokenCompanyBerrier = Barrier::make();
-        $companiesRics = new Swoole\Coroutine\Channel(1);
-        $refinitivToken = new Swoole\Coroutine\Channel(1);
+        $companiesRics = new Channel(1);
+        $refinitivToken = new Channel(1);
         // Coroutine to fetch company RICs from the database
         go(function () use ($objDbPool, $companiesRics, $tokenCompanyBerrier) {
             $dbQuery = "SELECT ric FROM companies WHERE ric IS NOT NULL AND ric NOT LIKE '%^%'";
