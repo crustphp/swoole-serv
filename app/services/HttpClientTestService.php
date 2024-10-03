@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Services;
+
 use DB\DbFacade;
 use Swoole\Coroutine\Barrier;
 use Swoole\Coroutine\Http\Client;
@@ -38,8 +40,8 @@ class HttpClientTestService
         // We use execute the refinitiv API asynchronously for all the chunks and push the data to fd.
 
         $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
-        $companiesRics = new Swoole\Coroutine\Channel(1);
-        $refinitivToken = new Swoole\Coroutine\Channel(1);
+        $companiesRics = new \Swoole\Coroutine\Channel(1);
+        $refinitivToken = new \Swoole\Coroutine\Channel(1);
         $barrier = Barrier::make();
 
         // Fetch the companies RICs from the database
@@ -83,7 +85,7 @@ class HttpClientTestService
         $accessToken = $refinitivToken->pop();
 
         // We will execute each chunk in Corroutine to get data parallelly
-        $dataChannel = new Swoole\Coroutine\Channel(count($ricsChunk));
+        $dataChannel = new \Swoole\Coroutine\Channel(count($ricsChunk));
 
         // Here we needed to create a new Barrier
         $barrier = new Barrier();

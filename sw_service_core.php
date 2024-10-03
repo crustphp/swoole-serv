@@ -312,6 +312,7 @@ class sw_service_core {
 //          require __DIR__.'/init_eloquent.php';
             }
 
+            include_once('./includes/Autoload.php');
             // Get the Service Container Instance
             $this->serviceContainer = ServiceContainer::get_instance();
         };
@@ -550,6 +551,10 @@ class sw_service_core {
                                             $server->push($fd, $msg);
                                         }
                                     });
+
+                                    // Following code will also work due to custom autoload
+                                    $fbs = new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
+                                    $fbs('Hello World');
                                 } catch (\Throwable $e) {
                                     dump($e->getMessage());
                                     dump($e->getFile());
