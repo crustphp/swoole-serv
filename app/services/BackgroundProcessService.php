@@ -24,7 +24,7 @@ class BackgroundProcessService
             /// DB connection
             $app_type_database_driven = config('app_config.app_type_database_driven');
             $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-            $worker_id = $process->pid;
+            $worker_id = $process->id;
 
             if ($app_type_database_driven) {
                 $poolKey = makePoolKey($worker_id, 'postgres');
@@ -44,7 +44,7 @@ class BackgroundProcessService
             swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($worker_id) {
                 include_once __DIR__ . '/MostActiveRefinitive.php';
                 $service = new MostActiveRefinitive($this->server, $this->dbConnectionPools[$worker_id]);
-                $service->handle();
+                $mostActiveValues = $service->handle();
                 // Compare fetched data with existing data
                 // if there is found difference in comparison then Broadcast data
                 // Save into Database tables
