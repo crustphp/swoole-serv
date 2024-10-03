@@ -196,7 +196,7 @@ class sw_service_core {
         $this->server->fds = [];
 
         // Background processes
-        include_once __DIR__ . '/app/Services/BackgroundProcessService.php';
+        include_once __DIR__ . '/includes/Autoload.php';
         $backgroundProcessService = new  BackgroundProcessService($this->server);
         $backgroundProcessService->handle();
     }
@@ -494,8 +494,7 @@ class sw_service_core {
                                 $service->handle();
                                 break;
                             case 'boiler-swoole-table':
-                                include_once __DIR__ . '/app/Services/SwooleTableTestService.php';
-                                $service = new SwooleTableTestService($webSocketServer, $frame);
+                                $service = new \App\Services\SwooleTableTestService($webSocketServer, $frame);
                                 $service->handle();
                                 break;
                             case 'users':

@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Services;
+
 use Bootstrap\SwooleTableFactory;
 
 class SwooleTableTestService
