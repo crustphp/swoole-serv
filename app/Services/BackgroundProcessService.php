@@ -11,14 +11,13 @@ use DB\DbFacade;
 use Carbon\Carbon;
 use Bootstrap\SwooleTableFactory;
 use Small\SwooleDb\Selector\TableSelector;
+use Swoole\Coroutine\Barrier;
 
 class BackgroundProcessService
 {
     protected $server;
     protected $dbConnectionPools;
     protected $postgresDbKey;
-
-    protected $tempCounter = 0;
 
     public function __construct($server, $postgresDbKey = null) {
         $this->server = $server;
@@ -74,7 +73,7 @@ class BackgroundProcessService
             swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($worker_id, $companyDetail, $objDbPool, $dbFacade) {
                 $service = new MostActiveRefinitive($this->server, $this->dbConnectionPools[$worker_id]);
                 $responses = $service->handle();
-                $date = Carbon::now();
+                $date = Carbon::now()->format('Y-m-d H:i:s');;
                 $topGainers = [];
                 $mostActiveValues = [];
                 $doneDealCounts = [];
@@ -140,35 +139,7 @@ class BackgroundProcessService
                     }
                 }
 
-                // Save top gainers data in swoole table and DB
-                $dbQuery = 'TRUNCATE TABLE ONLY public.ref_top_gainers RESTART IDENTITY RESTRICT;';
-                $dbFacade->query($dbQuery, $objDbPool);
-
-                $table = SwooleTableFactory::getTable('ref_top_gainers');
-
-                foreach ($topGainers as $key => $topGainer) {
-                    // Save in swoole table
-                    go(function () use ($topGainer, $table, $key,) {
-                        $table->set($key, $topGainer);
-                    });
-
-                     // Save in DB
-                    go(function () use ($topGainer, $objDbPool, $dbFacade,) {
-                        $dbQuery = "INSERT INTO ref_top_gainers (calculated_value, latest_value, latest_update, company_id)
-                    VALUES ('" . $topGainer['calculated_value'] . "', '" . $topGainer['latest_value'] . "', '" . $topGainer['latest_update'] . "', '" . $topGainer['company_id'] . "')";
-                        $dbFacade->query($dbQuery, $objDbPool);
-                    });
-                }
-
-                // Compare fetched data with existing data
-                // if there is found difference in comparison then Broadcast data
-                // Save into Database tables
-                // Save into swoole table for cache purpose
-
-                // for ($i = 0; $i < $this->server->setting['worker_num']; $i++) {
-                //     $message = 'From Backend | For Worker: ' . $i;
-                //     $this->server->sendMessage($message, $i);
-                // }
+                $this->storeInToDBAndSwooleTable($topGainers, 'ref_top_gainers', 'calculated_value', $objDbPool, $dbFacade); // Top Gainers
 
             });
         }, false, SOCK_DGRAM, true);
@@ -185,6 +156,144 @@ class BackgroundProcessService
     protected function formatValue($value): float
     {
         return round((float) $value, 6);
+    }
+
+    public function storeInToDBAndSwooleTable(array $mostActiveData, String $tableName, String $column, Object $objDbPool, Object $dbFacade)
+    {
+        $selector = new TableSelector($tableName);
+        $previousMostActiveData = $selector->execute();
+        // Convert the result to an array
+        $previousMostActiveData = $previousMostActiveData->toArray();
+        $previousDataBerrier = Barrier::make();
+        $dataIntoArray = [];
+        foreach ($previousMostActiveData as $record) { // Map object data into array
+            go(function () use ($mostActiveData, $tableName, $record, &$dataIntoArray, $previousDataBerrier) {
+                $recordData = [];
+                if (count($mostActiveData[0]) > 0) {
+                    foreach ($mostActiveData[0] as $key => $value) {
+                        $recordData[$key] = $record[$tableName]->getValue($key);
+                    }
+                }
+                $dataIntoArray[] =  $recordData;
+            });
+        }
+        Barrier::wait($previousDataBerrier);
+
+        if (count($dataIntoArray) > 0) {
+            var_dump('Data fetched from swoole table ' . $tableName);
+            $previousMostActiveData = $dataIntoArray;
+        }
+
+        // Check data exist into swoole table
+        if (count($previousMostActiveData) < 1) {
+            $dbQuery = "SELECT * FROM " . $tableName;
+            $previousMostActiveData = $dbFacade->query($dbQuery, $objDbPool);
+            var_dump('Data fetched from DB table '.$tableName);
+        }
+
+        if (count($previousMostActiveData) > 0) {
+            // Compare with existing data
+            $differentMostActiveData = $this->compare($previousMostActiveData, $mostActiveData, $column);
+
+            // Broadcast the changed data
+            foreach ($differentMostActiveData as $data) {
+                go(function () use ($data) {
+                    for ($worker_id = 0; $worker_id < $this->server->setting['worker_num']; $worker_id++) {
+                        $this->server->sendMessage(json_encode($data), $worker_id);
+                    }
+                });
+            }
+        } else {
+            var_dump('No changed data for broadcasting data of '.$tableName);
+            $differentMostActiveData = $mostActiveData;
+        }
+
+        // Difference in prevous and current data then save into DB and swoole table
+        if (count($differentMostActiveData) > 0) {
+            // Save into swoole table
+            $descOrderMostActiveData = $mostActiveData;
+            usort($descOrderMostActiveData, function($a, $b) {
+                return $b['calculated_value'] <=> $a['calculated_value'];
+            });
+            var_dump('Save data into Swoole table '.$tableName);
+            $table = SwooleTableFactory::getTable($tableName);
+            foreach ($descOrderMostActiveData as $key => $mostActive) {
+                go(function () use ($key, $mostActive, $table) {
+                    $table->set($key, $mostActive);
+                });
+            }
+            // Save into DB
+            var_dump('Save data into DB table '.$tableName);
+            go(function () use ($dbFacade, $mostActiveData, $tableName, $objDbPool) {
+                $dbQuery = 'TRUNCATE TABLE ONLY public."' . $tableName . '" RESTART IDENTITY RESTRICT;';
+                $dbQuery .= $this->makeInsertQuery($tableName, $mostActiveData);
+                $dbFacade->query($dbQuery, $objDbPool, null, true, true, $tableName);
+            });
+        }
+    }
+
+    /**
+     * Compare two arrays of most active values to identify differences and new entries.
+     *
+     * @param array $previousMostActiveValues Array of associative arrays representing previous most active values.
+     * @param array $mostActiveValues Array of associative arrays representing current most active values.
+     * @param string $column string has name of column.
+     *
+     * @return array Array of associative arrays representing most active values that are either different or newly added.
+     */
+    public function compare(array $previousMostActiveValues, array $mostActiveValues, string $column): array
+    {
+        $differentMostActiveValues = [];
+        $compareDataBerrier = Barrier::make();
+        foreach ($previousMostActiveValues as $previousMostActiveValue) {
+            go(function () use ($previousMostActiveValue, $mostActiveValues, $column, &$differentMostActiveValues, $compareDataBerrier) {
+                foreach ($mostActiveValues as $mostActiveValue) {
+                    if ($previousMostActiveValue['company_id'] === $mostActiveValue['company_id']) {
+                        if ($this->formatValue((float)$previousMostActiveValue[$column]) != $this->formatValue($mostActiveValue[$column])) {
+                            $differentMostActiveValues[] = $mostActiveValue;
+                        }
+                    }
+                }
+            });
+        }
+
+        foreach ($mostActiveValues as $mostActiveValue) {
+            go(function () use ($previousMostActiveValues, $mostActiveValue, &$differentMostActiveValues, $compareDataBerrier) {
+                $found = false;
+                foreach ($previousMostActiveValues as $previousMostActiveValue) {
+                    if ($previousMostActiveValue['company_id'] === $mostActiveValue['company_id']) {
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    $differentMostActiveValues[] = $mostActiveValue;
+                }
+            });
+        }
+
+        Barrier::wait($compareDataBerrier);
+        var_dump('compare data here ');
+        return $differentMostActiveValues;
+    }
+
+    public function makeInsertQuery(string $tableName, array $mostActiveData)
+    {
+        $dbQuery = "";
+        switch ($tableName) {
+            case 'ref_top_gainers':
+                foreach ($mostActiveData as $mostActive) {
+                    // Collect each set of values into the array
+                    $values[] = "('" . $mostActive['calculated_value'] . "', '" . $mostActive['latest_value'] . "', '" . $mostActive['latest_update'] . "', '" . $mostActive['company_id'] . "')";
+                }
+                $dbQuery = "INSERT INTO " . $tableName . " (calculated_value, latest_value, latest_update, company_id)
+                VALUES " . implode(", ", $values);
+                break;
+            default:
+                break;
+        }
+
+        return $dbQuery;
     }
 
 }

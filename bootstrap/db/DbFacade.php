@@ -12,7 +12,7 @@ namespace DB;
 use Swoole\Runtime;
 
 class DbFacade {
-    public function query($db_query, $objDbPool, array $options=null, $transaction=false)
+    public function query($db_query, $objDbPool, array $options=null, $transaction=false, $lock = false, $tableName = '')
     {
 
         ////////////////////////////////////////////////////////////////////////////////
@@ -24,6 +24,13 @@ class DbFacade {
         if ($transaction){
             $postgresClient->query('BEGIN');
         }
+
+         // Apply table-level lock conditionally
+        if ($lock && !empty($tableName)) {
+            $lockQuery = "LOCK TABLE " . $tableName . " IN ACCESS EXCLUSIVE MODE";
+            $postgresClient->query($lockQuery);
+        }
+
         if ($postgresClient instanceof \PDO) {
             $pdo_statement = $postgresClient->prepare($db_query);
 
