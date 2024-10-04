@@ -18,7 +18,7 @@ class SwooleTableTestService
 
         // Create the Swoole Table
         // Types can be (string, int, float)
-        // Size is required in case type is string or int 
+        // Size is required in case type is string or int
         $columns = [
             ['name' => 'email', 'type' => 'string', 'size' => 100],
             ['name' => 'rollno', 'type' => 'int', 'size' => 10],
@@ -39,7 +39,7 @@ class SwooleTableTestService
 
         $table = SwooleTableFactory::getTable('test_table');
         if ($table === false) {
-            dump('table not found');
+            echo 'table not found' . PHP_EOL;
             return;
         }
 
@@ -66,7 +66,7 @@ class SwooleTableTestService
         // $table = SwooleTableFactory::updateTableSize($table, 1024);
 
         // Now we can store more than 32 rows into the table
-        $size = 10000;
+        $size = 100;
         for ($i = 0; $i < $size; $i++) {
             $key = $i;
             $table = SwooleTableFactory::addData($table, $key, ['email' => 'mohsin.' . $i . '@gmail.com', 'rollno' => $i + 1, 'height' => 5.8]);
@@ -74,8 +74,8 @@ class SwooleTableTestService
         }
 
         // We can check the size of the table using $table->getMaxSize()
-        dump($table->count());
-        dump($table->getMaxSize());
+        echo $table->count() . PHP_EOL;
+        echo $table->getMaxSize() . PHP_EOL;
 
         go(function () use ($table, $size) {
             // We can get the record using get() passing the key of record/row
@@ -88,11 +88,11 @@ class SwooleTableTestService
             // To get data of associated key row. e.g below
             // var_dump($table->get('key_one', 'email'));
 
-            dump('---------------------------');
-            dump('For dynamic size update, we verify if the table has store all of our data');
-            dump('---------------------------');
+            echo '---------------------------' . PHP_EOL;
+            echo 'For dynamic size update, we verify if the table has store all of our data' . PHP_EOL;
+            echo '---------------------------' . PHP_EOL;
             for ($i = 0; $i < $size; $i++) {
-                dump($table->get($i, 'rollno'));
+                echo $table->get($i, 'rollno') . PHP_EOL;
             }
         });
     }
