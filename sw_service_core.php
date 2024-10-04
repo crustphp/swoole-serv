@@ -71,6 +71,7 @@ use Swoole\Constant as swConstant;
 //Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
 
 use Bootstrap\ServiceContainer;
+use App\Services\BackgroundProcessService;
 
 class sw_service_core {
 
