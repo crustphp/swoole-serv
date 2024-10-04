@@ -161,7 +161,7 @@ class sw_service_core {
 
         $this->server->on('task', function($server, $task) {
 // Available parameters
-//        dump($this->task->data);
+//        var_dump($this->task->data);
 //        $this->task->dispatch_time;
 //        $this->task->id;
 //        $this->task->worker_id;
@@ -299,11 +299,11 @@ class sw_service_core {
                     $this->dbConnectionPools[$worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey,'postgres', 'swoole', true);
                     $this->dbConnectionPools[$worker_id][$swoole_pg_db_key]->create();
                 } catch (\Throwable $e) {
-                    dump($e->getMessage());
-                    dump($e->getFile());
-                    dump($e->getLine());
-                    dump($e->getCode());
-                    dump($e->getTrace());
+                    echo $e->getMessage() . PHP_EOL;
+                    echo $e->getFile() . PHP_EOL;
+                    echo $e->getLine() . PHP_EOL;
+                    echo $e->getCode() . PHP_EOL;
+                    var_dump($e->getTrace());
 //                    var_dump($e->getFlags() === SWOOLE_EXIT_IN_COROUTINE);
                 }
 
@@ -558,11 +558,11 @@ class sw_service_core {
                                     $fbs = new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
                                     $fbs('Hello World');
                                 } catch (\Throwable $e) {
-                                    dump($e->getMessage());
-                                    dump($e->getFile());
-                                    dump($e->getLine());
-                                    dump($e->getCode());
-                                    dump($e->getTrace());
+                                    echo $e->getMessage() . PHP_EOL;
+                                    echo $e->getFile() . PHP_EOL;
+                                    echo $e->getLine() . PHP_EOL;
+                                    echo $e->getCode() . PHP_EOL;
+                                    var_dump($e->getTrace());
                                 }
 
                                 break;
