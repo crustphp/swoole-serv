@@ -46,11 +46,11 @@ class BackgroundProcessService
                     $this->dbConnectionPools[$worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey, 'postgres', 'swoole', true);
                     $this->dbConnectionPools[$worker_id][$swoole_pg_db_key]->create();
                 } catch (\Throwable $e) {
-                    dump($e->getMessage());
-                    dump($e->getFile());
-                    dump($e->getLine());
-                    dump($e->getCode());
-                    dump($e->getTrace());
+                    echo $e->getMessage() . PHP_EOL;
+                    echo $e->getFile() . PHP_EOL;
+                    echo $e->getLine() . PHP_EOL;
+                    echo $e->getCode() . PHP_EOL;
+                    var_dump($e->getTrace());
                 }
             }
 

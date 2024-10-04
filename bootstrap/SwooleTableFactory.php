@@ -16,11 +16,11 @@ class SwooleTableFactory
 
     /**
      * The function creates a swoole table with specified name, rows, and column definitions
-     * 
+     *
      * @param string tableName The name of the table that you want to create
      * @param int rows The number of rows that the table should have. Default 1024
      * @param array columns_defs Contains definitions for the columns of the table being created
-     * 
+     *
      * @return mixed Returns the table that is created or false if it fails
      */
     public static function createTable(string $tableName, int $rows = 1024, array $columns_defs = [])
@@ -108,11 +108,11 @@ class SwooleTableFactory
     /**
      * The function updates the size of a table by creating a new table with the
      * specified size and transferring the data from the original table to the new one.
-     * 
+     *
      * @param mixed $table Instance/Object of Swoole Table
      * @param int $newSize The new size that you want to set for the table
-     * 
-     * @return mixed 
+     *
+     * @return mixed
      */
     public static function updateTableSize(mixed $table, int $newSize)
     {
@@ -232,14 +232,14 @@ class SwooleTableFactory
 
     /**
      * This function executes migrations for Swoole Tables
-     * 
+     *
      * @return void
      */
     public static function migrate(): void
     {
         // Migrations should be executed only once
         if (self::$migrationsExecuted) {
-            dump('Swoole Table migrations are already executed');
+            echo 'Swoole Table migrations are already executed' . PHP_EOL;
             return;
         }
 
@@ -274,13 +274,13 @@ class SwooleTableFactory
             }
 
             self::$migrationsExecuted = true;
-            dump('Swoole Table migrations migrated successfully');
+            echo 'Swoole Table migrations migrated successfully' . PHP_EOL;
         } catch (\Throwable $e) {
-            dump('Swoole Table Migrations Failed');
-            dump($e->getMessage());
-            dump($e->getCode());
-            dump($e->getFile());
-            dump($e->getLine());
+            echo 'Swoole Table Migrations Failed' . PHP_EOL;
+            echo $e->getMessage() . PHP_EOL;
+            echo $e->getCode() . PHP_EOL;
+            echo $e->getFile() . PHP_EOL;
+            echo $e->getLine() . PHP_EOL;
         }
     }
 }
