@@ -11,21 +11,15 @@ class MostActiveRefinitive
 {
     protected $webSocketServer;
     protected $dbConnectionPools;
-    protected $postgresDbKey;
-    protected $mySqlDbKey;
     protected $muasheratUserToken;
     protected $chunkSize = 100;
 
     const FIELDS = 'CF_VOLUME,NUM_MOVES,PCTCHNG,TRDPRC_1,TURNOVER';
 
-    public function __construct($webSocketServer, $dbConnectionPools, $postgresDbKey = null, $mySqlDbKey = null)
+    public function __construct($webSocketServer, $dbConnectionPools)
     {
-        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-        $swoole_mysql_db_key = config('app_config.swoole_mysql_db_key');
         $this->webSocketServer = $webSocketServer;
         $this->dbConnectionPools = $dbConnectionPools;
-        $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
-        $this->mySqlDbKey = $mySqlDbKey ?? $swoole_mysql_db_key;
 
         // Change this token ('Add Authentication Token here of any staging user')
         $this->muasheratUserToken = $_ENV['STAGING_USER_TOKEN'];
@@ -34,7 +28,7 @@ class MostActiveRefinitive
     public function handle()
     {
         // Database connection pool and channel initialization
-        $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
+        $objDbPool = $this->dbConnectionPools;
 
         $tokenCompanyBerrier = Barrier::make();
         $companiesRics = new Channel(1);

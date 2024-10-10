@@ -70,63 +70,55 @@ class BackgroundProcessService
                 $companyDetail[$row['ric']] = $row;
             }
 
-            // Check data exist into swoole and DB table
-            $selector = new TableSelector('ref_top_gainers');
-            $cacheTopgGinersData = $selector->execute();
-            // Convert the result to an array
-            $cacheTopgGinersData = $cacheTopgGinersData->toArray();
+            // Check data exist into DB table
+            $dbQuery = "SELECT rtg.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
+            c.isin_code, c.created_at, c.arabic_name AS ar_long_name, c.arabic_short_name AS ar_short_name, c.ric
+            FROM ref_top_gainers rtg JOIN companies c ON rtg.company_id = c.id";
+            $dbTopgGinersData = $dbFacade->query($dbQuery, $objDbPool);
 
-            if (count($cacheTopgGinersData) === 0) { // If swoole table is empty
-                var_dump("Swoole ref_top_gainers table is empty");
-                $dbQuery = " SELECT rtg.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol, c.isin_code, c.created_at, c.arabic_name AS ar_long_name,
-                c.arabic_short_name AS ar_short_name, c.ric
-                FROM ref_top_gainers rtg
-                JOIN companies c ON rtg.company_id = c.id";
-                $dbTopgGinersData = $dbFacade->query($dbQuery, $objDbPool);
+            // Check if a record exists
+            if (!empty($dbTopgGinersData)) {
+                // Fetch the first record
+                $latestTopGainer = $dbTopgGinersData[0];
+                $table = SwooleTableFactory::getTable('ref_top_gainers');
 
-                // Check if a record exists
-                if (!empty($dbTopgGinersData)) {
-                    // Fetch the first record
-                    $latestTopGainer = $dbTopgGinersData[0];
-                    $table = SwooleTableFactory::getTable('ref_top_gainers');
+                // Parse the latest_update timestamp
+                $latestUpdate = Carbon::parse($latestTopGainer['latest_update']);
 
-                    // Parse the latest_update timestamp
-                    $latestUpdate = Carbon::parse($latestTopGainer['latest_update']);
-
-                    // Check if the latest update is more than 5 minutes old
-                    if ($latestUpdate->diffInMinutes(Carbon::now()) >= 5) {
-                        // Record is older than 5 minutes, trigger the update process
-                        var_dump("Record is older than 5 minutes. Updating data...");
-                        $this->mostActive($worker_id, $companyDetail, $objDbPool, $dbFacade);
-                    } else {
-                        // Proceed with processing the data since it's within the last 5 minutes
-                        foreach ($dbTopgGinersData as $key => $topGainer) {
-                            $data = [
-                                'calculated_value' => $topGainer['calculated_value'],
-                                'latest_value' => $topGainer['latest_value'],
-                                'latest_update' => $topGainer['latest_update'],
-                                'company_id' => $topGainer['company_id'],
-
-                                'en_long_name' =>  $topGainer['en_long_name'],
-                                'sp_comp_id' =>  $topGainer['sp_comp_id'],
-                                'en_short_name' =>  $topGainer['en_short_name'],
-                                'symbol' =>  $topGainer['symbol'],
-                                'isin_code' =>  $topGainer['isin_code'],
-                                'created_at' =>  $topGainer['created_at'],
-                                'ar_long_name' =>  $topGainer['ar_long_name'],
-                                'ar_short_name' =>  $topGainer['ar_short_name'],
-                                'ric' =>  $topGainer['ric'],
-                            ];
-
-                            var_dump("Record is within the last 5 minutes. Data prepared.");
-                            go(function () use ($key, $data, $table) {
-                                $table->set($key, $data);
-                            });
-                        }
-                    }
-                } else { // If data not exist into database
+                // Check if the latest update is more than 5 minutes old
+                if ($latestUpdate->diffInMinutes(Carbon::now()) >= 5) {
+                    // Record is older than 5 minutes, trigger the update process
+                    var_dump("Record is older than 5 minutes. Updating data...");
                     $this->mostActive($worker_id, $companyDetail, $objDbPool, $dbFacade);
+                } else {
+                    // Proceed with processing the data since it's within the last 5 minutes
+                    foreach ($dbTopgGinersData as $key => $topGainer) {
+                        $data = [
+                            'calculated_value' => $topGainer['calculated_value'],
+                            'latest_value' => $topGainer['latest_value'],
+                            'latest_update' => $topGainer['latest_update'],
+                            'company_id' => $topGainer['company_id'],
+
+                            'en_long_name' =>  $topGainer['en_long_name'],
+                            'sp_comp_id' =>  $topGainer['sp_comp_id'],
+                            'en_short_name' =>  $topGainer['en_short_name'],
+                            'symbol' =>  $topGainer['symbol'],
+                            'isin_code' =>  $topGainer['isin_code'],
+                            'created_at' =>  $topGainer['created_at'],
+                            'ar_long_name' =>  $topGainer['ar_long_name'],
+                            'ar_short_name' =>  $topGainer['ar_short_name'],
+                            'ric' =>  $topGainer['ric'],
+                        ];
+
+                        var_dump("Record is within the last 5 minutes. Data prepared.");
+                        go(function () use ($key, $data, $table) {
+                            $table->set($key, $data);
+                        });
+                    }
                 }
+            } else { // If data not exist into database
+                var_dump("Data not found in DB");
+                $this->mostActive($worker_id, $companyDetail, $objDbPool, $dbFacade);
             }
 
             // Schedule of Most Active Data Fetching
@@ -150,11 +142,10 @@ class BackgroundProcessService
      */
 
     public function mostActive(int $worker_id, array $companyDetail, Object $objDbPool, Object $dbFacade) {
-        include_once __DIR__ . '/MostActiveRefinitive.php';
-        $service = new MostActiveRefinitive($this->server, $this->dbConnectionPools[$worker_id]);
+        $service = new MostActiveRefinitive($this->server, $objDbPool);
         $responses = $service->handle();
         unset($service);
-        $date = Carbon::now()->format('Y-m-d H:i:s');;
+        $date = Carbon::now()->format('Y-m-d H:i:s');
         $topGainers = [];
         $mostActiveValues = [];
         $doneDealCounts = [];
@@ -217,6 +208,11 @@ class BackgroundProcessService
                 ];
                 $frequentlyTradedStocks[] = $data;
             }
+        }
+
+        if(count($topGainers) === 0) {
+            var_dump(' Data not received from Refinitiv Pricing Snapshot API');
+            return;
         }
 
         $this->storeInToDBAndSwooleTable($topGainers, 'ref_top_gainers', 'calculated_value', $objDbPool, $dbFacade); // Top Gainers
