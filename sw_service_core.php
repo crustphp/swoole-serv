@@ -632,6 +632,10 @@ class sw_service_core {
                                 }
 
                                 break;
+                            case 'get-fds':
+                                $message = 'Worker ID: '.$webSocketServer->worker_id . ' | FDs: '.implode(',', $webSocketServer->fds);
+                                $webSocketServer->push($frame->fd, $message);
+                                break;
                             default:
                                 if ($webSocketServer->isEstablished($frame->fd)){
                                     $webSocketServer->push($frame->fd, 'Invalid command given');
