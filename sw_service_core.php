@@ -73,6 +73,9 @@ use Swoole\Constant as swConstant;
 use Bootstrap\ServiceContainer;
 use App\Services\BackgroundProcessService;
 
+use Bootstrap\SwooleTableFactory;
+use Small\SwooleDb\Selector\TableSelector;
+
 class sw_service_core {
 
     protected $swoole_vesion;
@@ -108,7 +111,7 @@ class sw_service_core {
         // Swoole\Coroutine::disableScheduler();
 
        // Migrate the Swoole Table Migrations
-       \Bootstrap\SwooleTableFactory::migrate();
+       SwooleTableFactory::migrate();
 
        if ($this->serverProtocol=='http') {
            // Ref: https://openswoole.com/docs/modules/swoole-server-construct
@@ -318,6 +321,46 @@ class sw_service_core {
             include_once __DIR__ . '/includes/Autoload.php';
             // Get the Service Container Instance
             $this->serviceContainer = ServiceContainer::get_instance();
+
+            // In case of Reload-Code we will restore the fds to workers fds scrope
+            $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
+            $fdsTable = SwooleTableFactory::getTable('fds_table');
+
+            // Swoole DB throws exception if no record exists in provided Key
+            // And when server will be started, initially it will not have any record in "Reload Flag" table
+            // as record is added/overrided in reload-code block
+            try {
+                $isReloading = $reloadFlagTable->get(1, 'reload_flag');
+            }
+            catch(\LogicException $e) {
+                // If there is no record means we set isReloading to false (0)
+                $isReloading = 0;
+            }
+
+            if ($isReloading) {
+
+                // Here we will load the fds into the server
+                $selector = new TableSelector('fds_table');
+                $records = $selector->execute();
+
+                foreach ($records as $record) {
+                    $fd = $record['fds_table']->getValue('fd');
+                    $fdWorkerId = $record['fds_table']->getValue('worker_id');
+                    if ($worker_id == $fdWorkerId) {
+                        // Add the FD to the worker process fds scope
+                        $server->fds[$fd] = $fd;
+
+                        // Remove it from the FDs Table
+                        $fdsTable->del($fd);
+                    }
+                }
+
+                // Set the reload flag to false(0) once all the FDs have been restored for all workers
+                if ($fdsTable->count() == 0) {
+                    // Set the Reload Flag to false(0)
+                    $reloadFlagTable->set(1, ['reload_flag' => 0]);
+                }
+            }
         };
 
         $revokeWorkerResources = function($server, $worker_id) use ($inotify_handle) {
@@ -348,6 +391,24 @@ class sw_service_core {
             if (Swoole\Event::isset($inotify_handle)) {
                 Swoole\Event::del($inotify_handle);
                 unset($inotify_handle);
+            }
+
+            // In-case of Reload Code, backup the FDs in fds_table
+            $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
+            try {
+                $isReloading = $reloadFlagTable->get(1, 'reload_flag');
+            }
+            catch(\LogicException $e) {
+                // Here set the isReloading to zero as default
+                $isReloading = 0;
+            }
+
+            if ($isReloading) {
+                // Here will we store the FDs into the SwooleTable
+                $fdsTable = SwooleTableFactory::getTable('fds_table');
+                foreach($server->fds as $fd) {
+                    $fdsTable->set($fd, ['fd' => $fd, 'worker_id' => $worker_id]);
+                }
             }
         };
 
@@ -473,6 +534,11 @@ class sw_service_core {
 //                        echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
 //                    }
                     echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
+
+                    // Setting the Reload Flag to True in Swoole Table
+                    $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
+                    $reloadFlagTable->set(1, ['reload_flag' => 1]);
+
                     $reloadStatus = $webSocketServer->reload();
                     echo (($reloadStatus === true) ? PHP_EOL.'Code Reloaded'.PHP_EOL  :  PHP_EOL.'Code Not Reloaded').PHP_EOL;
                 } else if ($mainCommand == 'get-server-params') {
@@ -499,7 +565,7 @@ class sw_service_core {
                                 $service->handle();
                                 break;
                             case 'users':
-                                $table = \Bootstrap\SwooleTableFactory::getTable('users');
+                                $table = SwooleTableFactory::getTable('users');
                                 if (isset($frameData['add_data'])) {
                                     // Add Data to Table
                                     $table->set($table->count(), $frameData['add_data']);
