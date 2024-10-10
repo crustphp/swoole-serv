@@ -153,6 +153,7 @@ class BackgroundProcessService
         include_once __DIR__ . '/MostActiveRefinitive.php';
         $service = new MostActiveRefinitive($this->server, $this->dbConnectionPools[$worker_id]);
         $responses = $service->handle();
+        unset($service);
         $date = Carbon::now()->format('Y-m-d H:i:s');;
         $topGainers = [];
         $mostActiveValues = [];
