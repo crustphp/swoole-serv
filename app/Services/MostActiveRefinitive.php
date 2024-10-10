@@ -136,17 +136,19 @@ class MostActiveRefinitive
         // Read Response
         $token_record = $client->body;
 
-        echo PHP_EOL;
-        echo '\n Connection Related Error Code';
-        var_dump($client->errCode);
+        if ($client->statusCode != 200) {
+            echo PHP_EOL;
+            echo '\n Connection Related Error Code';
+            var_dump($client->errCode);
 
-        echo PHP_EOL;
-        echo '\nConnection Related ErrorMessage';
-        var_dump($client->errMsg);
+            echo PHP_EOL;
+            echo '\nConnection Related ErrorMessage';
+            var_dump($client->errMsg);
 
-        echo PHP_EOL;
-        echo '\n Response Status Code:';
-        var_dump($client->statusCode);
+            echo PHP_EOL;
+            echo '\n Response Status Code:';
+            var_dump($client->statusCode);
+        }
 
         $client->close();
 
@@ -216,20 +218,26 @@ class MostActiveRefinitive
         // Read Response
         $response = $client->body;
 
-        echo PHP_EOL;
-        echo '\n Connection Related Error Code';
-        var_dump($client->errCode);
+        if ($client->statusCode != 200) {
+            echo PHP_EOL;
+            echo '\n Connection Related Error Code';
+            var_dump($client->errCode);
 
-        echo PHP_EOL;
-        echo '\nConnection Related ErrorMessage';
-        var_dump($client->errMsg);
+            echo PHP_EOL;
+            echo '\nConnection Related ErrorMessage';
+            var_dump($client->errMsg);
 
-        echo PHP_EOL;
-        echo '\n Response Status Code:';
-        var_dump($client->statusCode);
+            echo PHP_EOL;
+            echo '\n Response Status Code:';
+            var_dump($client->statusCode);
+        }
 
         $client->close();
 
         return $response;
+    }
+
+    public function __destruct() {
+
     }
 }
