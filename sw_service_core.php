@@ -206,7 +206,7 @@ class sw_service_core {
 
         // Background processes
         include_once __DIR__ . '/includes/Autoload.php';
-        $backgroundProcessService = new  BackgroundProcessService($this->server);
+        $backgroundProcessService = new BackgroundProcessService($this->server);
         $backgroundProcessService->handle();
     }
 
@@ -264,16 +264,22 @@ class sw_service_core {
     }
 
     protected function bindWorkerEvents() {
-        $inotify_handle = inotify_init();
-        $init = function ($server, $worker_id) use ($inotify_handle) {
+       global $inotify_handle;
+        $init = function ($server, $worker_id) {
 
             if (function_exists( 'opcache_get_status' ) && is_array(opcache_get_status())) {
                 opcache_reset();
             }
 
+            global $inotify_handle;
+            $inotify_handle = inotify_init();
+            $watch_descriptor = inotify_add_watch($inotify_handle, __DIR__, IN_MODIFY | IN_CLOSE_WRITE);
+
             // Add $inotify_handle to Swoole's EventLoop: To be Tested Further
-            Swoole\Event::add($inotify_handle, function () use ($inotify_handle){
-                $var = inotify_read($inotify_handle); // Read the changed file after a file change.
+            Swoole\Event::add($inotify_handle, function () use ($server, $inotify_handle){
+                if (inotify_read($inotify_handle)) {
+                    $server->reload();
+                } // Read the changed file after a file change.
             });
             Swoole\Event::set($inotify_handle, null, null, SWOOLE_EVENT_READ);
 
@@ -388,7 +394,7 @@ class sw_service_core {
             }
         };
 
-        $revokeWorkerResources = function($server, $worker_id) use ($inotify_handle) {
+        $revokeWorkerResources = function($server, $worker_id) {
             $app_type_database_driven = config('app_config.app_type_database_driven');
             if ($app_type_database_driven) {
                 if (isset($this->dbConnectionPools[$worker_id])) {
@@ -413,6 +419,7 @@ class sw_service_core {
                 }
             }
 
+            global $inotify_handle;
             if (Swoole\Event::isset($inotify_handle)) {
                 Swoole\Event::del($inotify_handle);
                 unset($inotify_handle);
