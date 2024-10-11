@@ -76,6 +76,11 @@ use App\Services\BackgroundProcessService;
 use Bootstrap\SwooleTableFactory;
 use Small\SwooleDb\Selector\TableSelector;
 
+use Small\SwooleDb\Selector\Enum\ConditionElementType;
+use Small\SwooleDb\Selector\Enum\ConditionOperator;
+use Small\SwooleDb\Selector\Bean\ConditionElement;
+use Small\SwooleDb\Selector\Bean\Condition;
+
 class sw_service_core {
 
     protected $swoole_vesion;
@@ -331,34 +336,54 @@ class sw_service_core {
             // as record is added/overrided in reload-code block
             try {
                 $isReloading = $reloadFlagTable->get(1, 'reload_flag');
-            }
-            catch(\LogicException $e) {
-                // If there is no record means we set isReloading to false (0)
-                $isReloading = 0;
-            }
 
-            if ($isReloading) {
+                if ($isReloading) {
 
-                // Here we will load the fds into the server
-                $selector = new TableSelector('fds_table');
-                $records = $selector->execute();
+                    $selector = new TableSelector('fds_table');
+                    // Select the FDS of current worker instead of all FDs if total FDs are more than Threshold
+                    // Otherwise select all the FDs
+                    if($fdsTable->count() > config('app_config.fds_reload_threshold')) {
+                        // Fetch the FDs for specific worker
+                        $selector->where()
+                            ->firstCondition(new Condition(
+                                new ConditionElement(ConditionElementType::var, 'worker_id', 'fds_table'),
+                                ConditionOperator::equal,
+                                new ConditionElement(ConditionElementType::const, $worker_id)
+                            ));
+                    }
 
-                foreach ($records as $record) {
-                    $fd = $record['fds_table']->getValue('fd');
-                    $fdWorkerId = $record['fds_table']->getValue('worker_id');
-                    if ($worker_id == $fdWorkerId) {
-                        // Add the FD to the worker process fds scope
-                        $server->fds[$fd] = $fd;
+                    $records = $selector->execute();
 
-                        // Remove it from the FDs Table
-                        $fdsTable->del($fd);
+                    // Here we will load the fds into the server
+                    foreach ($records as $record) {
+                        $fd = $record['fds_table']->getValue('fd');
+                        $fdWorkerId = $record['fds_table']->getValue('worker_id');
+
+                        if ($worker_id == $fdWorkerId) {
+                            // Add the FD to the worker process fds scope
+                            $server->fds[$fd] = $fd;
+
+                            // Remove it from the FDs Table
+                            $fdsTable->del($fd);
+                        }
+                    }
+
+                    // Set the reload flag to false(0) once all the FDs have been restored for all workers
+                    if ($fdsTable->count() == 0) {
+                        // Set the Reload Flag to false(0)
+                        $reloadFlagTable->set(1, ['reload_flag' => 0]);
                     }
                 }
-
-                // Set the reload flag to false(0) once all the FDs have been restored for all workers
-                if ($fdsTable->count() == 0) {
-                    // Set the Reload Flag to false(0)
-                    $reloadFlagTable->set(1, ['reload_flag' => 0]);
+            }
+            catch(\Throwable $e) {
+                // If there is no record at given key, Small DB throws Logic Exception, so here
+                // We Log the exception if its not LogicException
+                if (!($e instanceof \LogicException)) {
+                    echo $e->getMessage() . PHP_EOL;
+                    echo $e->getFile() . PHP_EOL;
+                    echo $e->getLine() . PHP_EOL;
+                    echo $e->getCode() . PHP_EOL;
+                    var_dump($e->getTrace());
                 }
             }
         };
@@ -397,17 +422,24 @@ class sw_service_core {
             $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
             try {
                 $isReloading = $reloadFlagTable->get(1, 'reload_flag');
-            }
-            catch(\LogicException $e) {
-                // Here set the isReloading to zero as default
-                $isReloading = 0;
-            }
 
-            if ($isReloading) {
-                // Here will we store the FDs into the SwooleTable
-                $fdsTable = SwooleTableFactory::getTable('fds_table');
-                foreach($server->fds as $fd) {
-                    $fdsTable->set($fd, ['fd' => $fd, 'worker_id' => $worker_id]);
+                if ($isReloading) {
+                    // Here will we store the FDs into the SwooleTable
+                    $fdsTable = SwooleTableFactory::getTable('fds_table');
+                    foreach($server->fds as $fd) {
+                        $fdsTable->set($fd, ['fd' => $fd, 'worker_id' => $worker_id]);
+                    }
+                }
+            }
+            catch(\Throwable $e) {
+                // If there is no record at given key, Small DB throws Logic Exception, so here
+                // We Log the exception if its not LogicException
+                if (!($e instanceof \LogicException)) {
+                    echo $e->getMessage() . PHP_EOL;
+                    echo $e->getFile() . PHP_EOL;
+                    echo $e->getLine() . PHP_EOL;
+                    echo $e->getCode() . PHP_EOL;
+                    var_dump($e->getTrace());
                 }
             }
         };
