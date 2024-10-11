@@ -6,6 +6,33 @@ if (!function_exists('dump')){
     }
 }
 
+function sw_exit($server=null, $var=null) {
+    if (!is_null($var)) {
+        if (is_array($var)) {
+            print_r($var);
+        } else {
+            echo PHP_EOL.'$var'.PHP_EOL;
+        }
+    }
+
+    if (is_null($server)) {
+        // Case: For coroutine\run (when swoole is not running a Server), but not tested
+        try {
+            \Swoole\Coroutine::sleep(.001);
+            exit(911);
+        } catch (\Swoole\ExitException $e) {
+            var_dump($e->getMessage());
+            var_dump($e->getStatus() === 1);
+            var_dump($e->getFlags() === SWOOLE_EXIT_IN_COROUTINE);
+        }
+    } else {
+        // Tested: When Swoole is running a server
+        $server->shutdown();
+        sleep(3);
+        exit(1);
+    }
+}
+
 function makePoolKey($id, $dbEngine) {
     $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
     $swoole_mysql_db_key = config('app_config.swoole_mysql_db_key');
