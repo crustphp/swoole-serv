@@ -8,7 +8,8 @@
         "small/swoole-db": "^1.2",
         "phpseclib/phpseclib": "^3.0",
         "peppeocchi/php-cron-scheduler": "^4.0",
-        "nesbot/carbon": "^3.8"
+        "nesbot/carbon": "^3.8",
+        "robmorgan/phinx": "^0.16.5"
     },
     "require-dev": {
         "swoole/ide-helper": "~5.0.0"
