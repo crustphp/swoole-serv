@@ -264,24 +264,32 @@ class sw_service_core {
     }
 
     protected function bindWorkerEvents() {
-       global $inotify_handle;
         $init = function ($server, $worker_id) {
 
             if (function_exists( 'opcache_get_status' ) && is_array(opcache_get_status())) {
                 opcache_reset();
             }
 
+            ///////////////////////////////////////////////////////////
+            /////////////Hot Code Reload: Code Starts Here/////////////
+            ///////////////////////////////////////////////////////////
             global $inotify_handle;
-            $inotify_handle = inotify_init();
-            $watch_descriptor = inotify_add_watch($inotify_handle, __DIR__, IN_MODIFY | IN_CLOSE_WRITE);
+            global $watch_descriptor;
+            if ($worker_id == 0 ) {
+                $inotify_handle = inotify_init();
+                $watch_descriptor = inotify_add_watch($inotify_handle, __DIR__, IN_CLOSE_WRITE); // IN_MODIFY  is also possible
+                // Add $inotify_handle to Swoole's EventLoop: To be Tested Further
+                Swoole\Event::add($inotify_handle, function () use ($server, $inotify_handle){
+                    if (inotify_read($inotify_handle)) {
+                        $server->reload();
+                    } // Read the changed file after a file change.
+                });
+//            Swoole\Event::set($inotify_handle, null, null, SWOOLE_EVENT_READ);
+            }
+            /////////////////////////////////////////////////////////
+            /////////////Hot Code Reload: Code Ends Here/////////////
+            /////////////////////////////////////////////////////////
 
-            // Add $inotify_handle to Swoole's EventLoop: To be Tested Further
-            Swoole\Event::add($inotify_handle, function () use ($server, $inotify_handle){
-                if (inotify_read($inotify_handle)) {
-                    $server->reload();
-                } // Read the changed file after a file change.
-            });
-            Swoole\Event::set($inotify_handle, null, null, SWOOLE_EVENT_READ);
 
             global $argv;
             $app_type_database_driven = config('app_config.app_type_database_driven');
@@ -419,10 +427,17 @@ class sw_service_core {
                 }
             }
 
-            global $inotify_handle;
-            if (Swoole\Event::isset($inotify_handle)) {
-                Swoole\Event::del($inotify_handle);
-                unset($inotify_handle);
+            ////////////////////////////////////////////////////
+            ///// Code to Revoke Inotify / File Change Event////
+            ////////////////////////////////////////////////////
+            if ($worker_id == 0) {
+                global $inotify_handle;
+                global $watch_descriptor;
+                if (Swoole\Event::isset($inotify_handle)) {
+                    Swoole\Event::del($inotify_handle);
+                    inotify_rm_watch($inotify_handle, $watch_descriptor);
+                    unset($inotify_handle);
+                }
             }
 
             // In-case of Reload Code, backup the FDs in fds_table
