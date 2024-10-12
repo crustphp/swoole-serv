@@ -273,14 +273,28 @@ class sw_service_core {
             ///////////////////////////////////////////////////////////
             /////////////Hot Code Reload: Code Starts Here/////////////
             ///////////////////////////////////////////////////////////
-            global $inotify_handle;
-            global $watch_descriptor;
+            global $inotify_handle1;
+            global $inotify_handle2;
+            global $watch_descriptor1;
+            global $watch_descriptor2;
             if ($worker_id == 0 ) {
-                $inotify_handle = inotify_init();
-                $watch_descriptor = inotify_add_watch($inotify_handle, __DIR__, IN_CLOSE_WRITE); // IN_MODIFY  is also possible
+                $inotify_handle1 = inotify_init();
+                $inotify_handle2 = inotify_init();
+                $watch_descriptor1 = inotify_add_watch($inotify_handle1, __DIR__,
+                    IN_CREATE
+                ); // IN_MODIFY  is also possible
+                $watch_descriptor2 = inotify_add_watch($inotify_handle2, __DIR__,
+                    IN_DELETE
+                ); // IN_MODIFY  is also possible
                 // Add $inotify_handle to Swoole's EventLoop: To be Tested Further
-                Swoole\Event::add($inotify_handle, function () use ($server, $inotify_handle){
-                    if (inotify_read($inotify_handle)) {
+                Swoole\Event::add($inotify_handle1, function () use ($server, $inotify_handle1){
+                    if (inotify_read($inotify_handle1)) {
+                        $server->reload();
+                    } // Read the changed file after a file change.
+                });
+
+                Swoole\Event::add($inotify_handle2, function () use ($server, $inotify_handle2){
+                    if (inotify_read($inotify_handle2)) {
                         $server->reload();
                     } // Read the changed file after a file change.
                 });
@@ -431,12 +445,20 @@ class sw_service_core {
             ///// Code to Revoke Inotify / File Change Event////
             ////////////////////////////////////////////////////
             if ($worker_id == 0) {
-                global $inotify_handle;
-                global $watch_descriptor;
-                if (Swoole\Event::isset($inotify_handle)) {
-                    Swoole\Event::del($inotify_handle);
-                    inotify_rm_watch($inotify_handle, $watch_descriptor);
-                    unset($inotify_handle);
+                global $inotify_handle1;
+                global $inotify_handle2;
+                global $watch_descriptor1;
+                global $watch_descriptor2;
+                if (Swoole\Event::isset($inotify_handle1)) {
+                    inotify_rm_watch($inotify_handle1, $watch_descriptor1);
+                    Swoole\Event::del($inotify_handle1);
+                    unset($inotify_handle1);
+                }
+
+                if (Swoole\Event::isset($inotify_handle2)) {
+                    inotify_rm_watch($inotify_handle2, $watch_descriptor2);
+                    Swoole\Event::del($inotify_handle2);
+                    unset($inotify_handle1);
                 }
             }
 
