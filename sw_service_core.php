@@ -273,54 +273,41 @@ class sw_service_core {
             ///////////////////////////////////////////////////////////
             /////////////Hot Code Reload: Code Starts Here/////////////
             ///////////////////////////////////////////////////////////
-            global $inotify_handle1;
-            global $watch_descriptor1;
+            global $inotify_handles;
+            global $watch_descriptors;
+            $inotify_handles = [];
+            $watch_descriptors = [];
             if ($worker_id == 0 ) {
-                $dirs = array_filter(glob('*'), 'is_dir');
-                sort($dirs);
-                print_r($dirs);
-                $inotify_handle1 = inotify_init();
-                $watch_descriptor1 = inotify_add_watch($inotify_handle1, __DIR__,
-                    IN_DELETE | IN_CREATE | IN_ATTRIB
-                ); // IN_MODIFY  is also possible
+                $dirs = glob(__DIR__ . '/*' , GLOB_ONLYDIR);
+                foreach ($dirs as $dir) {
+                    $inotify_handles[] = inotify_init();
+                    $watch_descriptors[] = inotify_add_watch($inotify_handles[count($inotify_handles)-1], $dir,
+                        IN_DELETE | IN_ATTRIB
+                    );
 
-                Swoole\Event::add($inotify_handle1, function () use ($server, $inotify_handle1){
-                    $events = inotify_read($inotify_handle1);
+                    Swoole\Event::add($inotify_handles[count($inotify_handles) -1], function () use ($server, $inotify_handles){
+                        $events = inotify_read($inotify_handles[count($inotify_handles)-1]);
 
-                    foreach ($events as $event=>$evdetails) {
-                        // React on the event type
-                        if (!empty($evdetails['name'])) {
-                            $file_name_with_ext = $evdetails['name'];
-                            $file_name_arr = explode('.', $file_name_with_ext);
-                            $file_name = $file_name_arr[0] ?? '';
-                            $file_extension = $file_name_arr[1] ?? '';
-                            if (in_array($file_name, ['sw_service_core'])) {
-                                if (($evdetails['mask'] & IN_CREATE) || ($evdetails['mask'] & IN_ATTRIB) || ($evdetails['mask'] & IN_DELETE)) {
-                                    // Reloads the codes included / autoloaded inside the callbacks of only those events ..
-                                    // which are scoped to Event Worker
-                                    $server->reload();
-                                    break;
+                        foreach ($events as $event=>$evdetails) {
+                            // React on the event type
+                            if (!empty($evdetails['name'])) {
+                                $file_name_with_ext = $evdetails['name'];
+                                $file_name_arr = explode('.', $file_name_with_ext);
+                                $file_name = $file_name_arr[0] ?? '';
+                                $file_extension = $file_name_arr[1] ?? '';
+                                if (in_array($file_name, ['sw_service_core']) || in_array($file_extension, ['php'])) {
+                                    if (($evdetails['mask'] & IN_CREATE) || ($evdetails['mask'] & IN_ATTRIB) || ($evdetails['mask'] & IN_DELETE)) {
+                                        // Reloads the codes included / autoloaded inside the callbacks of only those events ..
+                                        // which are scoped to Event Worker
+                                        echo PHP_EOL.'Reloading Event Workers and Task Workers'.PHP_EOL;
+                                        $server->reload();
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
-                });
-
-//            global $inotify_handle2;
-//            global $watch_descriptor2;
-//            $inotify_handle2 = inotify_init();
-//            $watch_descriptor2 = inotify_add_watch($inotify_handle2, __DIR__,
-//                IN_DELETE
-//            ); // IN_MODIFY  is also possible
-              // Add $inotify_handle to Swoole's EventLoop: To be Tested Further
-
-//                Swoole\Event::add($inotify_handle2, function () use ($server, $inotify_handle2){
-//                    if (inotify_read($inotify_handle2)) {
-//                        $server->reload();
-//                    } // Read the changed file after a file change.
-//                });
-
-//            Swoole\Event::set($inotify_handle, null, null, SWOOLE_EVENT_READ);
+                    });
+                }
             }
             /////////////////////////////////////////////////////////
             /////////////Hot Code Reload: Code Ends Here/////////////
@@ -467,20 +454,22 @@ class sw_service_core {
             ///// Code to Revoke Inotify / File Change Event////
             ////////////////////////////////////////////////////
             if ($worker_id == 0) {
-                global $inotify_handle1;
-                global $watch_descriptor1;
-                if (Swoole\Event::isset($inotify_handle1)) {
-                    inotify_rm_watch($inotify_handle1, $watch_descriptor1);
-                    Swoole\Event::del($inotify_handle1);
-                    unset($inotify_handle1);
+                global $inotify_handles;
+                global $watch_descriptors;
+                foreach ($inotify_handles as $key => $inotify_handle) {
+                    if (Swoole\Event::isset($inotify_handle)) {
+                        inotify_rm_watch($inotify_handle, $watch_descriptors[$key]);
+                        Swoole\Event::del($inotify_handle);
+                    }
                 }
+                unset($inotify_handles);
 
 //                global $inotify_handle2;
 //                global $watch_descriptor2;
 //                if (Swoole\Event::isset($inotify_handle2)) {
 //                    inotify_rm_watch($inotify_handle2, $watch_descriptor2);
 //                    Swoole\Event::del($inotify_handle2);
-//                    unset($inotify_handle1);
+//                    unset($inotify_handle);
 //                }
             }
 
