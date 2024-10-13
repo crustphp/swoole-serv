@@ -205,9 +205,9 @@ class sw_service_core {
         $this->server->fds = [];
 
         // Background processes
-        include_once __DIR__ . '/includes/Autoload.php';
-        $backgroundProcessService = new BackgroundProcessService($this->server);
-        $backgroundProcessService->handle();
+//        include_once __DIR__ . '/includes/Autoload.php';
+//        $backgroundProcessService = new BackgroundProcessService($this->server);
+//        $backgroundProcessService->handle();
     }
 
     protected function bindServerEvents() {
@@ -276,9 +276,12 @@ class sw_service_core {
             global $inotify_handle1;
             global $watch_descriptor1;
             if ($worker_id == 0 ) {
+                $dirs = array_filter(glob('*'), 'is_dir');
+                sort($dirs);
+                print_r($dirs);
                 $inotify_handle1 = inotify_init();
                 $watch_descriptor1 = inotify_add_watch($inotify_handle1, __DIR__,
-                    IN_DELETE | IN_ATTRIB
+                    IN_DELETE | IN_CREATE | IN_ATTRIB
                 ); // IN_MODIFY  is also possible
 
                 Swoole\Event::add($inotify_handle1, function () use ($server, $inotify_handle1){
@@ -287,10 +290,14 @@ class sw_service_core {
                     foreach ($events as $event=>$evdetails) {
                         // React on the event type
                         if (!empty($evdetails['name'])) {
-                            $file_name = $evdetails['name'];
-                            $file_extension = explode('.', $file_name)[1] ?? '';
-                            if (in_array($file_extension, ['php'])) {
-                                if (($evdetails['mask'] & IN_ATTRIB) || ($evdetails['mask'] & IN_DELETE)) {
+                            $file_name_with_ext = $evdetails['name'];
+                            $file_name_arr = explode('.', $file_name_with_ext);
+                            $file_name = $file_name_arr[0] ?? '';
+                            $file_extension = $file_name_arr[1] ?? '';
+                            if (in_array($file_name, ['sw_service_core'])) {
+                                if (($evdetails['mask'] & IN_CREATE) || ($evdetails['mask'] & IN_ATTRIB) || ($evdetails['mask'] & IN_DELETE)) {
+                                    // Reloads the codes included / autoloaded inside the callbacks of only those events ..
+                                    // which are scoped to Event Worker
                                     $server->reload();
                                     break;
                                 }
