@@ -174,7 +174,7 @@ class sw_service_core {
 //        $this->task->id;
 //        $this->task->worker_id;
 //        $this->task->flags;
-            include_once __DIR__ . '/Controllers/LongTasks.php';
+            include_once __DIR__ . '/controllers/LongTasks.php';
             $longTask = new LongTasks($server, $task);
             $result = $longTask->handle();
             $task->finish($result);
@@ -543,7 +543,7 @@ class sw_service_core {
 
     protected function bindHttpRequestEvent() {
         $this->server->on('request', function (Swoole\Http\Request $request, Swoole\Http\Response $response) {
-            include_once __DIR__ . '/Controllers/HttpRequestController.php';
+            include_once __DIR__ . '/controllers/HttpRequestController.php';
             $sw_http_controller = new HttpRequestController($this->server, $request, $this->dbConnectionPools[$this->server->worker_id]);
             $responseData = $sw_http_controller->handle();
             $response->header('Content-Type', 'application/json');
@@ -742,7 +742,7 @@ class sw_service_core {
                     }
                     else {
                         // Default Code
-                        include_once __DIR__ . '/Controllers/WebSocketController.php';
+                        include_once __DIR__ . '/controllers/WebSocketController.php';
 
                         $app_type_database_driven = config('app_config.app_type_database_driven');
                         if ($app_type_database_driven) {
