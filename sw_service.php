@@ -117,6 +117,7 @@
     function shutdown_swoole_server() {
         if (file_exists('server.pid')){
             shell_exec('cd '.__DIR__.' && kill -15 `cat server.pid` 2>&1 1> /dev/null&'); //&& sudo rm -f server.pid
+            // kill -9 $(lsof -t -i:9501) OR kill -15 $(lsof -t -i:9501)
         } else {
             echo PHP_EOL.'server.pid file not found. Looks like server is not running already.'.PHP_EOL;
         }
