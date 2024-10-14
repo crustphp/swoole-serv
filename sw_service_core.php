@@ -282,26 +282,33 @@ class sw_service_core {
                 foreach ($dirs as $dir) {
                     $inotify_handles[] = inotify_init();
                     $watch_descriptors[] = inotify_add_watch($inotify_handles[count($inotify_handles)-1], $dir,
-                        IN_DELETE | IN_ATTRIB
+                        IN_DELETE | IN_CREATE | IN_MODIFY
                     );
 
                     Swoole\Event::add($inotify_handles[count($inotify_handles) -1], function () use ($server, $inotify_handles){
-                        $events = inotify_read($inotify_handles[count($inotify_handles)-1]);
 
-                        foreach ($events as $event=>$evdetails) {
-                            // React on the event type
-                            if (!empty($evdetails['name'])) {
-                                $file_name_with_ext = $evdetails['name'];
-                                $file_name_arr = explode('.', $file_name_with_ext);
-                                $file_name = $file_name_arr[0] ?? '';
-                                $file_extension = $file_name_arr[1] ?? '';
-                                if (in_array($file_name, ['sw_service_core']) || in_array($file_extension, ['php'])) {
-                                    if (($evdetails['mask'] & IN_CREATE) || ($evdetails['mask'] & IN_ATTRIB) || ($evdetails['mask'] & IN_DELETE)) {
-                                        // Reloads the codes included / autoloaded inside the callbacks of only those events ..
-                                        // which are scoped to Event Worker
-                                        echo PHP_EOL.'Reloading Event Workers and Task Workers'.PHP_EOL;
-                                        $server->reload();
-                                        break;
+                        $events = inotify_read($inotify_handles[count($inotify_handles)-1]);
+                        if ($events) {
+                            echo PHP_EOL.count($events).PHP_EOL;
+                            print_r($events);
+
+                            foreach ($events as $event=>$evdetails) {
+                                // React on the event type
+                                if (!empty($evdetails['name'])) {
+                                    $file_name_with_ext = $evdetails['name'];
+                                    $file_name_arr = explode('.', $file_name_with_ext);
+                                    $file_name = $file_name_arr[0] ?? '';
+                                    $file_extension = $file_name_arr[1] ?? '';
+
+                                    if (in_array($file_name, ['sw_service_core']) || in_array($file_extension, ['php'])) {
+
+                                        if (($evdetails['mask'] & IN_CREATE) || ($evdetails['mask'] & IN_MODIFY) || ($evdetails['mask'] & IN_DELETE)) {
+                                            // Reloads the codes included / autoloaded inside the callbacks of only those events ..
+                                            // which are scoped to Event Worker
+                                            echo PHP_EOL.'Reloading Event Workers and Task Workers'.PHP_EOL;
+                                                $server->reload();
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -456,21 +463,15 @@ class sw_service_core {
             if ($worker_id == 0) {
                 global $inotify_handles;
                 global $watch_descriptors;
-                foreach ($inotify_handles as $key => $inotify_handle) {
-                    if (Swoole\Event::isset($inotify_handle)) {
-                        inotify_rm_watch($inotify_handle, $watch_descriptors[$key]);
-                        Swoole\Event::del($inotify_handle);
+                if (isset($inotify_handles)) {
+                    foreach ($inotify_handles as $index => $inotify_handle) {
+                        if (Swoole\Event::isset($inotify_handle)) {
+                            @inotify_rm_watch($inotify_handle, $watch_descriptors[$index]);
+                            Swoole\Event::del($inotify_handle);
+                        }
                     }
+                    unset($inotify_handles);
                 }
-                unset($inotify_handles);
-
-//                global $inotify_handle2;
-//                global $watch_descriptor2;
-//                if (Swoole\Event::isset($inotify_handle2)) {
-//                    inotify_rm_watch($inotify_handle2, $watch_descriptor2);
-//                    Swoole\Event::del($inotify_handle2);
-//                    unset($inotify_handle);
-//                }
             }
 
             // In-case of Reload Code, backup the FDs in fds_table
