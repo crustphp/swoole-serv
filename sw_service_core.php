@@ -565,6 +565,20 @@ class sw_service_core {
 //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
 //                $server->push($request->fd, json_encode(["hello", time()]));
 //            });
+
+            // Push the Top Gainers Table Data to FD
+            $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
+
+            // Here we will check if the data is encoded without any error
+            $topGainersJson = json_encode($topGainersData);
+            if ($topGainersJson == false) {
+                echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
+            } else {
+                // Push Data to FD
+                if ($websocketserver->isEstablished($request->fd)) {
+                    $websocketserver->push($request->fd, $topGainersJson);
+                }
+            }
         });
 
 

@@ -16,11 +16,11 @@ class SwooleTableFactory
 
     /**
      * The function creates a swoole table with specified name, rows, and column definitions
-     *
+     * 
      * @param string tableName The name of the table that you want to create
      * @param int rows The number of rows that the table should have. Default 1024
      * @param array columns_defs Contains definitions for the columns of the table being created
-     *
+     * 
      * @return mixed Returns the table that is created or false if it fails
      */
     public static function createTable(string $tableName, int $rows = 1024, array $columns_defs = [])
@@ -108,11 +108,11 @@ class SwooleTableFactory
     /**
      * The function updates the size of a table by creating a new table with the
      * specified size and transferring the data from the original table to the new one.
-     *
+     * 
      * @param mixed $table Instance/Object of Swoole Table
      * @param int $newSize The new size that you want to set for the table
-     *
-     * @return mixed
+     * 
+     * @return mixed 
      */
     public static function updateTableSize(mixed $table, int $newSize)
     {
@@ -232,7 +232,7 @@ class SwooleTableFactory
 
     /**
      * This function executes migrations for Swoole Tables
-     *
+     * 
      * @return void
      */
     public static function migrate(): void
@@ -281,6 +281,82 @@ class SwooleTableFactory
             echo $e->getCode() . PHP_EOL;
             echo $e->getFile() . PHP_EOL;
             echo $e->getLine() . PHP_EOL;
+        }
+    }
+
+    /**
+     * Get the data of the provided table
+     *
+     * @param  string $tableName Name of the table
+     * @param  bool $withNulls Optional: If set to true it will also include columns having ::null
+     * @param  mixed $encodeValues Optiona: Array of columns and target encoding if you want to encode the column values
+     * @return mixed
+     */
+    public static function getTableData(string $tableName, bool $withNulls = false, array $encodeValues = []): mixed
+    {
+        try {
+            // Trim the $tableName to remove whitespaces
+            $tableName = trim($tableName);
+
+            // Validate if Table name is given
+            if (empty($tableName)) {
+                throw new \RuntimeException('Table name cannot be empty or null');
+            }
+
+            // Check if the encoding values are correct
+            if (count($encodeValues)) {
+                foreach ($encodeValues as $colName => $encoding) {
+                    if (empty(trim($encoding))) {
+                        throw new \RuntimeException('Encoding missing for column (' . $colName . ') for Table (' . $tableName . ')');
+                    }
+                }
+            }
+
+
+            // We fetch all the Records from the Table
+            $tableSelector = new TableSelector($tableName);
+            $tableRecords = $tableSelector->execute();
+
+            // We get the columns names of table
+            $smallDbTable = SwooleTableFactory::getTable($tableName);
+            $tableColumns = SwooleTableFactory::getColumnsStructure($smallDbTable);
+            $tableColumns = array_column($tableColumns, 'name');
+
+            // Variable to store the final data to be returned
+            $finalData = [];
+
+            // Loop through table Records
+            foreach ($tableRecords as $record) {
+                // Fetch the data row collection from table and convert it to array
+                $dataArray = $record[$tableName]->getData()->toArray();
+
+                // Unset the extra columns containing ::null 
+                if (!$withNulls) {
+                    foreach ($tableColumns as $colName) {
+                        unset($dataArray[$colName . '::null']);
+                    }
+                }
+
+                // Convert the encoding of Columns
+                if (count($encodeValues)) {
+                    foreach ($encodeValues as $colName => $encoding) {
+                        if (isset($dataArray[$colName]) && !mb_check_encoding($dataArray[$colName], $encoding)) {
+                            $dataArray[$colName] = mb_convert_encoding($dataArray[$colName], $encoding, 'auto');
+                        }
+                    }
+                }
+
+                $finalData[] = $dataArray;
+            }
+
+            return $finalData;
+        } catch (\Throwable $e) {
+            echo 'Failed to get data from Swoole Table: ' . $tableName . PHP_EOL;
+            echo $e->getMessage() . PHP_EOL;
+            echo $e->getCode() . PHP_EOL;
+            echo $e->getFile() . PHP_EOL;
+            echo $e->getLine() . PHP_EOL;
+            throw $e;
         }
     }
 }
