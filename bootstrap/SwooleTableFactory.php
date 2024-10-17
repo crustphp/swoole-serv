@@ -16,11 +16,11 @@ class SwooleTableFactory
 
     /**
      * The function creates a swoole table with specified name, rows, and column definitions
-     * 
+     *
      * @param string tableName The name of the table that you want to create
      * @param int rows The number of rows that the table should have. Default 1024
      * @param array columns_defs Contains definitions for the columns of the table being created
-     * 
+     *
      * @return mixed Returns the table that is created or false if it fails
      */
     public static function createTable(string $tableName, int $rows = 1024, array $columns_defs = [])
@@ -108,11 +108,11 @@ class SwooleTableFactory
     /**
      * The function updates the size of a table by creating a new table with the
      * specified size and transferring the data from the original table to the new one.
-     * 
+     *
      * @param mixed $table Instance/Object of Swoole Table
      * @param int $newSize The new size that you want to set for the table
-     * 
-     * @return mixed 
+     *
+     * @return mixed
      */
     public static function updateTableSize(mixed $table, int $newSize)
     {
@@ -232,7 +232,7 @@ class SwooleTableFactory
 
     /**
      * This function executes migrations for Swoole Tables
-     * 
+     *
      * @return void
      */
     public static function migrate(): void
@@ -292,7 +292,7 @@ class SwooleTableFactory
      * @param  mixed $encodeValues Optiona: Array of columns and target encoding if you want to encode the column values
      * @return mixed
      */
-    public static function getTableData(string $tableName, bool $withNulls = false, array $encodeValues = []): mixed
+    public static function getTableData(string $tableName, bool $withMetaData = false, array $encodeValues = []): mixed
     {
         try {
             // Trim the $tableName to remove whitespaces
@@ -330,10 +330,11 @@ class SwooleTableFactory
                 // Fetch the data row collection from table and convert it to array
                 $dataArray = $record[$tableName]->getData()->toArray();
 
-                // Unset the extra columns containing ::null 
-                if (!$withNulls) {
+                // Unset the extra columns containing ::null
+                if (!$withMetaData) {
                     foreach ($tableColumns as $colName) {
                         unset($dataArray[$colName . '::null']);
+                        unset($dataArray[$colName . '::sign']);
                     }
                 }
 
