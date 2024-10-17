@@ -320,7 +320,7 @@ class BackgroundProcessService
             go(function () use ($previousMostActiveValue, $mostActiveValues, $column, &$differentMostActiveValues, $compareDataBerrier) {
                 foreach ($mostActiveValues as $mostActiveValue) {
                     if ($previousMostActiveValue['company_id'] === $mostActiveValue['company_id']) {
-                        if ($this->formatValue((float)$previousMostActiveValue[$column]) != $this->formatValue($mostActiveValue[$column])) {
+                        if ($this->formatValue($previousMostActiveValue[$column]) != $this->formatValue($mostActiveValue[$column])) {
                             $differentMostActiveValues[] = $mostActiveValue;
                         }
                     }
