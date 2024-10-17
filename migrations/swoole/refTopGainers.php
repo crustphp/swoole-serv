@@ -4,8 +4,8 @@ return [
     'table_name' => 'ref_top_gainers',
     'table_size' => 1024, // table size
     'columns' => [
-        ['name' => 'calculated_value', 'type' => 'string', 'size' => 50], // Doubling size for string
-        ['name' => 'latest_value', 'type' => 'string', 'size' => 50], // Doubling size for string
+        ['name' => 'calculated_value', 'type' => 'float'], // float
+        ['name' => 'latest_value', 'type' => 'float'], // float
         ['name' => 'latest_update', 'type' => 'string', 'size' => 128], // Doubling Size for the timestamp
         ['name' => 'company_id', 'type' => 'int', 'size' => 8], // size for int
 
