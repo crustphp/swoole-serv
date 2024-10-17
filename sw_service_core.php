@@ -81,6 +81,8 @@ use Small\SwooleDb\Selector\Enum\ConditionOperator;
 use Small\SwooleDb\Selector\Bean\ConditionElement;
 use Small\SwooleDb\Selector\Bean\Condition;
 
+use App\Core\Enum\ResponseStatusCode;
+
 class sw_service_core {
 
     protected $swoole_vesion;
@@ -245,10 +247,20 @@ class sw_service_core {
             if ($swoole_daemonize == false && file_exists('server.pid')) {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
+
+            $onBeforeShutdown = function($server) {
+                // echo PHP_EOL. 'SERVER WORKER ID on Before Shutdown: '. $server->worker_id . PHP_EOL;
+                // Tell the FDs that server is shutting down, So they can reconnect
+                // Important Note: We have achieved the better solution in onWorkerStop event
+                // foreach ($server->connections as $conn) {
+                //     $server->push($conn, json_encode(['message' => 'Server is shutting down.', 'status_code' => ResponseStatusCode::SERVICE_RESTART->value]));
+                // }
+            };
         };
 
         $this->server->on('start', $my_onStart);
         $this->server->on('shutdown', $revokeAllResources);
+        $this->server->on('BeforeShutdown', $onBeforeShutdown);
     }
 
     protected function bindWorkerReloadEvents() {
@@ -505,9 +517,47 @@ class sw_service_core {
             $revokeWorkerResources($serv, $worker_id);
         };
 
-        $onWorkerStop = function (OpenSwoole\Server $server, int $workerId) {
-            echo "WorkerStop[$worker_id]|pid=" . posix_getpid() . ".\n".PHP_EOL;
-            $revokeWorkerResources($serv, $worker_id);
+        $onWorkerStop = function ($server, int $workerId) use ($revokeWorkerResources) {
+            // echo "WorkerStop[$worker_id]|pid=" . posix_getpid() . ".\n".PHP_EOL;
+
+            // In-case of Reload Code, backup the FDs in fds_table
+            try {
+                $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
+                $isReloading = false;
+                if ($reloadFlagTable->exists(1)) {
+                    $isReloading = $reloadFlagTable->get(1, 'reload_flag');
+                }
+
+                if ($isReloading) {
+                    // Here will we store the FDs into the SwooleTable
+                    $fdsTable = SwooleTableFactory::getTable('fds_table');
+                    foreach($server->fds as $fd) {
+                        $fdsTable->set($fd, ['fd' => $fd, 'worker_id' => $workerId]);
+                    }
+                }
+                else {
+                    // This case will be executed when the server is going to shutdown
+                    if ($workerId < config('swoole_config.server_settings.worker_num')) {
+                        $serverFds = $server->fds;
+                        $serverFdsChunk = array_chunk($serverFds, 100);
+
+                        foreach($serverFdsChunk as $chunk) {
+                            foreach ($chunk as $fd) {
+                                if ($server->isEstablished($fd)) {
+                                    $server->push($fd, json_encode(['message' => 'Server is shutting down.', 'status_code' => ResponseStatusCode::SERVICE_RESTART->value]));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch(\Throwable $e) {
+                echo $e->getMessage() . PHP_EOL;
+                echo $e->getFile() . PHP_EOL;
+                echo $e->getLine() . PHP_EOL;
+                echo $e->getCode() . PHP_EOL;
+                var_dump($e->getTrace());
+            }
         };
 
         $onPipeMessage = function($server, $src_worker_id, $message): void
@@ -520,7 +570,7 @@ class sw_service_core {
         };
 
         $this->server->on('workerstart', $init);
-        $this->server->on('workerstop', $revokeWorkerResources);
+        $this->server->on('workerstop', $onWorkerStop); // Executes after Worker Exit
         //To Do: Upgrade code using https://wiki.swoole.com/en/#/server/events?id=onworkererror
         $this->server->on('workererror', $revokeWorkerResources);
         $this->server->on('workerexit', $revokeWorkerResources);
