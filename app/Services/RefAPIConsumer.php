@@ -2,61 +2,54 @@
 
 namespace App\Services;
 
-use DB\DbFacade;
 use Swoole\Coroutine\Barrier;
-use Swoole\Coroutine\Channel;
 use Swoole\Coroutine\Http\Client;
 
-class MostActiveRefinitive
+class RefAPIConsumer
 {
     protected $webSocketServer;
     protected $dbConnectionPools;
     protected $muasheratUserToken;
     protected $chunkSize = 100;
+    protected $dbFacade;
 
     const FIELDS = 'CF_VOLUME,NUM_MOVES,PCTCHNG,TRDPRC_1,TURNOVER';
 
-    public function __construct($webSocketServer, $dbConnectionPools)
+    public function __construct($webSocketServer, $dbConnectionPools, $dbFacade)
     {
         $this->webSocketServer = $webSocketServer;
         $this->dbConnectionPools = $dbConnectionPools;
-
+        $this->dbFacade = $dbFacade;
         // Change this token ('Add Authentication Token here of any staging user')
         $this->muasheratUserToken = $_ENV['STAGING_USER_TOKEN'];
     }
 
-    public function handle()
+    public function handle($companies = null)
     {
-        // Database connection pool and channel initialization
-        $objDbPool = $this->dbConnectionPools;
+        if ($companies) {
+            $companiesRics = array_column($companies, 'ric');
+        } else {
+            $dbQuery = "SELECT ric FROM companies
+            WHERE ric IS NOT NULL
+            AND ric NOT LIKE '%^%'
+            AND ric ~ '^[0-9a-zA-Z\\.]+$'";
 
-        $tokenCompanyBerrier = Barrier::make();
-        $companiesRics = new Channel(1);
-        $refinitivToken = new Channel(1);
-        // Coroutine to fetch company RICs from the database
-        go(function () use ($objDbPool, $companiesRics, $tokenCompanyBerrier) {
-            $dbQuery = "SELECT ric FROM companies WHERE ric IS NOT NULL AND ric NOT LIKE '%^%'";
-            $dbFacade = new DbFacade();
-            $rics = $dbFacade->query($dbQuery, $objDbPool);
+            // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
+            $results = $this->dbFacade->query($dbQuery, $this->dbConnectionPools);
 
-            // Split the RICs into chunks and push to the channel
-            $chunkedRics = array_column($rics, 'ric');
-            if ($chunkedRics) {
-                $companiesRics->push($chunkedRics);
+            // Process the results: create an associative array with 'ric' as the key and 'id' as the value
+            foreach ($results as $row) {
+                $companiesRics[$row['ric']] = $row;
             }
-        });
 
-        // Coroutine to fetch the Refinitiv Auth Token
-        go(function () use ($refinitivToken, $tokenCompanyBerrier) {
-            $token = $this->getRefinitivToken();
-            $refinitivToken->push($token);
-        });
+            $companiesRics = array_column($companiesRics, 'ric');
+        }
 
-        Barrier::wait($tokenCompanyBerrier);
+        // Fetch Refinitive access token
+        $refinitivAccessToken = $this->getRefinitivToken();
 
-        if (!$companiesRics->isEmpty() && !$refinitivToken->isEmpty()) {
-            $ricsChunks =  array_chunk($companiesRics->pop(), $this->chunkSize);
-            $accessToken = $refinitivToken->pop();
+        if (!empty($companiesRics) && !empty($refinitivAccessToken)) {
+            $ricsChunks =  array_chunk($companiesRics, $this->chunkSize);
 
             // Proceed if both RICs and token are available
             $queryParams = [
@@ -78,10 +71,10 @@ class MostActiveRefinitive
             $mostActiveData = [];
             // Process each chunk asynchronously using coroutines
             foreach ($ricsChunks as $chunk) {
-                go(function () use ($chunk, $queryParams, $accessToken, &$mostActiveData, $mostActiveBarrier) {
+                go(function () use ($chunk, $queryParams, $refinitivAccessToken, &$mostActiveData, $mostActiveBarrier) {
                     $queryParams['universe'] = '/' . implode(',/', $chunk);
                     // Fetch the data for this chunk
-                    $response = $this->getMostActiveData($accessToken, $queryParams);
+                    $response = $this->getMostActiveData($refinitivAccessToken, $queryParams);
                     $response = json_decode($response, true);
                     $mostActiveData = array_merge($mostActiveData, $response);
                 });
@@ -231,7 +224,5 @@ class MostActiveRefinitive
         return $response;
     }
 
-    public function __destruct() {
-
-    }
+    public function __destruct() {}
 }

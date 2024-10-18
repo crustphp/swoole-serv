@@ -1,6 +1,7 @@
 <?php
-if (!function_exists('dump')){
-    function dump($var)
+
+if (!function_exists('hdump')){
+    function hdump($var)
     {
         return highlight_string("<?php\n\$array = " . var_export($var, true) . ";", true);
     }
@@ -11,7 +12,7 @@ function sw_exit($server=null, $var=null) {
         if (is_array($var)) {
             print_r($var);
         } else {
-            echo PHP_EOL.'$var'.PHP_EOL;
+            echo PHP_EOL.$var.PHP_EOL;
         }
     }
 
