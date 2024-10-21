@@ -14,7 +14,7 @@ use Small\SwooleDb\Selector\TableSelector;
 use Swoole\Coroutine\Barrier;
 use App\Enum\RefMostActiveEnum;
 
-class RefService
+class BackgroundProcessService
 {
     protected $server;
     protected $dbConnectionPools;
@@ -70,15 +70,9 @@ class RefService
             if ($refinitiveCountFromDB && $refinitiveCountFromDB[0]['count'] > 0) {
                 // Get Refinintive most active data from DB
                 $mostActiveDataFromDB = $this->getRefinitiveDataFromDB($dbFacade, $objDbPool, RefMostActiveEnum::TOPGAINER->value);
-
                 // If the data is fresh, initialize from the database
                 if ($this->isFreshData($mostActiveDataFromDB)) {
-                    $column = self::TOPGAINERCOLUMN;
-                    usort($mostActiveDataFromDB, function ($a, $b) use ($column) {
-                        return $b[$column] <=> $a[$column];
-                    });
                     $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mostActiveDataFromDB);
-
                     // Load Job run at into swoole table
                     $this->saveRefinitiveJobRunAtIntoSwooleTable($mostActiveDataFromDB[0]['latest_update']);
                 } else {
@@ -90,12 +84,7 @@ class RefService
                     // If Refinitive data is not processed, load old data from the DB because the Refinitive API is not returning data at this time
                     if(!$isProcessedRefinitiveMostActiveData) {
                         var_dump('Load old Refinitive data from the DB because the Refinitive API is not returning data at this time');
-                        $column = self::TOPGAINERCOLUMN;
-                        usort($mostActiveDataFromDB, function ($a, $b) use ($column) {
-                            return $b[$column] <=> $a[$column];
-                        });
                         $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mostActiveDataFromDB);
-
                         // Load Job run at into swoole table
                         $this->saveRefinitiveJobRunAtIntoSwooleTable($mostActiveDataFromDB[0]['latest_update']);
                     }
@@ -129,17 +118,17 @@ class RefService
         $refinitiveMostActiveData = $this->handleRefinitivResponses($responses, $companyDetail);
 
         if (count($refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value]) > 0) {
-            // Handle the Refinitive Top Gainer Module
-            $this->refinitiveMostActiveModuleHandle($refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value], $objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value, self::TOPGAINERCOLUMN);
+        // Handle the Refinitive Top Gainer Module
+        $this->refinitiveMostActiveModuleHandle($refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value], $objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value, self::TOPGAINERCOLUMN);
         } else {
-            // Data not received from Refinitiv
-            var_dump('Data not received from Refinitiv Pricing Snapshot API');
-        }
+        // Data not received from Refinitiv
+        var_dump('Data not received from Refinitiv Pricing Snapshot API');
+    }
 
         // Save refintive most active logs into DB table
-//        if (count($refinitiveMostActiveData[self::ERRORLOG]) > 0) {
-//            $this->saveLogsIntoDBTable($refinitiveMostActiveData[self::ERRORLOG], $dbFacade, $objDbPool);
-//        }
+        if (count($refinitiveMostActiveData[self::ERRORLOG]) > 0) {
+            $this->saveLogsIntoDBTable($refinitiveMostActiveData[self::ERRORLOG], $dbFacade, $objDbPool);
+        }
     }
 
     public function refinitiveMostActiveModuleHandle(array $refinitiveMostActiveData, Object $objDbPool, Object $dbFacade, string $tableName, string $column)
@@ -173,14 +162,8 @@ class RefService
 
         // Check there is changed data then save into DB and swoole table
         if (count($differentMostActiveData) > 0) {
-            $descOrderMostActiveData = $refinitiveMostActiveData;
-            // Change data into descending order
-            usort($descOrderMostActiveData, function ($a, $b) use ($column) {
-                return $b[$column] <=> $a[$column];
-            });
-
             // Save into swoole table
-            $this->saveIntoSwooleTable($descOrderMostActiveData, $tableName);
+            $this->saveIntoSwooleTable($refinitiveMostActiveData, $tableName);
             // Save into DB Table
             $this->saveIntoDBTable($differentMostActiveData, $tableName, $dbFacade, $objDbPool, true);
 
@@ -241,12 +224,8 @@ class RefService
     public function loadDatastoresFromRefinitive($refinitiveMostActiveData, $dbFacade, $objDbPool, $tableName, $column, $isTruncate)
     {
         var_dump("Initialize fresh data from Refinitive for top gainers");
-        $refinitiveData = $refinitiveMostActiveData;
-        usort($refinitiveData, function ($a, $b) use ($column) {
-            return $b[$column] <=> $a[$column];
-        });
         // Save into swoole table
-        $this->saveIntoSwooleTable($refinitiveData, $tableName);
+        $this->saveIntoSwooleTable($refinitiveMostActiveData, $tableName);
         // Save into DB Table
         $this->saveIntoDBTable($refinitiveMostActiveData, $tableName, $dbFacade, $objDbPool, $isTruncate);
     }
@@ -530,14 +509,15 @@ class RefService
             );
 
             $isProcessedRefinitiveMostActiveData = true;
+
             // Load Job run at into swoole table
             $this->saveRefinitiveJobRunAtIntoSwooleTable($refinitiveMostActiveData[$tableName][0]['latest_update']);
         }
 
         // Save Refinitive most active logs into DB table
-//        if (count($refinitiveMostActiveData[self::ERRORLOG]) > 0) {
-//            $this->saveLogsIntoDBTable($refinitiveMostActiveData[self::ERRORLOG], $dbFacade, $objDbPool);
-//        }
+        if (count($refinitiveMostActiveData[self::ERRORLOG]) > 0) {
+            $this->saveLogsIntoDBTable($refinitiveMostActiveData[self::ERRORLOG], $dbFacade, $objDbPool);
+        }
 
         return $isProcessedRefinitiveMostActiveData;
     }

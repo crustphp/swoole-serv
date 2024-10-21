@@ -619,6 +619,11 @@ class sw_service_core {
             // Push the Top Gainers Table Data to FD
             $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
 
+            // Change into descending order on the base of calculated_vale column
+            usort($topGainersData, function ($a, $b) {
+                return $b['calculated_value'] <=> $a['calculated_value'];
+            });
+
             // Here we will check if the data is encoded without any error
             $topGainersJson = json_encode($topGainersData);
             if ($topGainersJson == false) {
