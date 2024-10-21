@@ -247,15 +247,15 @@ class sw_service_core {
             if ($swoole_daemonize == false && file_exists('server.pid')) {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
+        };
 
-            $onBeforeShutdown = function($server) {
-                // echo PHP_EOL. 'SERVER WORKER ID on Before Shutdown: '. $server->worker_id . PHP_EOL;
-                // Tell the FDs that server is shutting down, So they can reconnect
-                // Important Note: We have achieved the better solution in onWorkerStop event
-                // foreach ($server->connections as $conn) {
-                //     $server->push($conn, json_encode(['message' => 'Server is shutting down.', 'status_code' => ResponseStatusCode::SERVICE_RESTART->value]));
-                // }
-            };
+        $onBeforeShutdown = function($server) {
+            // echo PHP_EOL. 'SERVER WORKER ID on Before Shutdown: '. $server->worker_id . PHP_EOL;
+            // Tell the FDs that server is shutting down, So they can reconnect
+            // Important Note: We have achieved the better solution in onWorkerStop event
+            // foreach ($server->connections as $conn) {
+            //     $server->push($conn, json_encode(['message' => 'Server is shutting down.', 'status_code' => ResponseStatusCode::SERVICE_RESTART->value]));
+            // }
         };
 
         $this->server->on('start', $my_onStart);
@@ -383,22 +383,17 @@ class sw_service_core {
             // Get the Service Container Instance
             $this->serviceContainer = ServiceContainer::get_instance();
 
-            // In case of Reload-Code we will restore the fds to workers fds scrope
-            $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
-            $fdsTable = SwooleTableFactory::getTable('fds_table');
-
-            // Swoole DB throws exception if no record exists in provided Key
-            // And when server will be started, initially it will not have any record in "Reload Flag" table
-            // as record is added/overrided in reload-code block
+            // If we have the any FDs in FDs Table then we restore them
             try {
-                $isReloading = $reloadFlagTable->get(1, 'reload_flag');
+                $fdsTable = SwooleTableFactory::getTable('fds_table');
+                $fdsRecordsCount = $fdsTable->count();
 
-                if ($isReloading) {
-
+                if ($fdsRecordsCount > 0) {
                     $selector = new TableSelector('fds_table');
+
                     // Select the FDS of current worker instead of all FDs if total FDs are more than Threshold
                     // Otherwise select all the FDs
-                    if($fdsTable->count() > config('app_config.fds_reload_threshold')) {
+                    if ($fdsRecordsCount > config('app_config.fds_reload_threshold')) {
                         // Fetch the FDs for specific worker
                         $selector->where()
                             ->firstCondition(new Condition(
@@ -408,10 +403,10 @@ class sw_service_core {
                             ));
                     }
 
-                    $records = $selector->execute();
+                    $fdRecords = $selector->execute();
 
                     // Here we will load the fds into the server
-                    foreach ($records as $record) {
+                    foreach ($fdRecords as $record) {
                         $fd = $record['fds_table']->getValue('fd');
                         $fdWorkerId = $record['fds_table']->getValue('worker_id');
 
@@ -423,24 +418,13 @@ class sw_service_core {
                             $fdsTable->del($fd);
                         }
                     }
-
-                    // Set the reload flag to false(0) once all the FDs have been restored for all workers
-                    if ($fdsTable->count() == 0) {
-                        // Set the Reload Flag to false(0)
-                        $reloadFlagTable->set(1, ['reload_flag' => 0]);
-                    }
                 }
-            }
-            catch(\Throwable $e) {
-                // If there is no record at given key, Small DB throws Logic Exception, so here
-                // We Log the exception if its not LogicException
-                if (!($e instanceof \LogicException)) {
-                    echo $e->getMessage() . PHP_EOL;
-                    echo $e->getFile() . PHP_EOL;
-                    echo $e->getLine() . PHP_EOL;
-                    echo $e->getCode() . PHP_EOL;
-                    var_dump($e->getTrace());
-                }
+            } catch (\Throwable $e) {
+                echo $e->getMessage() . PHP_EOL;
+                echo $e->getFile() . PHP_EOL;
+                echo $e->getLine() . PHP_EOL;
+                echo $e->getCode() . PHP_EOL;
+                var_dump($e->getTrace());
             }
         };
 
@@ -517,31 +501,25 @@ class sw_service_core {
             $revokeWorkerResources($serv, $worker_id);
         };
 
-        $onWorkerStop = function ($server, int $workerId) use ($revokeWorkerResources) {
+        $onWorkerStop = function ($server, int $workerId) {
             // echo "WorkerStop[$worker_id]|pid=" . posix_getpid() . ".\n".PHP_EOL;
 
-            // In-case of Reload Code, backup the FDs in fds_table
+            // In-case of Shutdown, inform the FDs to reconnect.
             try {
-                $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
-                $isReloading = false;
-                if ($reloadFlagTable->exists(1)) {
-                    $isReloading = $reloadFlagTable->get(1, 'reload_flag');
+                $stopCodeTable = SwooleTableFactory::getTable('worker_stop_code');
+                $isShuttingDown = false;
+                if ($stopCodeTable->exists(1)) {
+                    $isShuttingDown = $stopCodeTable->get(1, 'is_shutting_down');
                 }
 
-                if ($isReloading) {
-                    // Here will we store the FDs into the SwooleTable
-                    $fdsTable = SwooleTableFactory::getTable('fds_table');
-                    foreach($server->fds as $fd) {
-                        $fdsTable->set($fd, ['fd' => $fd, 'worker_id' => $workerId]);
-                    }
-                }
-                else {
-                    // This case will be executed when the server is going to shutdown
+                if ($isShuttingDown) {
+                    // This case will be executed when the server is going to shutdown by our explicit $server->shutDown() command
+                    // We will tell fds to reconnect to the server
                     if ($workerId < config('swoole_config.server_settings.worker_num')) {
                         $serverFds = $server->fds;
                         $serverFdsChunk = array_chunk($serverFds, 100);
 
-                        foreach($serverFdsChunk as $chunk) {
+                        foreach ($serverFdsChunk as $chunk) {
                             foreach ($chunk as $fd) {
                                 if ($server->isEstablished($fd)) {
                                     $server->push($fd, json_encode(['message' => 'Server is shutting down.', 'status_code' => ResponseStatusCode::SERVICE_RESTART->value]));
@@ -549,9 +527,14 @@ class sw_service_core {
                             }
                         }
                     }
+                } else {
+                    // In all other cases we will store the FDs to restore them during worker start
+                    $fdsTable = SwooleTableFactory::getTable('fds_table');
+                    foreach ($server->fds as $fd) {
+                        $fdsTable->set($fd, ['fd' => $fd, 'worker_id' => $workerId]);
+                    }
                 }
-            }
-            catch(\Throwable $e) {
+            } catch (\Throwable $e) {
                 echo $e->getMessage() . PHP_EOL;
                 echo $e->getFile() . PHP_EOL;
                 echo $e->getLine() . PHP_EOL;
@@ -681,6 +664,10 @@ class sw_service_core {
             } else {
                 $mainCommand = strtolower($cmd[0]);
                 if ($mainCommand == 'shutdown') {
+
+                    // Setting the Shutdown Flag to True in Swoole Table
+                    $stopCodeTable = SwooleTableFactory::getTable('worker_stop_code');
+                    $stopCodeTable->set(1, ['is_shutting_down' => 1]);
                     // Turn off the server
                     $webSocketServer->shutdown();
                 } else if ($mainCommand == 'reload-code') {
@@ -691,10 +678,6 @@ class sw_service_core {
 //                        echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
 //                    }
                     echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
-
-                    // Setting the Reload Flag to True in Swoole Table
-                    $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
-                    $reloadFlagTable->set(1, ['reload_flag' => 1]);
 
                     $reloadStatus = $webSocketServer->reload();
                     echo (($reloadStatus === true) ? PHP_EOL.'Code Reloaded'.PHP_EOL  :  PHP_EOL.'Code Not Reloaded').PHP_EOL;
