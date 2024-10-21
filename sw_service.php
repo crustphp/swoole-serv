@@ -1,5 +1,5 @@
 <?php
-    declare(strict_types=1);
+declare(strict_types=1);
 
     use Swoole\Event;
     use Swoole\Process;
@@ -40,12 +40,28 @@
         }
 
         include('service_creation_params.php');
-        require_once(realpath(__DIR__ . '/config/app_config.php'));
         include('sw_service_core.php');
 
         if ($serverProtocol == 'shutdown') {
+
+            $ip = '127.0.0.1';
+            if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
+                $ip = '45.76.35.99';
+            }
+
+            $w = new WebSocketClient($ip, 9501);
+            try {
+                if ($x = $w->connect()) {
+                    $w->send('shutdown', 'text', 1);
+                } else {
+                    echo PHP_EOL . 'Failed to connect WebSocket Server using TCP Client' . PHP_EOL;
+                }
+            } catch (\RuntimeException $e) {
+                echo PHP_EOL . $e->getMessage() . PHP_EOL;
+            }
+
             // Stop the the server
-            shutdown_swoole_server();
+            // shutdown_swoole_server();
         } else if ($serverProtocol == 'restart') {
                 // Stop the the server
 
@@ -117,7 +133,6 @@
     function shutdown_swoole_server() {
         if (file_exists('server.pid')){
             shell_exec('cd '.__DIR__.' && kill -15 `cat server.pid` 2>&1 1> /dev/null&'); //&& sudo rm -f server.pid
-            // kill -9 $(lsof -t -i:9501) OR kill -15 $(lsof -t -i:9501)
         } else {
             echo PHP_EOL.'server.pid file not found. Looks like server is not running already.'.PHP_EOL;
         }
