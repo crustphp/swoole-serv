@@ -78,6 +78,9 @@ class RefService
                         return $b[$column] <=> $a[$column];
                     });
                     $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mostActiveDataFromDB);
+
+                    // Load Job run at into swoole table
+                    $this->saveRefinitiveJobRunAtIntoSwooleTable($mostActiveDataFromDB[0]['latest_update']);
                 } else {
                     var_dump("There is older data than five minutes");
                     // Get companies details from DB
@@ -92,6 +95,9 @@ class RefService
                             return $b[$column] <=> $a[$column];
                         });
                         $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mostActiveDataFromDB);
+
+                        // Load Job run at into swoole table
+                        $this->saveRefinitiveJobRunAtIntoSwooleTable($mostActiveDataFromDB[0]['latest_update']);
                     }
 
                 }
@@ -176,7 +182,10 @@ class RefService
             // Save into swoole table
             $this->saveIntoSwooleTable($descOrderMostActiveData, $tableName);
             // Save into DB Table
-            $this->saveIntoDBTable($refinitiveMostActiveData, $tableName, $dbFacade, $objDbPool, true);
+            $this->saveIntoDBTable($differentMostActiveData, $tableName, $dbFacade, $objDbPool, true);
+
+            // Save Job run at into swoole table
+            $this->saveRefinitiveJobRunAtIntoSwooleTable($refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value][0]['latest_update']);
         }
     }
 
@@ -521,6 +530,8 @@ class RefService
             );
 
             $isProcessedRefinitiveMostActiveData = true;
+            // Load Job run at into swoole table
+            $this->saveRefinitiveJobRunAtIntoSwooleTable($refinitiveMostActiveData[$tableName][0]['latest_update']);
         }
 
         // Save Refinitive most active logs into DB table
@@ -529,5 +540,12 @@ class RefService
 //        }
 
         return $isProcessedRefinitiveMostActiveData;
+    }
+
+    public function saveRefinitiveJobRunAtIntoSwooleTable($jobRunAt) {
+        var_dump('Save data into Swoole table job_run_at');
+        $data = ['job_run_at' => $jobRunAt];
+        $table = SwooleTableFactory::getTable('job_runs');
+        $table->set(0, $data);
     }
 }
