@@ -14,7 +14,7 @@ use Small\SwooleDb\Selector\TableSelector;
 use Swoole\Coroutine\Barrier;
 use App\Enum\RefMostActiveEnum;
 
-class BackgroundProcessService
+class RefService
 {
     protected $server;
     protected $dbConnectionPools;
@@ -37,7 +37,7 @@ class BackgroundProcessService
      */
     public function handle()
     {
-        $refinitivBackgroundProcess = new Process(function ($process) {
+        $refBackgroundProcess = new Process(function ($process) {
             /// DB connection
             $app_type_database_driven = config('app_config.app_type_database_driven');
             $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
@@ -64,29 +64,28 @@ class BackgroundProcessService
             $dbFacade = new DbFacade();
 
             // Aggregate query to get the count from the Refinitive table
-            $refinitiveCountFromDB = $this->getRefinitiveCountFromDB($objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value);
+            $refCountFromDB = $this->getDataCountFromDB($objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value);
 
-            // Check $refinitiveCountFromDB has count greater than zero
-            if ($refinitiveCountFromDB && $refinitiveCountFromDB[0]['count'] > 0) {
-                // Get Refinintive most active data from DB
-                $mostActiveDataFromDB = $this->getRefinitiveDataFromDB($dbFacade, $objDbPool, RefMostActiveEnum::TOPGAINER->value);
+            // Check $refCountFromDB has count greater than zero
+            if ($refCountFromDB && $refCountFromDB[0]['count'] > 0) {
+                // Get Refinintive mAIndicator data from DB
+                $mAIndicatorDataFromDB = $this->getDataFromDB($dbFacade, $objDbPool, RefMostActiveEnum::TOPGAINER->value);
+
                 // If the data is fresh, initialize from the database
-                if ($this->isFreshData($mostActiveDataFromDB)) {
-                    $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mostActiveDataFromDB);
-                    // Load Job run at into swoole table
-                    $this->saveRefinitiveJobRunAtIntoSwooleTable($mostActiveDataFromDB[0]['latest_update']);
+                if ($this->isFreshData($mAIndicatorDataFromDB)) {
+                    $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mAIndicatorDataFromDB);
                 } else {
                     var_dump("There is older data than five minutes");
                     // Get companies details from DB
                     $companyDetail = $this->getCompaniesFromDB($objDbPool, $dbFacade);
-                    $isProcessedRefinitiveMostActiveData = $this->processRefinitiveMostActiveData($objDbPool, $companyDetail, $dbFacade, true, RefMostActiveEnum::TOPGAINER->value);
+                    $isProcessedRefMAIndicatorData = $this->processData($objDbPool, $companyDetail, $dbFacade, true, RefMostActiveEnum::TOPGAINER->value);
 
                     // If Refinitive data is not processed, load old data from the DB because the Refinitive API is not returning data at this time
-                    if(!$isProcessedRefinitiveMostActiveData) {
+                    if(!$isProcessedRefMAIndicatorData) {
                         var_dump('Load old Refinitive data from the DB because the Refinitive API is not returning data at this time');
-                        $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mostActiveDataFromDB);
-                        // Load Job run at into swoole table
-                        $this->saveRefinitiveJobRunAtIntoSwooleTable($mostActiveDataFromDB[0]['latest_update']);
+                        $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mAIndicatorDataFromDB);
+                         // Load Job run at into swoole table
+                         $this->saveRefJobRunAtIntoSwooleTable($mAIndicatorDataFromDB[0]['latest_update']);
                     }
 
                 }
@@ -94,89 +93,91 @@ class BackgroundProcessService
                 var_dump("There is no Refinitive data in DB");
                 // Get companies details from DB
                 $companyDetail = $this->getCompaniesFromDB($objDbPool, $dbFacade);
-                $isProcessedRefinitiveMostActiveData = $this->processRefinitiveMostActiveData($objDbPool, $companyDetail, $dbFacade, false, RefMostActiveEnum::TOPGAINER->value);
+                $isProcessedRefMAIndicatorData = $this->processData($objDbPool, $companyDetail, $dbFacade, false, RefMostActiveEnum::TOPGAINER->value);
 
-                if(!$isProcessedRefinitiveMostActiveData) {
+                if(!$isProcessedRefMAIndicatorData) {
                     var_dump('Refinitive API is not returning data at this time');
                 }
             }
 
             // Schedule of Most Active Data Fetching
             swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($worker_id, $objDbPool, $dbFacade, $companyDetail) {
-                $this->initRefinitive($objDbPool, $dbFacade, $companyDetail);
+                $this->initRef($objDbPool, $dbFacade, $companyDetail);
             });
         }, false, SOCK_DGRAM, true);
 
-        $this->server->addProcess($refinitivBackgroundProcess);
+        $this->server->addProcess($refBackgroundProcess);
     }
 
-    public function initRefinitive(Object $objDbPool, Object $dbFacade, mixed $companyDetail)
+    public function initRef(Object $objDbPool, Object $dbFacade, mixed $companyDetail)
     {
+        if(is_null($companyDetail)) {
+            $companyDetail = $this->getCompaniesFromDB($objDbPool, $dbFacade);
+        }
         // Fetch data from Refinitiv API
-        $responses = $this->fetchRefinitiveData($objDbPool, $dbFacade, $companyDetail);
+        $responses = $this->fetchRefData($objDbPool, $dbFacade, $companyDetail);
         // Handle refinitive responses
-        $refinitiveMostActiveData = $this->handleRefinitivResponses($responses, $companyDetail);
+        $refMAIndicatorData = $this->handleRefResponses($responses, $companyDetail);
 
-        if (count($refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value]) > 0) {
-        // Handle the Refinitive Top Gainer Module
-        $this->refinitiveMostActiveModuleHandle($refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value], $objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value, self::TOPGAINERCOLUMN);
+        if (count($refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value]) > 0) {
+            // Handle the Refinitive Top Gainer Module
+            $this->refIndicatorModuleHandle($refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value], $objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value, self::TOPGAINERCOLUMN);
         } else {
-        // Data not received from Refinitiv
-        var_dump('Data not received from Refinitiv Pricing Snapshot API');
-    }
+            // Data not received from Refinitiv
+            var_dump('Data not received from Refinitiv Pricing Snapshot API');
+        }
 
         // Save refintive most active logs into DB table
-        if (count($refinitiveMostActiveData[self::ERRORLOG]) > 0) {
-            $this->saveLogsIntoDBTable($refinitiveMostActiveData[self::ERRORLOG], $dbFacade, $objDbPool);
+        if (count($refMAIndicatorData[self::ERRORLOG]) > 0) {
+            $this->saveLogsIntoDBTable($refMAIndicatorData[self::ERRORLOG], $dbFacade, $objDbPool);
         }
     }
 
-    public function refinitiveMostActiveModuleHandle(array $refinitiveMostActiveData, Object $objDbPool, Object $dbFacade, string $tableName, string $column)
+    public function refIndicatorModuleHandle(array $refMAIndicatorData, Object $objDbPool, Object $dbFacade, string $tableName, string $column)
     {
-        $previousMostActiveData = [];
+        $previousMAIndicatorData = [];
 
-        $refinitveSwooleTableData = SwooleTableFactory::getTableData($tableName);
+        $refSwooleTableData = SwooleTableFactory::getTableData($tableName);
 
-        if (count($refinitveSwooleTableData) > 0) {
+        if (count($refSwooleTableData) > 0) {
             var_dump('Data fetched from swoole table ' . $tableName);
-            $previousMostActiveData = $refinitveSwooleTableData;
+            $previousMAIndicatorData = $refSwooleTableData;
         }
 
         // Check data exist into swoole table
-        if (count($previousMostActiveData) < 1) {
-            $previousMostActiveData = $this->fetchRefinitivTableDataFromDB($tableName, $dbFacade, $objDbPool);
+        if (count($previousMAIndicatorData) < 1) {
+            $previousMAIndicatorData = $this->fetchTableDataFromDB($tableName, $dbFacade, $objDbPool);
             var_dump('Data fetched from DB table ' . $tableName);
         }
 
         // Check previous data exists
-        if (count($previousMostActiveData) > 0) {
+        if (count($previousMAIndicatorData) > 0) {
             // Compare with existing data
-            $differentMostActiveData = $this->compare($previousMostActiveData, $refinitiveMostActiveData, $column);
+            $differentMAIndicatorData = $this->compare($previousMAIndicatorData, $refMAIndicatorData, $column);
 
             // Broadcast the changed data
-            $this->broadCastMostActiveData($differentMostActiveData);
+            $this->broadCastIndicatorData($differentMAIndicatorData);
         } else {
             var_dump('No changed data for broadcasting data of ' . $tableName);
-            $differentMostActiveData = $refinitiveMostActiveData;
+            $differentMAIndicatorData = $refMAIndicatorData;
         }
 
         // Check there is changed data then save into DB and swoole table
-        if (count($differentMostActiveData) > 0) {
+        if (count($differentMAIndicatorData) > 0) {
             // Save into swoole table
-            $this->saveIntoSwooleTable($refinitiveMostActiveData, $tableName);
+            $this->saveIntoSwooleTable($differentMAIndicatorData, $tableName);
             // Save into DB Table
-            $this->saveIntoDBTable($differentMostActiveData, $tableName, $dbFacade, $objDbPool, true);
-
+            $this->saveIntoDBTable($refMAIndicatorData, $tableName, $dbFacade, $objDbPool, true);
             // Save Job run at into swoole table
-            $this->saveRefinitiveJobRunAtIntoSwooleTable($refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value][0]['latest_update']);
+            $this->saveRefJobRunAtIntoSwooleTable($refMAIndicatorData[0]['latest_update']);
         }
     }
 
-    public function isFreshData($mostActiveDataFromDB)
+    public function isFreshData($mAIndicatorDataFromDB)
     {
         $isFreshDBData = false;
         // Parse the latest_update timestamp
-        $latestUpdate = Carbon::parse($mostActiveDataFromDB[0]['latest_update']);
+        $latestUpdate = Carbon::parse($mAIndicatorDataFromDB[0]['latest_update']);
         // Check if the latest update is more than 5 minutes old
         if ($latestUpdate->diffInMinutes(Carbon::now()) < 5) {
             $isFreshDBData = true;
@@ -185,35 +186,35 @@ class BackgroundProcessService
         return $isFreshDBData;
     }
 
-    public function getRefinitiveDataFromDB($dbFacade, $objDbPool, $tableName)
+    public function getDataFromDB($dbFacade, $objDbPool, $tableName)
     {
-        $dbQuery = "SELECT refininitveTable.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
+        $dbQuery = "SELECT refTable.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
         c.isin_code, c.created_at, c.arabic_name AS ar_long_name, c.arabic_short_name AS ar_short_name, c.ric
-        FROM $tableName refininitveTable JOIN companies c ON refininitveTable.company_id = c.id";
+        FROM $tableName refTable JOIN companies c ON refTable.company_id = c.id";
         return $dbFacade->query($dbQuery, $objDbPool);
     }
 
-    public function loadSwooleTableFromDB($tableName, $mostActiveDBData)
+    public function loadSwooleTableFromDB($tableName, $mAIndicatorDBData)
     {
         var_dump("Record is within the last 5 minutes. Data prepared.");
         $table = SwooleTableFactory::getTable($tableName);
-        foreach ($mostActiveDBData as $mostActiveDBRec) {
+        foreach ($mAIndicatorDBData as $mAIndicatorDBRec) {
             if ($tableName == RefMostActiveEnum::TOPGAINER->value) {
                 $data = [
-                    'calculated_value' => (float)$mostActiveDBRec['calculated_value'],
-                    'latest_value' => (float)$mostActiveDBRec['latest_value'],
-                    'latest_update' => $mostActiveDBRec['latest_update'],
-                    'company_id' => $mostActiveDBRec['company_id'],
+                    'calculated_value' => (float)$mAIndicatorDBRec['calculated_value'],
+                    'latest_value' => (float)$mAIndicatorDBRec['latest_value'],
+                    'latest_update' => $mAIndicatorDBRec['latest_update'],
+                    'company_id' => $mAIndicatorDBRec['company_id'],
 
-                    'en_long_name' =>  $mostActiveDBRec['en_long_name'],
-                    'sp_comp_id' =>  $mostActiveDBRec['sp_comp_id'],
-                    'en_short_name' =>  $mostActiveDBRec['en_short_name'],
-                    'symbol' =>  $mostActiveDBRec['symbol'],
-                    'isin_code' =>  $mostActiveDBRec['isin_code'],
-                    'created_at' =>  $mostActiveDBRec['created_at'],
-                    'ar_long_name' =>  $mostActiveDBRec['ar_long_name'],
-                    'ar_short_name' =>  $mostActiveDBRec['ar_short_name'],
-                    'ric' =>  $mostActiveDBRec['ric'],
+                    'en_long_name' =>  $mAIndicatorDBRec['en_long_name'],
+                    'sp_comp_id' =>  $mAIndicatorDBRec['sp_comp_id'],
+                    'en_short_name' =>  $mAIndicatorDBRec['en_short_name'],
+                    'symbol' =>  $mAIndicatorDBRec['symbol'],
+                    'isin_code' =>  $mAIndicatorDBRec['isin_code'],
+                    'created_at' =>  $mAIndicatorDBRec['created_at'],
+                    'ar_long_name' =>  $mAIndicatorDBRec['ar_long_name'],
+                    'ar_short_name' =>  $mAIndicatorDBRec['ar_short_name'],
+                    'ric' =>  $mAIndicatorDBRec['ric'],
                 ];
 
                 $table->set($data['company_id'], $data);
@@ -221,13 +222,13 @@ class BackgroundProcessService
         }
     }
 
-    public function loadDatastoresFromRefinitive($refinitiveMostActiveData, $dbFacade, $objDbPool, $tableName, $column, $isTruncate)
+    public function loadDatastoresFromRef($refMAIndicatorData, $dbFacade, $objDbPool, $tableName, $column, $isTruncate)
     {
         var_dump("Initialize fresh data from Refinitive for top gainers");
         // Save into swoole table
-        $this->saveIntoSwooleTable($refinitiveMostActiveData, $tableName);
+        $this->saveIntoSwooleTable($refMAIndicatorData, $tableName);
         // Save into DB Table
-        $this->saveIntoDBTable($refinitiveMostActiveData, $tableName, $dbFacade, $objDbPool, $isTruncate);
+        $this->saveIntoDBTable($refMAIndicatorData, $tableName, $dbFacade, $objDbPool, $isTruncate);
     }
 
     /**
@@ -238,7 +239,7 @@ class BackgroundProcessService
      * @return void
      */
 
-    public function fetchRefinitiveData(Object $objDbPool, object $dbFacade, mixed $companyDetail)
+    public function fetchRefData(Object $objDbPool, object $dbFacade, mixed $companyDetail)
     {
         $service = new RefAPIConsumer($this->server, $objDbPool, $dbFacade);
         $responses = $service->handle($companyDetail);
@@ -247,17 +248,16 @@ class BackgroundProcessService
         return $responses;
     }
 
-    public function handleRefinitivResponses($responses, $companyDetail)
+    public function handleRefResponses($responses, $companyDetail)
     {
         $date = Carbon::now()->format('Y-m-d H:i:s');
         $dateTimeStamp = Carbon::now();
-        $refinitiveMostActiveData = [];
-        $refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value] = [];
-        $refinitiveMostActiveData[RefMostActiveEnum::MOSTACTIVEVALUE->value] = [];
-        $refinitiveMostActiveData[RefMostActiveEnum::DONEDEALCOUNT->value] = [];
-        $refinitiveMostActiveData[RefMostActiveEnum::FREQUENTLYTRADEDSTOCK->value] = [];
-        $refinitiveMostActiveData[self::ERRORLOG] = [];
-
+        $refMAIndicatorData = [];
+        $refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value] = [];
+        $refMAIndicatorData[RefMostActiveEnum::MOSTACTIVEVALUE->value] = [];
+        $refMAIndicatorData[RefMostActiveEnum::DONEDEALCOUNT->value] = [];
+        $refMAIndicatorData[RefMostActiveEnum::FREQUENTLYTRADEDSTOCK->value] = [];
+        $refMAIndicatorData[self::ERRORLOG] = [];
         foreach ($responses as $res) {
             $company = isset($res['Key']["Name"]) ? $companyDetail[str_replace('/', '', $res['Key']["Name"])] : null;
 
@@ -279,9 +279,9 @@ class BackgroundProcessService
                     'ar_short_name' =>  $company['arabic_short_name'],
                     'ric' =>  $company['ric'],
                 ];
-                $refinitiveMostActiveData[RefMostActiveEnum::TOPGAINER->value][] = $data;
+                $refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value][] = $data;
             } else if (empty($res) || !isset($res['Fields']["TRDPRC_1"]) || !isset($res['Fields']["PCTCHNG"])) {
-                $refinitiveMostActiveData[self::ERRORLOG][] = [
+                $refMAIndicatorData[self::ERRORLOG][] = [
                     'ric' =>  $company['ric'],
                     'type' => RefMostActiveEnum::TOPGAINER->value,
                     'created_at' => $dateTimeStamp,
@@ -297,7 +297,7 @@ class BackgroundProcessService
                     'company_id' => $company['id'],
                     'latest_update' => $date,
                 ];
-                $refinitiveMostActiveData[RefMostActiveEnum::MOSTACTIVEVALUE->value][] = $data;
+                $refMAIndicatorData[RefMostActiveEnum::MOSTACTIVEVALUE->value][] = $data;
             }
 
             if (!empty($res) && isset($res['Fields']["NUM_MOVES"])) {  // Deal Done count
@@ -308,7 +308,7 @@ class BackgroundProcessService
                     'company_id' => $company['id'],
                     'latest_update' => $date,
                 ];
-                $refinitiveMostActiveData[RefMostActiveEnum::DONEDEALCOUNT->value][] = $data;
+                $refMAIndicatorData[RefMostActiveEnum::DONEDEALCOUNT->value][] = $data;
             }
 
             if (!empty($res) && isset($res['Fields']["CF_VOLUME"])) {  // Traded Stock
@@ -319,11 +319,11 @@ class BackgroundProcessService
                     'company_id' => $company['id'],
                     'latest_update' => $date,
                 ];
-                $refinitiveMostActiveData[RefMostActiveEnum::FREQUENTLYTRADEDSTOCK->value][] = $data;
+                $refMAIndicatorData[RefMostActiveEnum::FREQUENTLYTRADEDSTOCK->value][] = $data;
             }
         }
 
-        return $refinitiveMostActiveData;
+        return $refMAIndicatorData;
     }
 
     /**
@@ -337,15 +337,15 @@ class BackgroundProcessService
         return round((float) $value, 6);
     }
 
-    public function fetchRefinitivTableDataFromDB(string $table, object $dbFacade, object $objDbPool)
+    public function fetchTableDataFromDB(string $table, object $dbFacade, object $objDbPool)
     {
         $dbQuery = "SELECT * FROM " . $table;
         return $dbFacade->query($dbQuery, $objDbPool);
     }
 
-    public function broadCastMostActiveData(array $differentMostActiveData)
+    public function broadCastIndicatorData(array $differentMAIndicatorData)
     {
-        foreach ($differentMostActiveData as $data) {
+        foreach ($differentMAIndicatorData as $data) {
             go(function () use ($data) {
                 for ($worker_id = 0; $worker_id < $this->server->setting['worker_num']; $worker_id++) {
                     $this->server->sendMessage(json_encode($data), $worker_id);
@@ -354,38 +354,38 @@ class BackgroundProcessService
         }
     }
 
-    public function saveIntoSwooleTable(array $mostActiveData, string $tableName)
+    public function saveIntoSwooleTable(array $mAIndicatorData, string $tableName)
     {
         var_dump('Save data into Swoole table ' . $tableName);
         $table = SwooleTableFactory::getTable($tableName);
-        foreach ($mostActiveData as $data) {
+        foreach ($mAIndicatorData as $data) {
             go(function () use ($data, $table) {
                 $table->set($data['company_id'], $data);
             });
         }
     }
 
-    public function saveIntoDBTable(array $mostActiveData, string $tableName, object $dbFacade, object $objDbPool, bool $isTruncate )
+    public function saveIntoDBTable(array $mAIndicatorData, string $tableName, object $dbFacade, object $objDbPool, bool $isTruncate )
     {
         var_dump('Save data into DB table ' . $tableName);
-        go(function () use ($dbFacade, $mostActiveData, $tableName, $objDbPool, $isTruncate) {
+        go(function () use ($dbFacade, $mAIndicatorData, $tableName, $objDbPool, $isTruncate) {
             $dbQuery ="";
             if($isTruncate) {
                 $dbQuery = 'TRUNCATE TABLE ONLY public."' . $tableName . '" RESTART IDENTITY RESTRICT;';
             }
-            $dbQuery .= $this->makeInsertQuery($tableName, $mostActiveData);
+            $dbQuery .= $this->makeInsertQuery($tableName, $mAIndicatorData);
             $dbFacade->query($dbQuery, $objDbPool, null, true, true, $tableName);
         });
     }
 
-    public function saveLogsIntoDBTable(array $mostActiveLogs, object $dbFacade, object $objDbPool)
+    public function saveLogsIntoDBTable(array $mAIndicatorLogs, object $dbFacade, object $objDbPool)
     {
         var_dump('Save logs into DB table ref_most_active_logs');
-        go(function () use ($mostActiveLogs, $dbFacade, $objDbPool) {
+        go(function () use ($mAIndicatorLogs, $dbFacade, $objDbPool) {
             $values = [];
-            foreach ($mostActiveLogs as $mostActivelog) {
+            foreach ($mAIndicatorLogs as $mAIndicatorlog) {
                 // Collect each set of values into the array
-                $values[] = "('" . $mostActivelog['ric'] . "', '" . $mostActivelog['type'] . "', '" . $mostActivelog['created_at'] . "', '" . $mostActivelog['updated_at'] . "')";
+                $values[] = "('" . $mAIndicatorlog['ric'] . "', '" . $mAIndicatorlog['type'] . "', '" . $mAIndicatorlog['created_at'] . "', '" . $mAIndicatorlog['updated_at'] . "')";
             }
             $dbQuery = "INSERT INTO ref_most_active_logs (ric, type, created_at, updated_at)
             VALUES " . implode(", ", $values);
@@ -397,58 +397,58 @@ class BackgroundProcessService
     /**
      * Compare two arrays of most active values to identify differences and new entries.
      *
-     * @param array $previousMostActiveValues Array of associative arrays representing previous most active values.
-     * @param array $mostActiveValues Array of associative arrays representing current most active values.
+     * @param array $previousMAIndicatorValues Array of associative arrays representing previous most active values.
+     * @param array $mAIndicatorValues Array of associative arrays representing current most active values.
      * @param string $column string has name of column.
      *
      * @return array Array of associative arrays representing most active values that are either different or newly added.
      */
-    public function compare(array $previousMostActiveValues, array $mostActiveValues, string $column): array
+    public function compare(array $previousMAIndicatorValues, array $mAIndicatorValues, string $column): array
     {
-        $differentMostActiveValues = [];
+        $differentMAIndicatorValues = [];
         $compareDataBerrier = Barrier::make();
-        foreach ($previousMostActiveValues as $previousMostActiveValue) {
-            go(function () use ($previousMostActiveValue, $mostActiveValues, $column, &$differentMostActiveValues, $compareDataBerrier) {
-                foreach ($mostActiveValues as $mostActiveValue) {
-                    if ($previousMostActiveValue['company_id'] === $mostActiveValue['company_id']) {
-                        if ($this->formatValue($previousMostActiveValue[$column]) != $this->formatValue($mostActiveValue[$column])) {
-                            $differentMostActiveValues[] = $mostActiveValue;
+        foreach ($previousMAIndicatorValues as $previousMAIndicatorValue) {
+            go(function () use ($previousMAIndicatorValue, $mAIndicatorValues, $column, &$differentMAIndicatorValues, $compareDataBerrier) {
+                foreach ($mAIndicatorValues as $mAIndicatorValue) {
+                    if ($previousMAIndicatorValue['company_id'] === $mAIndicatorValue['company_id']) {
+                        if ($this->formatValue($previousMAIndicatorValue[$column]) != $this->formatValue($mAIndicatorValue[$column])) {
+                            $differentMAIndicatorValues[] = $mAIndicatorValue;
                         }
                     }
                 }
             });
         }
 
-        foreach ($mostActiveValues as $mostActiveValue) {
-            go(function () use ($previousMostActiveValues, $mostActiveValue, &$differentMostActiveValues, $compareDataBerrier) {
+        foreach ($mAIndicatorValues as $mAIndicatorValue) {
+            go(function () use ($previousMAIndicatorValues, $mAIndicatorValue, &$differentMAIndicatorValues, $compareDataBerrier) {
                 $found = false;
-                foreach ($previousMostActiveValues as $previousMostActiveValue) {
-                    if ($previousMostActiveValue['company_id'] === $mostActiveValue['company_id']) {
+                foreach ($previousMAIndicatorValues as $previousMAIndicatorValue) {
+                    if ($previousMAIndicatorValue['company_id'] === $mAIndicatorValue['company_id']) {
                         $found = true;
                         break;
                     }
                 }
                 if (!$found) {
-                    $differentMostActiveValues[] = $mostActiveValue;
+                    $differentMAIndicatorValues[] = $mAIndicatorValue;
                 }
             });
         }
 
         Barrier::wait($compareDataBerrier);
         var_dump('comparing refinitive data');
-        return $differentMostActiveValues;
+        return $differentMAIndicatorValues;
     }
 
-    public function makeInsertQuery(string $tableName, array $mostActiveData)
+    public function makeInsertQuery(string $tableName, array $mAIndicatorData)
     {
         $dbQuery = "";
         $values = [];
 
         switch ($tableName) {
             case RefMostActiveEnum::TOPGAINER->value === $tableName:
-                foreach ($mostActiveData as $mostActive) {
+                foreach ($mAIndicatorData as $mAIndicator) {
                     // Collect each set of values into the array
-                    $values[] = "('" . $mostActive['calculated_value'] . "', '" . $mostActive['latest_value'] . "', '" . $mostActive['latest_update'] . "', '" . $mostActive['company_id'] . "')";
+                    $values[] = "('" . $mAIndicator['calculated_value'] . "', '" . $mAIndicator['latest_value'] . "', '" . $mAIndicator['latest_update'] . "', '" . $mAIndicator['company_id'] . "')";
                 }
                 $dbQuery = "INSERT INTO " . $tableName . " (calculated_value, latest_value, latest_update, company_id)
                 VALUES " . implode(", ", $values);
@@ -479,28 +479,28 @@ class BackgroundProcessService
         return $companyDetail;
     }
 
-    public function getRefinitiveCountFromDB(object $objDbPool, object $dbFacade, string $tableName)
+    public function getDataCountFromDB(object $objDbPool, object $dbFacade, string $tableName)
     {
         $dbQuery = "SELECT count(*)  FROM " . $tableName;
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-        $refinitiveCountInDB = $dbFacade->query($dbQuery, $objDbPool);
+        $refCountInDB = $dbFacade->query($dbQuery, $objDbPool);
 
-        return $refinitiveCountInDB;
+        return $refCountInDB;
     }
 
-    public function processRefinitiveMostActiveData($objDbPool, $companyDetail, $dbFacade, $isStale, $tableName)
+    public function processData($objDbPool, $companyDetail, $dbFacade, $isStale, $tableName)
     {
-        $isProcessedRefinitiveMostActiveData = false;
+        $isProcessedRefMAIndicatorData = false;
         // Fetch data from Refinitive
-        $responses = $this->fetchRefinitiveData($objDbPool,  $dbFacade, $companyDetail);
+        $responses = $this->fetchRefData($objDbPool,  $dbFacade, $companyDetail);
 
         // Handle Refinitive responses
-        $refinitiveMostActiveData = $this->handleRefinitivResponses($responses, $companyDetail);
+        $refMAIndicatorData = $this->handleRefResponses($responses, $companyDetail);
 
         // Initialize fresh data from Refinitive for top gainers
-        if (count($refinitiveMostActiveData[$tableName]) > 0) {
-            $this->loadDatastoresFromRefinitive(
-                $refinitiveMostActiveData[$tableName],
+        if (count($refMAIndicatorData[$tableName]) > 0) {
+            $this->loadDatastoresFromRef(
+                $refMAIndicatorData[$tableName],
                 $dbFacade,
                 $objDbPool,
                 $tableName,
@@ -508,21 +508,20 @@ class BackgroundProcessService
                 $isStale
             );
 
-            $isProcessedRefinitiveMostActiveData = true;
-
-            // Load Job run at into swoole table
-            $this->saveRefinitiveJobRunAtIntoSwooleTable($refinitiveMostActiveData[$tableName][0]['latest_update']);
+            $isProcessedRefMAIndicatorData = true;
+             // Load Job run at into swoole table
+            $this->saveRefJobRunAtIntoSwooleTable($refMAIndicatorData[$tableName][0]['latest_update']);
         }
 
         // Save Refinitive most active logs into DB table
-        if (count($refinitiveMostActiveData[self::ERRORLOG]) > 0) {
-            $this->saveLogsIntoDBTable($refinitiveMostActiveData[self::ERRORLOG], $dbFacade, $objDbPool);
+        if (count($refMAIndicatorData[self::ERRORLOG]) > 0) {
+            $this->saveLogsIntoDBTable($refMAIndicatorData[self::ERRORLOG], $dbFacade, $objDbPool);
         }
 
-        return $isProcessedRefinitiveMostActiveData;
+        return $isProcessedRefMAIndicatorData;
     }
 
-    public function saveRefinitiveJobRunAtIntoSwooleTable($jobRunAt) {
+    public function saveRefJobRunAtIntoSwooleTable($jobRunAt) {
         var_dump('Save data into Swoole table job_run_at');
         $data = ['job_run_at' => $jobRunAt];
         $table = SwooleTableFactory::getTable('job_runs');
