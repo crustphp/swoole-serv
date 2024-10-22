@@ -207,9 +207,9 @@ class sw_service_core {
         $this->server->fds = [];
 
         // Background processes
-//        include_once __DIR__ . '/includes/Autoload.php';
-//        $backgroundProcessService = new BackgroundProcessService($this->server);
-//        $backgroundProcessService->handle();
+        include_once __DIR__ . '/includes/Autoload.php';
+//        $refService = new  RefService($this->server);
+//        $refService->handle();
     }
 
     protected function bindServerEvents() {
