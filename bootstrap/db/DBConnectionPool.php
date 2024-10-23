@@ -49,7 +49,7 @@ class DBConnectionPool
 
     function __destruct() {
         if (isset(self::$pools[$this->pool_key])) {
-            $this->closeConnectionPool();
+            $this->closeConnectionPool($this->pool_key);
         }
     }
 
