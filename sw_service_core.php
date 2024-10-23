@@ -83,6 +83,8 @@ use Small\SwooleDb\Selector\Bean\Condition;
 
 use App\Core\Enum\ResponseStatusCode;
 
+use Swoole\ExitException;
+
 class sw_service_core {
 
     protected $swoole_vesion;
@@ -208,8 +210,65 @@ class sw_service_core {
 
         // Background processes
         include_once __DIR__ . '/includes/Autoload.php';
-//        $refService = new  RefService($this->server);
-//        $refService->handle();
+        $refService = new  RefService($this->server);
+        $refService->handle();
+
+        // Techniques to Reload the Code (Following commented code can be useful in future)
+        // $processCallback = new ProcessCallback($this->server); // Its a service
+        // $this->customProcessCallbacks['test_service'] = [$processCallback, 'handle'];
+
+        // We can reload the Process by using include inside the handle function of callback below
+        // Something like this function handle() { include 'path/to/original-process-callback.php'; }
+        // $testProcess = new Process($this->customProcessCallbacks['test_service'], false, SOCK_DGRAM, true);
+        // $this->server->addProcess($testProcess);
+
+        // Get the service container instance
+        $serviceContainer = ServiceContainer::get_instance();
+
+        // Get the registered processes from the Service Container
+        $this->customProcessCallbacks = $serviceContainer->get_registered_processes();
+        // print_r($this->customProcessCallbacks);
+
+        // Following code is to create process Resident Process based on customProcessCallbacks[] and enable reload on process code.
+        $this->server->customProcesses = [];
+        foreach ($this->customProcessCallbacks as $processKey => $processInfo) {
+            // Process Options
+            $processOptions = $processInfo['process_options'] ?? [];
+
+            // Process Creation Callback
+            $processCallback = function ($process) use ($processKey) {
+                try {
+                    // Create the PID file of process - Used to kill the process in Before Reload
+                    $pidFile = __DIR__ . '/process_pids/' . $processKey . '.pid';
+                    file_put_contents($pidFile, $process->pid);
+
+                    // Get the ServiceContainerInstance with global process parameters
+                    $serviceContainer = ServiceContainer::get_instance($this->server, $process);
+                    $serviceContainer($processKey);
+
+                    // Throw the exception if no Swoole\Timer is used in.
+                    // There should be a Timer is to prevent the user process from continuously exiting and restarting as per documentation
+                    // Reference: https://wiki.swoole.com/en/#/server/methods?id=addprocess
+                    if (count(swTimer::list()) == 0) {
+                        throw new ExitException('The resident process must have a Swoole\Timer::tick()');
+                    }
+                } catch (\Throwable $e) {
+                    echo 'EXCEPTION: ' . PHP_EOL;
+                    echo 'MESSAGE: ' . $e->getMessage() . PHP_EOL;
+                    echo 'FILE:' . $e->getFile() . PHP_EOL;
+                    echo 'LINE:' . $e->getLine() . PHP_EOL;
+                    echo 'CODE:' . $e->getCode() . PHP_EOL;
+
+                    sw_exit($this->server);
+                }
+            };
+
+            // Create the Process
+            $this->server->customProcesses[$processKey] = new Process($processCallback, ...$processOptions);
+
+            // Add the process to server
+            $this->server->addProcess($this->server->customProcesses[$processKey]);
+        }
     }
 
     protected function bindServerEvents() {
