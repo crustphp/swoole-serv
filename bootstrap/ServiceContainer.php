@@ -18,6 +18,13 @@ class ServiceContainer
     // Services will contain the registered Service Classes
     private static $services = [];
 
+    // Processes will contain the registered Process Callbacks
+    private static $processes = [];
+
+    // Global Constructor Parameter
+    protected static $server;
+    protected static $process;
+
     /**
      * Protected contructor is used to prevent creating the object of ServiceContainer (Singleton)
      *
@@ -43,7 +50,7 @@ class ServiceContainer
      * 
      * @return self The singleton instance of ServiceContainer.
      */
-    public static function get_instance()
+    public static function get_instance($server = null, $process = null)
     {
         // // Check if Key is provided to register the service
         // if (trim($key) !== "" && $service) {
@@ -52,10 +59,21 @@ class ServiceContainer
         //     self::$services[$key] = 'defaultServices';
         // }
 
+        // // Add the global parameters in the ServiceContainer for using them in custom User Processes
+        if (!is_null($server)) {
+            self::$server = $server;
+        }
+
+        if (!is_null($process)) {
+            self::$process = $process;
+        }
+
+        self::registerServices();
+        self::registerProcesses();
+
         $cls = static::class; // string name of the class 'ServiceContainer'
         if (!isset(self::$instance[$cls])) {
             self::$instance[$cls] = new static();
-            self::registerServices();
         }
 
         return self::$instance[$cls];
@@ -177,32 +195,55 @@ class ServiceContainer
 
 
     /**
-     * __invoke function returns the instance of the registered service class.
+     * __invoke function returns the instance of the registered service class or call the callback of custom User Process.
      * Additionaly you can pass the custom factory as callback to override the default funcationality
      *
-     * @param  mixed $serviceClassAlias
+     * @param  mixed $classAlias
      * @param  mixed $customFactoryAsCallback
      * @param  mixed $constructorParams
      * @return mixed
      */
-    public function __invoke(string $serviceClassAlias, callable $customFactoryAsCallback = null, ...$constructorParams): mixed
+    public function __invoke(string $classAlias, callable $customFactoryAsCallback = null, ...$constructorParams): mixed
     {
-        if (!array_key_exists($serviceClassAlias, self::$services)) {
-            throw new \RuntimeException('Service class is not registered on provided alias (' . $serviceClassAlias . ') in ' . __CLASS__);
+        // First we check if the classAlias exists in Registered ServiceContainer
+        if (array_key_exists($classAlias, self::$services)) {
+            $classType = 'service';
+        } else if (array_key_exists($classAlias, self::$processes)) {
+            $classType = 'process';
+        } else {
+            throw new \RuntimeException('Class is not registered on provided alias (' . $classAlias . ') in ' . __CLASS__);
         }
 
-        // Execute the callback function if provided, otherwise run the default functionality
-        if (!is_null($customFactoryAsCallback)) {
-            // Here we will pass constructorParams to callback;
-            if (isset($constructorParams)) {
-                return call_user_func_array($customFactoryAsCallback, $constructorParams);
+        if ($classType == 'process') {
+            $processInfo = self::$processes[$classAlias];
+
+            // Prioritize constructorParams parameter if passed otherwise use the constructor params provided during registration
+            $constructorParams = count($constructorParams) ? $constructorParams : ($processInfo['constructor_params'] ?? []);
+
+            // Execute the callback function if provided to create the Process Service Instance/Object
+            if (!is_null($customFactoryAsCallback)) {
+                $processServiceInstance = $this->createObjFromCallback($customFactoryAsCallback, $constructorParams);
             } else {
-                return call_user_func($customFactoryAsCallback);
+                // Default code to create the Process Service Instance
+                if (count($constructorParams)) {
+                    $processServiceInstance = new $processInfo['callback'][0](...$constructorParams);
+                } else {
+                    // Default process with no constructor params
+                    $processServiceInstance = new $processInfo['callback'][0]();
+                }
             }
-        }
 
-        // Default case we will create the object of the Service Class and return it
-        return $this->create_service_object($serviceClassAlias, ...$constructorParams);
+            // Call the callback of the Process Service Class registered
+            return call_user_func([$processServiceInstance, $processInfo['callback'][1]]);
+        } else {
+            // Execute the callback function if provided, otherwise run the default functionality
+            if (!is_null($customFactoryAsCallback)) {
+                return $this->createObjFromCallback($customFactoryAsCallback, $constructorParams);
+            }
+
+            // Default case we will create the object of the Service Class and return it
+            return $this->create_service_object($classAlias, ...$constructorParams);
+        }
 
         // Old Code
         // if (isset($serviceKey)) {
@@ -286,6 +327,43 @@ class ServiceContainer
         return self::$services;
     }
 
+    /**
+     * This function is used to register the Resident (Keep-alive) processes. You can add your processes callbacks here to register.
+     *
+     * @return void
+     */
+    private static function registerProcesses(): void
+    {
+        self::$processes = [
+            'news_process' => [
+                // Callback of Process you want to call when the process will be created
+                'callback' => [\App\Services\NewsService::class, 'handle'],
+
+                // Optional: Array of constructor params to be used when creating the class
+                'constructor_params' => [self::$server, self::$process],
+
+                // Process Options
+                'process_options' => [
+                    'redirect_stdin_and_stdout' => false,
+                    'pipe_type' => SOCK_DGRAM,
+                    'enable_coroutine' => true,
+                ]
+            ],
+
+            // Add More Processes Here
+        ];
+    }
+
+    /**
+     * Get the list of the registered processes
+     *
+     * @return mixed
+     */
+    public function get_registered_processes(): mixed
+    {
+        return self::$processes;
+    }
+
     private function getCallableType($callable): string
     {
         switch (true) {
@@ -365,5 +443,22 @@ class ServiceContainer
         }
 
         return $data;
+    }
+
+    /**
+     * This function creates the class instance from callback provided by consumer
+     *
+     * @param  mixed $customFactoryAsCallback
+     * @param  mixed $constructorParams
+     * @return mixed
+     */
+    private function createObjFromCallback($customFactoryAsCallback, ...$constructorParams): mixed
+    {
+        // Here we will pass constructorParams to callback;
+        if (isset($constructorParams)) {
+            return call_user_func_array($customFactoryAsCallback, $constructorParams);
+        } else {
+            return call_user_func($customFactoryAsCallback);
+        }
     }
 }
