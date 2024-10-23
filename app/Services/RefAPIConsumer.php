@@ -12,6 +12,10 @@ class RefAPIConsumer
     protected $muasheratUserToken;
     protected $chunkSize = 100;
     protected $dbFacade;
+    protected $mAIndicatorsData = [];
+    protected $authCounter = 0;
+    protected $tooManyRequestCounter = 0;
+    protected $retry = 10;
 
     const FIELDS = 'CF_VOLUME,NUM_MOVES,PCTCHNG,TRDPRC_1,TURNOVER';
 
@@ -46,9 +50,13 @@ class RefAPIConsumer
         }
 
         // Fetch Refinitive access token
-        $refinitivAccessToken = $this->getRefinitivToken();
+        $refAccessToken = $this->getRefToken();
 
-        if (!empty($companiesRics) && !empty($refinitivAccessToken)) {
+        $refAccessToken = json_decode($refAccessToken);
+        // Check if access_token is set in the refAccessToken object
+        $refAccessToken = isset($refAccessToken->access_token) ? $refAccessToken->access_token : "";
+
+        if (!empty($companiesRics) && !empty($refAccessToken)) {
             $ricsChunks =  array_chunk($companiesRics, $this->chunkSize);
 
             // Proceed if both RICs and token are available
@@ -67,22 +75,19 @@ class RefAPIConsumer
                 ]
             ];
 
-            $mostActiveBarrier = Barrier::make();
-            $mostActiveData = [];
+            $mAIndicatorBarrier = Barrier::make();
+            $this->mAIndicatorsData = [];
+            $this->authCounter = 0;
+            $this->tooManyRequestCounter = 0;
             // Process each chunk asynchronously using coroutines
             foreach ($ricsChunks as $chunk) {
-                go(function () use ($chunk, $queryParams, $refinitivAccessToken, &$mostActiveData, $mostActiveBarrier) {
                     $queryParams['universe'] = '/' . implode(',/', $chunk);
-                    // Fetch the data for this chunk
-                    $response = $this->getMostActiveData($refinitivAccessToken, $queryParams);
-                    $response = json_decode($response, true);
-                    $mostActiveData = array_merge($mostActiveData, $response);
-                });
+                    $this->sendRequest($chunk, $queryParams, $refAccessToken, $mAIndicatorBarrier);
             }
 
-            Barrier::wait($mostActiveBarrier);
+            Barrier::wait($mAIndicatorBarrier);
 
-            return $mostActiveData;
+            return $this->mAIndicatorsData;
         }
         throw new \RuntimeException('Failed to retrieve data of most active.');
     }
@@ -94,7 +99,7 @@ class RefAPIConsumer
      *
      * @return string
      */
-    function getRefinitivToken(): string
+    function getRefToken(): string
     {
         $host =  config('app_config.app_url');
         $port = 443; // This must be changed to port 80 if using http, instead of https.
@@ -139,8 +144,7 @@ class RefAPIConsumer
 
         $client->close();
 
-        $token_record = json_decode($token_record);
-        return $token_record->access_token;
+       return $token_record;
     }
 
     /**
@@ -148,9 +152,9 @@ class RefAPIConsumer
      *
      * @param  string $token
      * @param  array $queryParams
-     * @return string A json encoded string of snapshot data
+     * @return array A json encoded array of snapshot data
      */
-    function getMostActiveData(string $token, array $queryParams): string
+    function getIndicatorsData(string $token, array $queryParams): array
     {
         // var_dump('getMostActiveData function start');
         // Here I will use parse_url() function of PHP
@@ -219,10 +223,51 @@ class RefAPIConsumer
             var_dump($client->statusCode);
         }
 
+        $statusCode = $client->statusCode;
+
         $client->close();
 
-        return $response;
+        return [
+            'status_code' => $statusCode,
+            'response' => $response,
+        ];
     }
+
+    public function sendRequest($chunk, $queryParams, $accessToken, $mAIndicatorBarrier)
+    {
+        go(function () use ($chunk, $queryParams, $accessToken, $mAIndicatorBarrier) {
+            // Fetch the data for this chunk
+            $responseData = $this->getIndicatorsData($accessToken, $queryParams);
+            $statusCode = $responseData['status_code'];
+            $response = $responseData['response'];
+
+            if ($statusCode === 401) { // Check for status code 401 (Unauthorized)
+                if ($this->authCounter <  $this->retry) {
+                    $this->authCounter++;
+                    var_dump('Unauthorized: Invalid token or session has expired.');
+                    $token = $this->getRefToken();
+                    $this->sendRequest($chunk, $queryParams, $token, $mAIndicatorBarrier);
+                } else {
+                    var_dump('Unauthorized: Retry limit reached.');
+                }
+            } else if ($statusCode === 429) { // Check for status code 429 (Too Many Requests)
+                if ($this->tooManyRequestCounter <  $this->retry) {
+                    $this->tooManyRequestCounter++;
+                    var_dump('Too Many Requests: Rate limit exceeded.');
+                    sleep($this->tooManyRequestCounter+1);
+                    $this->sendRequest($chunk, $queryParams, $accessToken, $mAIndicatorBarrier);
+                } else {
+                    var_dump('Too many requests: Retry limit reached.');
+                }
+            } else if ($statusCode === 200) { // Return
+                $res = json_decode($response, true);
+                $this->mAIndicatorsData = array_merge($this->mAIndicatorsData, $res);
+            } else {
+                var_dump('Invalid repsonse from Refinitive Snapshot API', $response);
+            }
+        });
+    }
+
 
     public function __destruct() {}
 }
