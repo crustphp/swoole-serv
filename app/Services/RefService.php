@@ -20,6 +20,9 @@ class RefService
     protected $dbConnectionPools;
     protected $postgresDbKey;
     protected $process;
+    protected $worker_id;
+    protected $objDbPool;
+    protected $dbFacade;
 
     const TOPGAINERCOLUMN = 'calculated_value';
     const ERRORLOG = 'error_logs';
@@ -30,6 +33,27 @@ class RefService
         $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
         $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
         $this->process = $process;
+        $this->worker_id = $this->process->id;
+
+        $app_type_database_driven = config('app_config.app_type_database_driven');
+        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
+        if ($app_type_database_driven) {
+            $poolKey = makePoolKey($this->worker_id, 'postgres');
+            try {
+                // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
+                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey, 'postgres', 'swoole', true);
+                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key]->create();
+            } catch (\Throwable $e) {
+                echo $e->getMessage() . PHP_EOL;
+                echo $e->getFile() . PHP_EOL;
+                echo $e->getLine() . PHP_EOL;
+                echo $e->getCode() . PHP_EOL;
+                var_dump($e->getTrace());
+            }
+        }
+
+        $this->objDbPool = $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key];
+        $this->dbFacade = new DbFacade();
     }
 
     /**
@@ -39,38 +63,15 @@ class RefService
      */
     public function handle()
     {
-            /// DB connection
-            $worker_id = $this->process->id;
             $companyDetail = null;
 
-            $app_type_database_driven = config('app_config.app_type_database_driven');
-            $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-            if ($app_type_database_driven) {
-                $poolKey = makePoolKey($worker_id, 'postgres');
-                try {
-                    // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
-                    $this->dbConnectionPools[$worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey, 'postgres', 'swoole', true);
-                    $this->dbConnectionPools[$worker_id][$swoole_pg_db_key]->create();
-                } catch (\Throwable $e) {
-                    echo $e->getMessage() . PHP_EOL;
-                    echo $e->getFile() . PHP_EOL;
-                    echo $e->getLine() . PHP_EOL;
-                    echo $e->getCode() . PHP_EOL;
-                    var_dump($e->getTrace());
-                }
-            }
-
-            $objDbPool = $this->dbConnectionPools[$worker_id][$swoole_pg_db_key];
-            // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-            $dbFacade = new DbFacade();
-
             // Aggregate query to get the count from the Refinitive table
-            $refCountFromDB = $this->getDataCountFromDB($objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value);
+            $refCountFromDB = $this->getDataCountFromDB(RefMostActiveEnum::TOPGAINER->value);
 
             // Check $refCountFromDB has count greater than zero
             if ($refCountFromDB && $refCountFromDB[0]['count'] > 0) {
                 // Get Refinintive mAIndicator data from DB
-                $mAIndicatorDataFromDB = $this->getDataFromDB($dbFacade, $objDbPool, RefMostActiveEnum::TOPGAINER->value);
+                $mAIndicatorDataFromDB = $this->getDataFromDB(RefMostActiveEnum::TOPGAINER->value);
 
                 // If the data is fresh, initialize from the database
                 if ($this->isFreshData($mAIndicatorDataFromDB)) {
@@ -78,23 +79,23 @@ class RefService
                 } else {
                     var_dump("There is older data than five minutes");
                     // Get companies details from DB
-                    $companyDetail = $this->getCompaniesFromDB($objDbPool, $dbFacade);
-                    $isProcessedRefMAIndicatorData = $this->processData($objDbPool, $companyDetail, $dbFacade, true, RefMostActiveEnum::TOPGAINER->value);
+                    $companyDetail = $this->getCompaniesFromDB();
+                    $isProcessedRefMAIndicatorData = $this->processData($companyDetail, true, RefMostActiveEnum::TOPGAINER->value);
 
                     // If Refinitive data is not processed, load old data from the DB because the Refinitive API is not returning data at this time
                     if(!$isProcessedRefMAIndicatorData) {
                         var_dump('Load old Refinitive data from the DB because the Refinitive API is not returning data at this time');
                         $this->loadSwooleTableFromDB(RefMostActiveEnum::TOPGAINER->value, $mAIndicatorDataFromDB);
                          // Load Job run at into swoole table
-                         $this->saveRefJobRunAtIntoSwooleTable($mAIndicatorDataFromDB[0]['latest_update']);
+                        $this->saveRefJobRunAtIntoSwooleTable($mAIndicatorDataFromDB[0]['latest_update']);
                     }
 
                 }
             } else {
                 var_dump("There is no Refinitive data in DB");
                 // Get companies details from DB
-                $companyDetail = $this->getCompaniesFromDB($objDbPool, $dbFacade);
-                $isProcessedRefMAIndicatorData = $this->processData($objDbPool, $companyDetail, $dbFacade, false, RefMostActiveEnum::TOPGAINER->value);
+                $companyDetail = $this->getCompaniesFromDB();
+                $isProcessedRefMAIndicatorData = $this->processData($companyDetail, false, RefMostActiveEnum::TOPGAINER->value);
 
                 if(!$isProcessedRefMAIndicatorData) {
                     var_dump('Refinitive API is not returning data at this time');
@@ -102,25 +103,25 @@ class RefService
             }
 
             // Schedule of Most Active Data Fetching
-            swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($worker_id, $objDbPool, $dbFacade, $companyDetail) {
-                $this->initRef($objDbPool, $dbFacade, $companyDetail);
+            swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($companyDetail) {
+                $this->initRef($companyDetail);
             });
 
     }
 
-    public function initRef(Object $objDbPool, Object $dbFacade, mixed $companyDetail)
+    public function initRef(mixed $companyDetail)
     {
         if(is_null($companyDetail)) {
-            $companyDetail = $this->getCompaniesFromDB($objDbPool, $dbFacade);
+            $companyDetail = $this->getCompaniesFromDB();
         }
         // Fetch data from Refinitiv API
-        $responses = $this->fetchRefData($objDbPool, $dbFacade, $companyDetail);
+        $responses = $this->fetchRefData($companyDetail);
         // Handle refinitive responses
         $refMAIndicatorData = $this->handleRefResponses($responses, $companyDetail);
 
         if (count($refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value]) > 0) {
             // Handle the Refinitive Top Gainer Module
-            $this->refIndicatorModuleHandle($refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value], $objDbPool, $dbFacade, RefMostActiveEnum::TOPGAINER->value, self::TOPGAINERCOLUMN);
+            $this->refIndicatorModuleHandle($refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value], RefMostActiveEnum::TOPGAINER->value, self::TOPGAINERCOLUMN);
         } else {
             // Data not received from Refinitiv
             var_dump('Data not received from Refinitiv Pricing Snapshot API');
@@ -128,11 +129,11 @@ class RefService
 
         // Save refintive most active logs into DB table
         if (count($refMAIndicatorData[self::ERRORLOG]) > 0) {
-            $this->saveLogsIntoDBTable($refMAIndicatorData[self::ERRORLOG], $dbFacade, $objDbPool);
+            $this->saveLogsIntoDBTable($refMAIndicatorData[self::ERRORLOG]);
         }
     }
 
-    public function refIndicatorModuleHandle(array $refMAIndicatorData, Object $objDbPool, Object $dbFacade, string $tableName, string $column)
+    public function refIndicatorModuleHandle(array $refMAIndicatorData, string $tableName, string $column)
     {
         $previousMAIndicatorData = [];
 
@@ -145,7 +146,7 @@ class RefService
 
         // Check data exist into swoole table
         if (count($previousMAIndicatorData) < 1) {
-            $previousMAIndicatorData = $this->fetchTableDataFromDB($tableName, $dbFacade, $objDbPool);
+            $previousMAIndicatorData = $this->fetchTableDataFromDB($tableName);
             var_dump('Data fetched from DB table ' . $tableName);
         }
 
@@ -166,7 +167,7 @@ class RefService
             // Save into swoole table
             $this->saveIntoSwooleTable($differentMAIndicatorData, $tableName);
             // Save into DB Table
-            $this->saveIntoDBTable($refMAIndicatorData, $tableName, $dbFacade, $objDbPool, true);
+            $this->saveIntoDBTable($refMAIndicatorData, $tableName, true);
             // Save Job run at into swoole table
             $this->saveRefJobRunAtIntoSwooleTable($refMAIndicatorData[0]['latest_update']);
         }
@@ -185,12 +186,12 @@ class RefService
         return $isFreshDBData;
     }
 
-    public function getDataFromDB($dbFacade, $objDbPool, $tableName)
+    public function getDataFromDB($tableName)
     {
         $dbQuery = "SELECT refTable.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
         c.isin_code, c.created_at, c.arabic_name AS ar_long_name, c.arabic_short_name AS ar_short_name, c.ric
         FROM $tableName refTable JOIN companies c ON refTable.company_id = c.id";
-        return $dbFacade->query($dbQuery, $objDbPool);
+        return $this->dbFacade->query($dbQuery, $this->objDbPool);
     }
 
     public function loadSwooleTableFromDB($tableName, $mAIndicatorDBData)
@@ -221,26 +222,25 @@ class RefService
         }
     }
 
-    public function loadDatastoresFromRef($refMAIndicatorData, $dbFacade, $objDbPool, $tableName, $column, $isTruncate)
+    public function loadDatastoresFromRef($refMAIndicatorData, $tableName, $column, $isTruncate)
     {
         var_dump("Initialize fresh data from Refinitive for top gainers");
         // Save into swoole table
         $this->saveIntoSwooleTable($refMAIndicatorData, $tableName);
         // Save into DB Table
-        $this->saveIntoDBTable($refMAIndicatorData, $tableName, $dbFacade, $objDbPool, $isTruncate);
+        $this->saveIntoDBTable($refMAIndicatorData, $tableName, $isTruncate);
     }
 
     /**
      * Most active data fetching
      *
-     * @param  Object  $objDbPool
      * @param  mixed  $companyDetail
      * @return void
      */
 
-    public function fetchRefData(Object $objDbPool, object $dbFacade, mixed $companyDetail)
+    public function fetchRefData(mixed $companyDetail)
     {
-        $service = new RefAPIConsumer($this->server, $objDbPool, $dbFacade);
+        $service = new RefAPIConsumer($this->server, $this->objDbPool, $this->dbFacade);
         $responses = $service->handle($companyDetail);
         unset($service);
 
@@ -336,10 +336,10 @@ class RefService
         return round((float) $value, 6);
     }
 
-    public function fetchTableDataFromDB(string $table, object $dbFacade, object $objDbPool)
+    public function fetchTableDataFromDB(string $table)
     {
         $dbQuery = "SELECT * FROM " . $table;
-        return $dbFacade->query($dbQuery, $objDbPool);
+        return $this->dbFacade->query($dbQuery, $this->objDbPool);
     }
 
     public function broadCastIndicatorData(array $differentMAIndicatorData)
@@ -358,27 +358,27 @@ class RefService
         var_dump('Save data into Swoole table ' . $tableName);
         $table = SwooleTableFactory::getTable($tableName);
         foreach ($mAIndicatorData as $data) {
-            $table->set($data['company_id'], $data);
+                $table->set($data['company_id'], $data);
         }
     }
 
-    public function saveIntoDBTable(array $mAIndicatorData, string $tableName, object $dbFacade, object $objDbPool, bool $isTruncate )
+    public function saveIntoDBTable(array $mAIndicatorData, string $tableName, bool $isTruncate )
     {
         var_dump('Save data into DB table ' . $tableName);
-        go(function () use ($dbFacade, $mAIndicatorData, $tableName, $objDbPool, $isTruncate) {
+        go(function () use ($mAIndicatorData, $tableName, $isTruncate) {
             $dbQuery ="";
             if($isTruncate) {
                 $dbQuery = 'TRUNCATE TABLE ONLY public."' . $tableName . '" RESTART IDENTITY RESTRICT;';
             }
             $dbQuery .= $this->makeInsertQuery($tableName, $mAIndicatorData);
-            $dbFacade->query($dbQuery, $objDbPool, null, true, true, $tableName);
+            $this->dbFacade->query($dbQuery, $this->objDbPool, null, true, true, $tableName);
         });
     }
 
-    public function saveLogsIntoDBTable(array $mAIndicatorLogs, object $dbFacade, object $objDbPool)
+    public function saveLogsIntoDBTable(array $mAIndicatorLogs)
     {
         var_dump('Save logs into DB table ref_most_active_logs');
-        go(function () use ($mAIndicatorLogs, $dbFacade, $objDbPool) {
+        go(function () use ($mAIndicatorLogs) {
             $values = [];
             foreach ($mAIndicatorLogs as $mAIndicatorlog) {
                 // Collect each set of values into the array
@@ -387,7 +387,7 @@ class RefService
             $dbQuery = "INSERT INTO ref_most_active_logs (ric, type, created_at, updated_at)
             VALUES " . implode(", ", $values);
 
-            $dbFacade->query($dbQuery, $objDbPool);
+            $this->dbFacade->query($dbQuery, $this->objDbPool);
         });
     }
 
@@ -457,7 +457,7 @@ class RefService
         return $dbQuery;
     }
 
-    public function getCompaniesFromDB(object $objDbPool, object $dbFacade)
+    public function getCompaniesFromDB()
     {
         $dbQuery = "SELECT ric, id, name, sp_comp_id, short_name, symbol, isin_code, created_at, arabic_name, arabic_short_name  FROM companies
             WHERE ric IS NOT NULL
@@ -465,7 +465,7 @@ class RefService
             AND ric ~ '^[0-9a-zA-Z\\.]+$'";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-        $results = $dbFacade->query($dbQuery, $objDbPool);
+        $results = $this->dbFacade->query($dbQuery, $this->objDbPool);
 
         // Process the results: create an associative array with 'ric' as the key and 'id' as the value
         $companyDetail = [];
@@ -476,20 +476,20 @@ class RefService
         return $companyDetail;
     }
 
-    public function getDataCountFromDB(object $objDbPool, object $dbFacade, string $tableName)
+    public function getDataCountFromDB(string $tableName)
     {
         $dbQuery = "SELECT count(*)  FROM " . $tableName;
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-        $refCountInDB = $dbFacade->query($dbQuery, $objDbPool);
+        $refCountInDB = $this->dbFacade->query($dbQuery, $this->objDbPool);
 
         return $refCountInDB;
     }
 
-    public function processData($objDbPool, $companyDetail, $dbFacade, $isStale, $tableName)
+    public function processData($companyDetail, $isStale, $tableName)
     {
         $isProcessedRefMAIndicatorData = false;
         // Fetch data from Refinitive
-        $responses = $this->fetchRefData($objDbPool,  $dbFacade, $companyDetail);
+        $responses = $this->fetchRefData($companyDetail);
 
         // Handle Refinitive responses
         $refMAIndicatorData = $this->handleRefResponses($responses, $companyDetail);
@@ -498,8 +498,6 @@ class RefService
         if (count($refMAIndicatorData[$tableName]) > 0) {
             $this->loadDatastoresFromRef(
                 $refMAIndicatorData[$tableName],
-                $dbFacade,
-                $objDbPool,
                 $tableName,
                 self::TOPGAINERCOLUMN,
                 $isStale
@@ -512,7 +510,7 @@ class RefService
 
         // Save Refinitive most active logs into DB table
         if (count($refMAIndicatorData[self::ERRORLOG]) > 0) {
-            $this->saveLogsIntoDBTable($refMAIndicatorData[self::ERRORLOG], $dbFacade, $objDbPool);
+            $this->saveLogsIntoDBTable($refMAIndicatorData[self::ERRORLOG]);
         }
 
         return $isProcessedRefMAIndicatorData;
