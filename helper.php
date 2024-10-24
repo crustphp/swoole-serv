@@ -86,3 +86,41 @@ if (!function_exists('config')) {
         return $result;
     }
 }
+
+// Get all the directories and their sub-directories recurrsivly
+if (!function_exists('getAllDirectories')) {
+    /**
+     * Get all the directories and their sub-directories recurrsivly
+     *
+     * @param string $dir The base directory to start scanning from.
+     * @param array $skipDirs An array of directory names to skip during scanning.
+     * 
+     * @return mixed A list of final directories
+     */
+    function getAllDirectories($dir, $skipDirs = []): mixed
+    {
+        // Get first-level directories
+        $dirs = glob($dir . '/*', GLOB_ONLYDIR);
+        $allDirs = [];
+
+        foreach ($dirs as $d) {
+
+            // Skip directories that are in the $skipDirs array
+            // Basename() example /var/www/html/muasherat/swoole-serv/app/Core/Enum  -> will return "Enum"
+            if (in_array(basename($d), $skipDirs)) {
+                continue;
+            }
+
+            // Add the current directory
+            $allDirs[] = $d;
+
+            // Recursively get subdirectories
+            $subDirs = getAllDirectories($d, $skipDirs);
+
+            // Merge subdirectories into the final list
+            $allDirs = array_merge($allDirs, $subDirs);
+        }
+
+        return $allDirs;
+    }
+}
