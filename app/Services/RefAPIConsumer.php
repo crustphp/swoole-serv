@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Swoole\Coroutine\Barrier;
 use Swoole\Coroutine\Http\Client;
+use Swoole\Coroutine;
 
 class RefAPIConsumer
 {
@@ -15,7 +16,7 @@ class RefAPIConsumer
     protected $mAIndicatorsData = [];
     protected $authCounter = 0;
     protected $tooManyRequestCounter = 0;
-    protected $retry = 10;
+    protected $retry;
 
     const FIELDS = 'CF_VOLUME,NUM_MOVES,PCTCHNG,TRDPRC_1,TURNOVER';
 
@@ -26,6 +27,7 @@ class RefAPIConsumer
         $this->dbFacade = $dbFacade;
         // Change this token ('Add Authentication Token here of any staging user')
         $this->muasheratUserToken = $_ENV['STAGING_USER_TOKEN'];
+        $this->retry =  config('app_config.refinitv_retry');
     }
 
     public function handle($companies = null)
@@ -254,7 +256,7 @@ class RefAPIConsumer
                 if ($this->tooManyRequestCounter <  $this->retry) {
                     $this->tooManyRequestCounter++;
                     var_dump('Too Many Requests: Rate limit exceeded.');
-                    sleep($this->tooManyRequestCounter+1);
+                    Coroutine::sleep($this->tooManyRequestCounter);
                     $this->sendRequest($chunk, $queryParams, $accessToken, $mAIndicatorBarrier);
                 } else {
                     var_dump('Too many requests: Retry limit reached.');
