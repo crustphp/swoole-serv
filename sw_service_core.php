@@ -439,7 +439,6 @@ class sw_service_core {
 //          require __DIR__.'/init_eloquent.php';
             }
 
-            include_once __DIR__ . '/includes/Autoload.php';
             // Get the Service Container Instance
             $this->serviceContainer = ServiceContainer::get_instance();
 
