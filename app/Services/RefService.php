@@ -155,8 +155,15 @@ class RefService
             // Compare with existing data
             $differentMAIndicatorData = $this->compare($previousMAIndicatorData, $refMAIndicatorData, $column);
 
-            // Broadcast the changed data
-            $this->broadCastIndicatorData($differentMAIndicatorData);
+            if(count($differentMAIndicatorData) > 0) {
+                // Fetch data from swoole table ma_indicator_job_runs_at
+                $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
+                $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
+                ? $mAIndicatorJobRunsAtData[0]['job_run_at']
+                : null;
+                // Broadcast the changed data
+                $this->broadCastIndicatorData($differentMAIndicatorData, $mAIndicatorJobRunsAt);
+            }
         } else {
             var_dump('No changed data for broadcasting data of ' . $tableName);
             $differentMAIndicatorData = $refMAIndicatorData;
@@ -342,12 +349,19 @@ class RefService
         return $this->dbFacade->query($dbQuery, $this->objDbPool);
     }
 
-    public function broadCastIndicatorData(array $differentMAIndicatorData)
+    public function broadCastIndicatorData(array $differentMAIndicatorData, mixed $mAIndicatorJobRunsAt)
     {
-        foreach ($differentMAIndicatorData as $data) {
-            go(function () use ($data) {
+        $jsonData = json_encode([
+            'ref_top_gainers' => $differentMAIndicatorData,
+            'job_runs_at' => $mAIndicatorJobRunsAt,
+        ]);
+
+        if ($jsonData == false) {
+            echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
+        } else {
+            go(function () use ($jsonData) {
                 for ($worker_id = 0; $worker_id < $this->server->setting['worker_num']; $worker_id++) {
-                    $this->server->sendMessage(json_encode($data), $worker_id);
+                    $this->server->sendMessage($jsonData, $worker_id);
                 }
             });
         }
