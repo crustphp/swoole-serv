@@ -642,8 +642,16 @@ class sw_service_core {
                 return $b['calculated_value'] <=> $a['calculated_value'];
             });
 
+            // Fetch data from swoole table ma_indicator_job_runs_at
+            $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
+            $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at']) ? $mAIndicatorJobRunsAtData[0]['job_run_at'] : null;
+
             // Here we will check if the data is encoded without any error
-            $topGainersJson = json_encode($topGainersData);
+            $topGainersJson = json_encode([
+                'ref_top_gainers' => $topGainersData,
+                'job_runs_at' => $mAIndicatorJobRunsAt,
+            ]);
+
             if ($topGainersJson == false) {
                 echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
             } else {
