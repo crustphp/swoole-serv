@@ -349,7 +349,9 @@ class sw_service_core {
             $inotify_handles = [];
             $watch_descriptors = [];
             if ($worker_id == 0 ) {
-                $dirs = glob(__DIR__ . '/*' , GLOB_ONLYDIR);
+                // Get All Directories Recurrsively Except Vendor and Logs
+                $skipDirs = ['vendor', 'logs', 'process_pids'];
+                $dirs = getAllDirectories(__DIR__, $skipDirs);
                 foreach ($dirs as $dir) {
                     $inotify_handles[] = inotify_init();
                     $watch_descriptors[] = inotify_add_watch($inotify_handles[count($inotify_handles)-1], $dir,
