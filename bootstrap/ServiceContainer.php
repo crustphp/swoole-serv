@@ -296,25 +296,25 @@ class ServiceContainer
      */
     private static function registerServices(): void
     {
-        self::$services = [
-            // Hint: Alias => ServiceClass Namespace::class
-            'FrontendBroadcastingService' => [
-                'class' => \App\Core\Services\FrontendBroadcastingService::class,
+        try {
+            $rootDir = dirname(__DIR__, 1);
+            $registryFile = $rootDir . DIRECTORY_SEPARATOR . 'registry/ServiceRegistry.php';
 
-                // You can either pass a factory with factory class and method name
-                // or by directly adding a callback function
+            // Check if Registry File Exists
+            if (!file_exists($registryFile)) {
+                throw new \RuntimeException("Service registry file not found: {$registryFile}");
+            }
 
-                // Using Factory Class and its Method/Function
-                'factory' => [\App\Core\Factories\FrontendBroadcastingFactory::class, 'build'],
-
-                // Using a callback function
-                // 'factory' => function ($websocketserver) {
-                //     return new \App\Core\Services\FrontendBroadcastingService($websocketserver);
-                // },
-            ],
-
-            // Add More Services Here
-        ];
+            self::$services = include($registryFile);
+        } catch (\Throwable $e) {
+            echo PHP_EOL;
+            echo 'Error Message: ' . $e->getMessage() . PHP_EOL;
+            echo 'In File: ' . $e->getFile() . PHP_EOL;
+            echo 'On Line: ' . $e->getLine() . PHP_EOL;
+            echo 'Error Code: ' . $e->getCode() . PHP_EOL;
+            echo PHP_EOL;
+            throw $e;
+        }
     }
 
     /**
@@ -334,43 +334,25 @@ class ServiceContainer
      */
     private static function registerProcesses(): void
     {
-        self::$processes = [
-            'news_process' => [
-                // Callback of Process you want to call when the process will be created
-                'callback' => [\App\Services\NewsService::class, 'handle'],
+        try {
+            $rootDir = dirname(__DIR__, 1);
+            $registryFile = $rootDir . DIRECTORY_SEPARATOR . 'registry/ProcessRegistry.php';
 
-                // Optional: Array of constructor params to be used when creating the class
-                'constructor_params' => [self::$server, self::$process],
+            // Check if Registry File Exists
+            if (!file_exists($registryFile)) {
+                throw new \RuntimeException("Process registry file not found: {$registryFile}");
+            }
 
-                // Process Options
-                'process_options' => [
-                    'redirect_stdin_and_stdout' => false,
-                    'pipe_type' => SOCK_DGRAM,
-                    'enable_coroutine' => true,
-                ],
-
-            ],
-
-            'ref_process' => [
-                // Callback of Process you want to call when the process will be created
-                'callback' => [\App\Services\RefService::class, 'handle'],
-
-                // Optional: Array of constructor params to be used when creating the class
-                'constructor_params' => [self::$server, self::$process],
-
-                // Process Options
-                'process_options' => [
-                    'redirect_stdin_and_stdout' => false,
-                    'pipe_type' => SOCK_DGRAM,
-                    'enable_coroutine' => true,
-                ],
-
-            ],
-
-
-            // Add More Processes Here
-
-        ];
+            self::$processes = include($registryFile);
+        } catch (\Throwable $e) {
+            echo PHP_EOL;
+            echo 'Error Message: ' . $e->getMessage() . PHP_EOL;
+            echo 'In File: ' . $e->getFile() . PHP_EOL;
+            echo 'On Line: ' . $e->getLine() . PHP_EOL;
+            echo 'Error Code: ' . $e->getCode() . PHP_EOL;
+            echo PHP_EOL;
+            throw $e;
+        }
     }
 
     /**
