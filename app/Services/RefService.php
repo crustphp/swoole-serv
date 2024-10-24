@@ -521,10 +521,9 @@ class RefService
     }
 
     public function saveRefJobRunAtIntoSwooleTable($jobRunAt) {
-        var_dump('Save data into Swoole table job_run_at');
+        var_dump('Save data into Swoole table ma_indicator_job_runs_at');
         $data = ['job_run_at' => $jobRunAt];
-        $table = SwooleTableFactory::getTable('job_runs');
+        $table = SwooleTableFactory::getTable('ma_indicator_job_runs_at');
         $table->set(0, $data);
     }
-
 }
