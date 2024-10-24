@@ -529,31 +529,6 @@ class sw_service_core {
                     unset($inotify_handles);
                 }
             }
-
-            // In-case of Reload Code, backup the FDs in fds_table
-            $reloadFlagTable = SwooleTableFactory::getTable('reload_flag');
-            try {
-                $isReloading = $reloadFlagTable->get(1, 'reload_flag');
-
-                if ($isReloading) {
-                    // Here will we store the FDs into the SwooleTable
-                    $fdsTable = SwooleTableFactory::getTable('fds_table');
-                    foreach($server->fds as $fd) {
-                        $fdsTable->set($fd, ['fd' => $fd, 'worker_id' => $worker_id]);
-                    }
-                }
-            }
-            catch(\Throwable $e) {
-                // If there is no record at given key, Small DB throws Logic Exception, so here
-                // We Log the exception if its not LogicException
-                if (!($e instanceof \LogicException)) {
-                    echo $e->getMessage() . PHP_EOL;
-                    echo $e->getFile() . PHP_EOL;
-                    echo $e->getLine() . PHP_EOL;
-                    echo $e->getCode() . PHP_EOL;
-                    var_dump($e->getTrace());
-                }
-            }
         };
 
         $onWorkerError = function (OpenSwoole\Server $server, int $workerId) {
