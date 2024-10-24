@@ -358,9 +358,7 @@ class RefService
         var_dump('Save data into Swoole table ' . $tableName);
         $table = SwooleTableFactory::getTable($tableName);
         foreach ($mAIndicatorData as $data) {
-            go(function () use ($data, $table) {
-                $table->set($data['company_id'], $data);
-            });
+            $table->set($data['company_id'], $data);
         }
     }
 
