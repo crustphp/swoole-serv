@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Swoole\Timer;
+
 class NewsService
 {
     protected $server;
@@ -35,5 +37,12 @@ class NewsService
         // include(__DIR__. '/echo.php');
         
         echo 'Echo FROM OUTSIDE INCLUDE - 1' . PHP_EOL;       
+
+        // The following timer is just to prevent the user process from continuously exiting and restarting as per documentation
+        // In such cases we shutdown server, so its very important to have a Timer in Resident Processes
+        // Reference: https://wiki.swoole.com/en/#/server/methods?id=addprocess
+
+        // You can modify it according to business logic
+        Timer::tick(3000, function() {});
     }
 }

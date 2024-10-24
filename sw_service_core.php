@@ -211,8 +211,6 @@ class sw_service_core {
 
         // Background processes
         include_once __DIR__ . '/includes/Autoload.php';
-//        $refService = new  RefService($this->server);
-//        $refService->handle();
 
         // Techniques to Reload the Code (Following commented code can be useful in future)
         // $processCallback = new ProcessCallback($this->server); // Its a service
@@ -237,7 +235,7 @@ class sw_service_core {
             $processOptions = $processInfo['process_options'] ?? [];
 
             // Process Creation Callback
-            $processCallback = function ($process) use ($processKey) {
+            $processCallback = function ($process) use ($processKey, $processInfo) {
                 try {
                     // Create the PID file of process - Used to kill the process in Before Reload
                     $pidFile = __DIR__ . '/process_pids/' . $processKey . '.pid';
@@ -251,7 +249,8 @@ class sw_service_core {
                     // There should be a Timer is to prevent the user process from continuously exiting and restarting as per documentation
                     // Reference: https://wiki.swoole.com/en/#/server/methods?id=addprocess
                     if (count(swTimer::list()) == 0) {
-                        throw new ExitException('The resident process must have a Swoole\Timer::tick()');
+                        $qualifiedClassName = $processInfo['callback'][0] ?? "";
+                        throw new ExitException('The resident process (['. $processKey .'] -> '. $qualifiedClassName .') must have a Swoole\Timer::tick()');
                     }
                 } catch (\Throwable $e) {
                     echo 'EXCEPTION: ' . PHP_EOL;
