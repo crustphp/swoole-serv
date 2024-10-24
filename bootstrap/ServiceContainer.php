@@ -6,7 +6,7 @@ namespace Bootstrap;
 
 /**
  * Class ServiceContainer
- * 
+ *
  * This class implements a service container and allows registering and retrieving instances of registered services
  * It is implements the Singleton Design Pattern
  */
@@ -47,7 +47,7 @@ class ServiceContainer
 
     /**
      * Retrieves the singleton instance of the ServiceContainer.
-     * 
+     *
      * @return self The singleton instance of ServiceContainer.
      */
     public static function get_instance($server = null, $process = null)
@@ -81,7 +81,7 @@ class ServiceContainer
 
     /**
      * Registers a service with a specified alias.
-     * 
+     *
      * @param string $alias The key/alias to register the service.
      * @param string $serviceClassName The qualified class name of the service class to register.
      */
@@ -100,7 +100,7 @@ class ServiceContainer
     // I am keeping it so in-case consumer does not want the Service Container to create the instance of service. He/she can use it.
     /**
      * Get the service instances by Service Name
-     * 
+     *
      * @param string $alias The key/alias of the service to retrieve.
      * @return mixed The service class qualified name
      */
@@ -122,11 +122,11 @@ class ServiceContainer
 
     /**
      * Registers a service with a specified alias.
-     * 
+     *
      * @param string $alias The key/alias to register the service.
      * @param string $serviceClassName The qualified class name of the service class to register.
      * @param mixed $factory Optional: The default factory that will be used to create the service class instance.
-     * 
+     *
      * @return void
      */
     public function add_service(string $alias, string $serviceClassName, mixed $factory = null): void
@@ -347,10 +347,29 @@ class ServiceContainer
                     'redirect_stdin_and_stdout' => false,
                     'pipe_type' => SOCK_DGRAM,
                     'enable_coroutine' => true,
-                ]
+                ],
+
             ],
 
+            'ref_process' => [
+                // Callback of Process you want to call when the process will be created
+                'callback' => [\App\Services\RefService::class, 'handle'],
+
+                // Optional: Array of constructor params to be used when creating the class
+                'constructor_params' => [self::$server, self::$process],
+
+                // Process Options
+                'process_options' => [
+                    'redirect_stdin_and_stdout' => false,
+                    'pipe_type' => SOCK_DGRAM,
+                    'enable_coroutine' => true,
+                ],
+
+            ],
+
+
             // Add More Processes Here
+
         ];
     }
 

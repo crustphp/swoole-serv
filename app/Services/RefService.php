@@ -19,15 +19,17 @@ class RefService
     protected $server;
     protected $dbConnectionPools;
     protected $postgresDbKey;
+    protected $process;
 
     const TOPGAINERCOLUMN = 'calculated_value';
     const ERRORLOG = 'error_logs';
 
-    public function __construct($server, $postgresDbKey = null)
+    public function __construct($server, $process, $postgresDbKey = null)
     {
         $this->server = $server;
         $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
         $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
+        $this->process = $process;
     }
 
     /**
@@ -37,13 +39,12 @@ class RefService
      */
     public function handle()
     {
-        $refBackgroundProcess = new Process(function ($process) {
             /// DB connection
-            $app_type_database_driven = config('app_config.app_type_database_driven');
-            $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-            $worker_id = $process->id;
+            $worker_id = $this->process->id;
             $companyDetail = null;
 
+            $app_type_database_driven = config('app_config.app_type_database_driven');
+            $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
             if ($app_type_database_driven) {
                 $poolKey = makePoolKey($worker_id, 'postgres');
                 try {
@@ -104,9 +105,7 @@ class RefService
             swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($worker_id, $objDbPool, $dbFacade, $companyDetail) {
                 $this->initRef($objDbPool, $dbFacade, $companyDetail);
             });
-        }, false, SOCK_DGRAM, true);
 
-        $this->server->addProcess($refBackgroundProcess);
     }
 
     public function initRef(Object $objDbPool, Object $dbFacade, mixed $companyDetail)

@@ -210,8 +210,8 @@ class sw_service_core {
 
         // Background processes
         include_once __DIR__ . '/includes/Autoload.php';
-        $refService = new  RefService($this->server);
-        $refService->handle();
+//        $refService = new  RefService($this->server);
+//        $refService->handle();
 
         // Techniques to Reload the Code (Following commented code can be useful in future)
         // $processCallback = new ProcessCallback($this->server); // Its a service
