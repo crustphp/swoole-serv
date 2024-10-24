@@ -81,6 +81,7 @@ use Small\SwooleDb\Selector\Enum\ConditionOperator;
 use Small\SwooleDb\Selector\Bean\ConditionElement;
 use Small\SwooleDb\Selector\Bean\Condition;
 
+use Swoole\Process;
 use App\Core\Enum\ResponseStatusCode;
 
 use Swoole\ExitException;
