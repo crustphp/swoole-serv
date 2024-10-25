@@ -349,9 +349,12 @@ class sw_service_core {
             $inotify_handles = [];
             $watch_descriptors = [];
             if ($worker_id == 0 ) {
-                // Get All Directories Recurrsively Except Vendor and Logs
-                $skipDirs = ['vendor', 'logs', 'process_pids'];
+                // Convert excluded folders into an array and trim whitespace around folder names for accurate matching
+                $skipDirs = array_map('trim', explode(',', config('app_config.watch_excluded_folders')));
+
+                // Get All Directories list recurrsively
                 $dirs = getAllDirectories(__DIR__, $skipDirs);
+
                 foreach ($dirs as $dir) {
                     $inotify_handles[] = inotify_init();
                     $watch_descriptors[] = inotify_add_watch($inotify_handles[count($inotify_handles)-1], $dir,

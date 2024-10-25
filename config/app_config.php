@@ -23,5 +23,6 @@ return [
     'refinitiv_req_timeout' => intval($_ENV['REFINITIV_REQ_TIMEOUT'] ?? 5),
     'fds_reload_threshold' => intval($_ENV['FDS_RELOAD_THRESHOLD=100'] ?? 40),
     'refinitv_retry' => intval($_ENV['REFINITIV_RETRY'] ?? 3),
+    'watch_excluded_folders' => $_ENV['WATCH_EXCLUDED_FOLDERS'] ?? 'vendor, logs, process_pids', // List of dirs you don't want to track for hot reload
 ];
 
