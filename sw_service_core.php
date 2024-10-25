@@ -714,10 +714,12 @@ class sw_service_core {
                     // Shutdown method returns true on success: Reference https://wiki.swoole.com/en/#/server/methods?id=shutdown
                     $shutdownRes = $webSocketServer->shutdown();
                     if (!$shutdownRes) {
-                        if (file_exists('server.pid'))
-                            exec('cd ' . __DIR__ . ' && kill -SIGKILL `cat server.pid` 2>&1 1> /dev/null && rm -f server.pid');
-                        else
-                            exec('cd ' . __DIR__ . ' && kill -SIGKILL $(lsof -t -i:'.$this->port.') 2>&1 1> /dev/null');
+                        // If the server.pid file exists, kill the process by its PID; otherwise, kill processes listening on the server port.
+                        if (file_exists('server.pid')) {
+                            exec('cd ' . __DIR__ . ' && kill -9 `cat server.pid` 2>&1 1> /dev/null && rm -f server.pid');
+                        } else {
+                            exec('cd ' . __DIR__ . ' && kill -SIGKILL $(lsof -t -i:' . $this->port . ') 2>&1 1> /dev/null');
+                        }
                     }
                 } else if ($mainCommand == 'reload-code') {
                     swTimer::clearAll();
