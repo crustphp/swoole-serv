@@ -259,7 +259,7 @@ class sw_service_core {
                     echo 'LINE:' . $e->getLine() . PHP_EOL;
                     echo 'CODE:' . $e->getCode() . PHP_EOL;
 
-                    sw_exit($this->server);
+                    output(data: $e, shouldExit: true, server: $this->server);
                 }
             };
 

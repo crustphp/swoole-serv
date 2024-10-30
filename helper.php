@@ -7,30 +7,98 @@ if (!function_exists('hdump')){
     }
 }
 
-function sw_exit($server=null, $var=null) {
-    if (!is_null($var)) {
-        if (is_array($var)) {
-            print_r($var);
+// Display data to terminal or logs (in demonize mode)
+if (!function_exists('output')) {
+    /**
+     * Display data to terminal or logs (in daemon mode)
+     * You can also pass the instance of Exception / Throwable to log the exception
+     *
+     * @param mixed $data  The data to be printed or logged.
+     * @param mixed $server  Optional The Swoole server instance 
+     * @param bool $shouldExit  If true, exit the script after output.
+     * @param bool $shouldVarDump  If true, use var_dump
+     * 
+     * @return void
+     */
+    function output(mixed $data, mixed $server = null, bool $shouldExit = false, bool $shouldVarDump = false): void
+    {
+        // New line at start and begining of output to make it appear seperated from the rest
+        echo PHP_EOL;
+
+        if ($shouldVarDump) {
+            var_dump($data);
         } else {
-            echo PHP_EOL.$var.PHP_EOL;
+            // If the Data is an Exception (Instance of Throwable)
+            if ($data instanceof \Throwable) {
+                echo 'Exception Occured: ' . PHP_EOL;
+                echo 'Message: ' . $data->getMessage() . PHP_EOL;
+                echo 'In File: ' . $data->getFile() . PHP_EOL;
+                echo 'On Line: ' . $data->getLine() . PHP_EOL;
+                echo 'Having Code: ' . $data->getCode() . PHP_EOL;
+                echo 'Stack Trace:' . PHP_EOL;
+                echo $data->getTraceAsString() . PHP_EOL;
+            }
+            // Print_r the Data for Arrays or Objects
+            else if (is_array($data) || is_object($data)) {
+                print_r($data);
+            }
+            // Simply echo the scalar values
+            else {
+                echo $data;
+            }
+        }
+
+        echo PHP_EOL;
+
+        // Shutdown and exit (Conditional)
+        if ($shouldExit) {
+            if (is_null($server)) {
+                // Case: For coroutine\run (when swoole is not running a Server), but not tested
+                try {
+                    \Swoole\Coroutine::sleep(.001);
+                    exit(911);
+                } catch (\Swoole\ExitException $e) {
+                    // var_dump($e->getMessage());
+                    // var_dump($e->getStatus() === 1);
+                    // var_dump($e->getFlags() === SWOOLE_EXIT_IN_COROUTINE);
+
+                    // If its not coroutine then force shutdown
+                    forceShutdown();
+
+                    sleep(3);
+                    exit(1);
+                }
+            } else {
+                // Tested: When Swoole is running a server
+                $shutdownRes = $server->shutdown();
+                if (!$shutdownRes) {
+                    forceShutdown();
+                }
+
+                sleep(3);
+                exit(1);
+            }
         }
     }
+}
 
-    if (is_null($server)) {
-        // Case: For coroutine\run (when swoole is not running a Server), but not tested
-        try {
-            \Swoole\Coroutine::sleep(.001);
-            exit(911);
-        } catch (\Swoole\ExitException $e) {
-            var_dump($e->getMessage());
-            var_dump($e->getStatus() === 1);
-            var_dump($e->getFlags() === SWOOLE_EXIT_IN_COROUTINE);
+// Force Shutdown the Server
+if (!function_exists('forceShutdown')) {
+    /**
+     * Force Shutdown the Server
+     *
+     * @param int $port  The port of the server
+     * 
+     * @return void
+     */
+    function forceShutdown(int $port = 9501): void
+    {
+        // Force shutdown by server.pid or by killing processes listening on server port
+        if (file_exists('server.pid')) {
+            exec('cd ' . __DIR__ . ' && kill -9 `cat server.pid` 2>&1 1> /dev/null && rm -f server.pid');
+        } else {
+            exec('cd ' . __DIR__ . ' && kill -SIGKILL $(lsof -t -i:' . $port . ') 2>&1 1> /dev/null');
         }
-    } else {
-        // Tested: When Swoole is running a server
-        $server->shutdown();
-        sleep(3);
-        exit(1);
     }
 }
 
