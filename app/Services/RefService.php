@@ -26,6 +26,7 @@ class RefService
 
     const TOPGAINERCOLUMN = 'calculated_value';
     const ERRORLOG = 'error_logs';
+    const REFMAFIELDS = 'CF_VOLUME,NUM_MOVES,PCTCHNG,TRDPRC_1,TURNOVER';
 
     public function __construct($server, $process, $postgresDbKey = null)
     {
@@ -247,8 +248,8 @@ class RefService
 
     public function fetchRefData(mixed $companyDetail)
     {
-        $service = new RefAPIConsumer($this->server, $this->objDbPool, $this->dbFacade);
-        $responses = $service->handle($companyDetail);
+        $service = new RefAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('app_config.refinitive_pricing_snapshot_url'), $_ENV['STAGING_USER_TOKEN']);
+        $responses = $service->handle($companyDetail, self::REFMAFIELDS);
         unset($service);
 
         return $responses;
