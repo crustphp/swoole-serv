@@ -1,0 +1,18 @@
+#!/usr/bin/env php
+<?php
+
+use App\Core\Services\CommandExecutor;
+
+require_once realpath(__DIR__ . '/vendor/autoload.php');
+include_once realpath(__DIR__ . '/includes/Autoload.php'); // Our custom Autoloader
+include_once realpath(__DIR__ . '/helper.php');
+
+if (isset($argc) && isset($argv)) {
+    // CommandExecutor class take care of executing the commands
+    $executor = new CommandExecutor();
+    $executor->process();
+} else {
+    $docLink = 'https://www.php.net/manual/en/ini.core.php#ini.register-argc-argv';
+    echo PHP_EOL . "Failed executing commands as \$argc and \$argv are disabled. Please refer to documentation: $docLink" . PHP_EOL;
+    exit(1);
+}
