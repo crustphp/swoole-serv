@@ -381,16 +381,16 @@
         },
         {
             "name": "crustphp/php-stub-to-code-generator",
-            "version": "1.0.0",
+            "version": "1.0.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/crustphp/php-stub-to-code-generator.git",
-                "reference": "53fc70c27bf53f7cd714093f529dee1236189cca"
+                "reference": "98ac9d6db758bfa7c4d0780d7e969b2b5bd0ec37"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/crustphp/php-stub-to-code-generator/zipball/53fc70c27bf53f7cd714093f529dee1236189cca",
-                "reference": "53fc70c27bf53f7cd714093f529dee1236189cca",
+                "url": "https://api.github.com/repos/crustphp/php-stub-to-code-generator/zipball/98ac9d6db758bfa7c4d0780d7e969b2b5bd0ec37",
+                "reference": "98ac9d6db758bfa7c4d0780d7e969b2b5bd0ec37",
                 "shasum": ""
             },
             "require": {
@@ -423,9 +423,9 @@
             "description": "Creates source-code from a predefined stub files, using PHP.",
             "support": {
                 "issues": "https://github.com/crustphp/php-stub-to-code-generator/issues",
-                "source": "https://github.com/crustphp/php-stub-to-code-generator/tree/1.0.0"
+                "source": "https://github.com/crustphp/php-stub-to-code-generator/tree/1.0.1"
             },
-            "time": "2024-10-31T19:30:56+00:00"
+            "time": "2024-11-04T07:44:39+00:00"
         },
         {
             "name": "crustphp/relational-db",
@@ -3271,10 +3271,10 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": [],
+    "stability-flags": {},
     "prefer-stable": false,
     "prefer-lowest": false,
-    "platform": [],
-    "platform-dev": [],
-    "plugin-api-version": "2.3.0"
+    "platform": {},
+    "platform-dev": {},
+    "plugin-api-version": "2.6.0"
 }
