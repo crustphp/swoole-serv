@@ -243,7 +243,7 @@ class sw_service_core {
 
                     // Get the ServiceContainerInstance with global process parameters
                     $serviceContainer = ServiceContainer::get_instance($this->server, $process);
-                    $serviceContainer($processKey);
+                    $serviceContainer($processKey, null, $this->server, $process);
 
                     // Throw the exception if no Swoole\Timer is used in.
                     // There should be a Timer is to prevent the user process from continuously exiting and restarting as per documentation

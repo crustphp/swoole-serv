@@ -2,6 +2,8 @@
 
 namespace Bootstrap;
 
+use App\Core\Services\PdoService;
+
 // use Swoole\Runtime;
 
 /**
@@ -22,8 +24,8 @@ class ServiceContainer
     private static $processes = [];
 
     // Global Constructor Parameter
-    protected static $server;
-    protected static $process;
+    protected static $server = null;
+    protected static $process = null;
 
     /**
      * Protected contructor is used to prevent creating the object of ServiceContainer (Singleton)
@@ -217,8 +219,8 @@ class ServiceContainer
         if ($classType == 'process') {
             $processInfo = self::$processes[$classAlias];
 
-            // Prioritize constructorParams parameter if passed otherwise use the constructor params provided during registration
-            $constructorParams = count($constructorParams) ? $constructorParams : ($processInfo['constructor_params'] ?? []);
+            // Prioritize constructorParams parameter if passed otherwise use default $server and $process
+            $constructorParams = count($constructorParams) ? $constructorParams : [self::$server, self::$process];
 
             // Execute the callback function if provided to create the Process Service Instance/Object
             if (!is_null($customFactoryAsCallback)) {
@@ -335,22 +337,31 @@ class ServiceContainer
     private static function registerProcesses(): void
     {
         try {
-            $rootDir = dirname(__DIR__, 1);
-            $registryFile = $rootDir . DIRECTORY_SEPARATOR . 'registry/ProcessRegistry.php';
+            // Fetch the Registered Processes from Database
+            $pdoService = new PdoService();
+            $pocessesFromDb = $pdoService->query('SELECT "name", "redirect_stdin_and_stdout", "pipe_type", "enable_coroutine" FROM "registered_processes"');
 
-            // Check if Registry File Exists
-            if (!file_exists($registryFile)) {
-                throw new \RuntimeException("Process registry file not found: {$registryFile}");
+            // Format the fetched data
+            $formattedProcesesData = [];
+
+            foreach ($pocessesFromDb as $processData) {
+                $formattedProcesesData[$processData['name']] = [
+                    // Note for Now using App\Services, but it should be from App\Processes namespace
+                    // Callback of Process you want to call when the process will be created
+                    'callback' => ['\\App\Services\\' . $processData['name'], 'handle'],
+
+                    // Process Options
+                    'process_options' => [
+                        'redirect_stdin_and_stdout' => $processData['redirect_stdin_and_stdout'],
+                        'pipe_type' => $processData['pipe_type'],
+                        'enable_coroutine' => $processData['enable_coroutine'],
+                    ]
+                ];
             }
 
-            self::$processes = include($registryFile);
+            self::$processes = $formattedProcesesData;
         } catch (\Throwable $e) {
-            echo PHP_EOL;
-            echo 'Error Message: ' . $e->getMessage() . PHP_EOL;
-            echo 'In File: ' . $e->getFile() . PHP_EOL;
-            echo 'On Line: ' . $e->getLine() . PHP_EOL;
-            echo 'Error Code: ' . $e->getCode() . PHP_EOL;
-            echo PHP_EOL;
+            output(data: $e, shouldExit: true);
             throw $e;
         }
     }
