@@ -25,5 +25,6 @@ return [
     'refinitv_retry' => intval($_ENV['REFINITIV_RETRY'] ?? 3),
     'watch_excluded_folders' => $_ENV['WATCH_EXCLUDED_FOLDERS'] ?? 'vendor, logs, process_pids', // List of dirs you don't want to track for hot reload
     'refinitive_pricing_snapshot_url' => $_ENV['REFINITIVE_PRICING_SNAPSHOT_URL'] ?? 'https://api.refinitiv.com/data/pricing/snapshots/v1/',
+    'env' => $_ENV['APP_ENV'] ?? 'local',
 ];
 

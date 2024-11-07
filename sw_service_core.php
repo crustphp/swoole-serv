@@ -74,12 +74,12 @@ use Bootstrap\ServiceContainer;
 use App\Services\RefService;
 
 use Bootstrap\SwooleTableFactory;
-use Small\SwooleDb\Selector\TableSelector;
 
-use Small\SwooleDb\Selector\Enum\ConditionElementType;
-use Small\SwooleDb\Selector\Enum\ConditionOperator;
-use Small\SwooleDb\Selector\Bean\ConditionElement;
-use Small\SwooleDb\Selector\Bean\Condition;
+use Crust\SwooleDb\Selector\TableSelector;
+use Crust\SwooleDb\Selector\Enum\ConditionElementType;
+use Crust\SwooleDb\Selector\Enum\ConditionOperator;
+use Crust\SwooleDb\Selector\Bean\ConditionElement;
+use Crust\SwooleDb\Selector\Bean\Condition;
 
 use Swoole\Process;
 use App\Core\Enum\ResponseStatusCode;
@@ -764,7 +764,7 @@ class sw_service_core {
                                 }
                                 else {
                                     // Fetch all the records saved in table
-                                    $selector = new \Small\SwooleDb\Selector\TableSelector('users');
+                                    $selector = new \Crust\SwooleDb\Selector\TableSelector('users');
                                     $records = $selector->execute();
 
                                     foreach ($records as $record) {

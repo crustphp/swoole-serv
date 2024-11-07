@@ -6,11 +6,11 @@ use Swoole\Process;
 use DB\DBConnectionPool;
 
 use Swoole\Timer as swTimer;
-use App\Services\RefAPIConsumer;
+use App\Services\RefSnapshotAPIConsumer;
 use DB\DbFacade;
 use Carbon\Carbon;
 use Bootstrap\SwooleTableFactory;
-use Small\SwooleDb\Selector\TableSelector;
+use Crust\SwooleDb\Selector\TableSelector;
 use Swoole\Coroutine\Barrier;
 use App\Enum\RefMostActiveEnum;
 
@@ -30,6 +30,7 @@ class RefService
 
     public function __construct($server, $process, $postgresDbKey = null)
     {
+        $GLOBALS['process_id'] = $process->id;
         $this->server = $server;
         $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
         $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
@@ -248,7 +249,7 @@ class RefService
 
     public function fetchRefData(mixed $companyDetail)
     {
-        $service = new RefAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('app_config.refinitive_pricing_snapshot_url'), $_ENV['STAGING_USER_TOKEN']);
+        $service = new RefSnapshotAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('app_config.refinitive_pricing_snapshot_url'), $_ENV['STAGING_USER_TOKEN']);
         $responses = $service->handle($companyDetail, self::REF_MA_FIELDS);
         unset($service);
 

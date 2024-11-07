@@ -6,7 +6,7 @@ use Swoole\Coroutine\Barrier;
 use Swoole\Coroutine;
 use App\Core\Services\APIConsumer;
 
-class RefAPIConsumer
+class RefSnapshotAPIConsumer
 {
     protected $webSocketServer;
     protected $dbConnectionPools;
