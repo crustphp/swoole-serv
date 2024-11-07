@@ -1,4 +1,11 @@
 {
+    "scripts": {
+        "phinx:create": "vendor/bin/phinx create -c config/phinx.php",
+        "phinx:migrate": "vendor/bin/phinx migrate -c config/phinx.php",
+        "phinx:rollback": "vendor/bin/phinx rollback -c config/phinx.php",
+        "phinx:seed-create": "vendor/bin/phinx seed:create -c config/phinx.php",
+        "phinx:seed-run": "vendor/bin/phinx seed:run -c config/phinx.php"
+    },
     "require": {
         "open-smf/connection-pool": "~1.0",
         "yylh/swcontext": "^0.0.2",

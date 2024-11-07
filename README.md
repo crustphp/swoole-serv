@@ -150,3 +150,80 @@ sudo phpenmod -s cli swoole
  ps -aux | grep swool
  ps faux | grep -i sw_service.php
  sudo lsof -t -i:9501
+```
+
+
+# Setting up Phinx (Database Migrations)
+You can setup the database and other Phinx configuration inside `config/phinx.php` file
+
+## Create the migration
+The Create command is used to create a new migration file. It requires one argument: the name of the migration. The migration name should be specified in CamelCase format.
+
+```
+composer run-script phinx:create MigrationFileName
+```
+
+## Running Migrations
+The Migrate command runs all of the available migrations, optionally up to a specific version.
+
+```
+composer run-script phinx:migrate -- -e <environment>
+```
+
+To migrate to a specific version then use the `--target` parameter or `-t` for short.
+Example:
+
+```
+composer run-script phinx:migrate -- -e local -t 20110103081132
+```
+
+Use `--dry-run` to print the queries to standard output without executing them
+
+```
+composer run-script phinx:migrate -- --dry-run
+```
+
+## Rollback Migrations
+The Rollback command is used to undo previous migrations executed by Phinx. It is the opposite of the Migrate command.
+You can rollback to the previous migration by using the  `rollback`  command with no arguments.
+
+```
+composer run-script phinx:rollback -- -e local
+```
+
+To rollback all migrations to a specific version then use the `--target` parameter or `-t` for short.
+
+```
+composer run-script phinx:rollback -- -e local -t 20120103083322
+```
+
+Specifying 0 as the target version will revert all migrations.
+
+```
+composer run-script phinx:rollback -- -e local -t 0
+```
+
+Use `--dry-run` to print the queries to standard output without executing them
+
+```
+composer run-script phinx:rollback -- -e local --dry-run
+```
+
+## Database Seeding
+The Seed Create command can be used to create new database seed classes. It requires one argument, the name of the class. The class name should be specified in CamelCase format.
+
+```
+composer run-script phinx:seed-create MyNewSeeder
+```
+
+The Seed Run command runs all of the available seed classes or optionally just one.
+
+```
+composer run-script phinx:seed-run -- -e local
+```
+
+To run only one seed class use the `--seed` parameter or `-s` for short.
+
+```
+composer run-script phinx:seed-run -- -e local -s MyNewSeeder
+```
