@@ -25,12 +25,34 @@ class APIConsumer
     }
 
     /**
-     * Make a GET request to the API
-     *
+     * Make a request to the API
+     * param $method string
+     * param $body array
+     * param $request_type string: [Websocket | HTTP]
      * @return array Response body
      */
-    public function request(): array
+    public function request($request_type = 'HTTP', $method = 'GET', $body = []): array
     {
+        $result = [];
+
+        if ($request_type == 'HTTP') {
+            // HTTP request handling logic here
+            $result = $this->httpRequestHandle($method, $body);
+        } else if ($request_type == 'WEBSOCKET') {
+            // WebSocket request handling logic here
+            $result = $this->websocketRequestHandle();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Make a request to the API
+     * param $method string
+     * param $body array
+     * @return array Response body
+     */
+    private function httpRequestHandle($method = 'GET', $body = []): array {
         $parsedUrl = parse_url($this->endpoint);
 
         // Check for required components in the parsed URL
@@ -49,7 +71,11 @@ class APIConsumer
         $this->headers['Host'] = $parsedUrl['host'];
 
         $client->setHeaders($this->headers);
-        $client->get($this->endpoint);
+        if ($method == 'POST') {
+            $client->post($this->endpoint, $body);
+        } else {
+            $client->get($this->endpoint);
+        }
 
         // Capture response and error details if any
         if ($client->statusCode != 200) {
@@ -69,12 +95,23 @@ class APIConsumer
         $statusCode = $client->statusCode;
         $response = $client->body;
 
-        // Close connection
-        $client->close();
-
-        return [
+        $result = [
             'status_code' => $statusCode,
             'response' => $response,
         ];
+
+        if ($statusCode !== 200) {
+            $result['error'] = "Request failed with status code $statusCode";
+            $result['error_code'] = $client->errCode;
+            $result['error_message'] = $client->errMsg;
+        }
+
+        $client->close();
+
+        return $result;
+    }
+
+    public function websocketRequestHandle() {
+        // In future here will be the logic relating to websocket
     }
 }

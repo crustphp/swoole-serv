@@ -3,10 +3,10 @@
 
 namespace Bootstrap;
 
-use \Crust\SwooleDb\Core\Column;
-use \Crust\SwooleDb\Core\Enum\ColumnType;
+use Crust\SwooleDb\Core\Column;
+use Crust\SwooleDb\Core\Enum\ColumnType;
 use Crust\SwooleDb\Selector\TableSelector;
-use \Crust\SwooleDb\Registry\TableRegistry;
+use Crust\SwooleDb\Registry\TableRegistry;
 use Crust\SwooleDb\Exception\TableNotExists;
 
 class SwooleTableFactory
