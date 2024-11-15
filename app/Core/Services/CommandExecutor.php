@@ -49,10 +49,13 @@ class CommandExecutor
         // Parse command and arguments from $args
         // So $args[1] will be the command and rest of the array will be arguments (Docs: https://www.w3schools.com/php/func_array_slice.asp)
         $command = isset($args[1]) ? $args[1] : null;
-        $arguments = array_slice($args, 2); // Start the slice from the 2nd array element, and return the rest of the elements in the array
+        $rawArguments = array_slice($args, 2); // Start the slice from the 2nd array element, and return the rest of the elements in the array
+
+        // Separate arguments and options (Flags)
+        [$arguments, $options] = $this->seperateArgumentsAndOptions($rawArguments);
 
         // Pass parsed command and arguments to the execute method
-        $this->execute($command, $arguments);
+        $this->execute($command, $arguments, $options);
     }
 
     /**
@@ -62,7 +65,7 @@ class CommandExecutor
      * @param  mixed $arguments
      * @return void
      */
-    public function execute(string $command, array $arguments = []): void
+    public function execute(string $command, array $arguments = [], array $options = []): void
     {
         // Check if command is registered
         if (!isset($this->commands[$command])) {
@@ -74,10 +77,52 @@ class CommandExecutor
         $commandClass = $this->commands[$command];
         $instance = new $commandClass();
 
-        // Pass the arguments to command class
+        // Pass the arguments and options to the command class
         $instance->setArguments($arguments);
+        $instance->setOptions($options);
 
         // Execute the command
         $instance->handle();
+    }
+
+    /**
+     * Seperate the arguments and options from the command line input.
+     *
+     * @param  array $rawArguments
+     * @return array [arguments, options]
+     */
+    public function seperateArgumentsAndOptions(array $rawArguments): array
+    {
+        $arguments = [];
+        $options = [];
+
+        foreach ($rawArguments as $arg) {
+            if (strpos($arg, '--') === 0) {
+                // It's a long option (e.g., --option=value)
+                $option = substr($arg, 2);
+                if (strpos($option, '=') !== false) {
+                    [$key, $value] = explode('=', $option, 2);
+                    $options[$key] = $value;
+                } else {
+                    // If its not a value based than consider it as true (e.g --resource)
+                    $options[$option] = true;
+                }
+            } elseif (strpos($arg, '-') === 0 && strlen($arg) > 1) {
+                // It's a short option (e.g. git commit -m="Initial Commit".  Here -m is short option for --message)
+                $option = substr($arg, 1);
+                if (strpos($option, '=') !== false) {
+                    [$key, $value] = explode('=', $option, 2);
+                    $options[$key] = $value;
+                } else {
+                    // If its not a value based than consider it as true (e.g --resource)
+                    $options[$option] = true;
+                }
+            } else {
+                // It's an argument
+                $arguments[] = $arg;
+            }
+        }
+
+        return [$arguments, $options];
     }
 }
