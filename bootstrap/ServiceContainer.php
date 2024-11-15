@@ -348,7 +348,7 @@ class ServiceContainer
                 $formattedProcesesData[$processData['name']] = [
                     // Note for Now using App\Services, but it should be from App\Processes namespace
                     // Callback of Process you want to call when the process will be created
-                    'callback' => ['\\App\Services\\' . $processData['name'], 'handle'],
+                    'callback' => ['\\App\Processes\\' . $processData['name'], 'handle'],
 
                     // Process Options
                     'process_options' => [
