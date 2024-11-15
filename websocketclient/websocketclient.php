@@ -1,17 +1,14 @@
 <?php
 
-// Ref:= https://gist.github.com/NHZEX/946275e9b32a832d579a36c5d3d0b7fc
-// https://github.com/nonunicorn/php-swoole-websocket-client/blob/main/client.php
+namespace Websocketclient;
 
-//use Exception;
-use Swoole\Client;
-use Swoole\WebSocket\Server;
+use Swoole\Client as swClient;
+use OpenSwoole\Client as oswClient;
+use OpenSwoole\Constant;
 
-// https://github.com/swoole/swoole-src/blob/master/examples/websocket/WebSocketClient.php
 class WebSocketClient
 {
     const VERSION = '0.1.4';
-
     const TOKEN_LENGHT = 16;
     const TYPE_ID_WELCOME = 0;
     const TYPE_ID_PREFIX = 1;
@@ -22,82 +19,59 @@ class WebSocketClient
     const TYPE_ID_UNSUBSCRIBE = 6;
     const TYPE_ID_PUBLISH = 7;
     const TYPE_ID_EVENT = 8;
-
-    const OPCODE_CONTINUATION_FRAME = 0x0;
-    const OPCODE_TEXT_FRAME = 0x1;
-    const OPCODE_BINARY_FRAME = 0x2;
-    const OPCODE_CONNECTION_CLOSE = 0x8;
-    const OPCODE_PING = 0x9;
-    const OPCODE_PONG = 0xa;
-
-    const CLOSE_NORMAL = 1000;
-    const CLOSE_GOING_AWAY = 1001;
-    const CLOSE_PROTOCOL_ERROR = 1002;
-    const CLOSE_DATA_ERROR = 1003;
-    const CLOSE_STATUS_ERROR = 1005;
-    const CLOSE_ABNORMAL = 1006;
-    const CLOSE_MESSAGE_ERROR = 1007;
-    const CLOSE_POLICY_ERROR = 1008;
-    const CLOSE_MESSAGE_TOO_BIG = 1009;
-    const CLOSE_EXTENSION_MISSING = 1010;
-    const CLOSE_SERVER_ERROR = 1011;
-    const CLOSE_TLS = 1015;
-
-    /** @var string */
     private $key;
-    /** @var string */
     private $host;
-    /** @var int */
     private $port;
-    /** @var string */
     private $path;
-
-    /** @var Client */
+    /**
+     * @var swoole_client
+     */
     private $socket;
-    /** @var string */
     private $buffer = '';
-    /** @var string|null */
     private $origin = null;
-
-    /** @var bool */
+    /**
+     * @var bool
+     */
     private $connected = false;
-
-    /** @var bool */
-    public $returnData = false;
 
     /**
      * @param string $host
-     * @param int $port
+     * @param int    $port
      * @param string $path
-     * @param string $origin
      */
-    public function __construct($host = '127.0.0.1', $port = 9501, $path = '/', string $origin = null)
+    function __construct($host = '127.0.0.1', $port = 8080, $path = '/', $origin = null)
     {
         $this->host = $host;
         $this->port = $port;
         $this->path = $path;
         $this->origin = $origin;
         $this->key = $this->generateToken(self::TOKEN_LENGHT);
+        list($this->isSwoole, $this->swoole_ext) = extension_loaded('swoole') ? [true, 'sw'] :
+            (extension_loaded('openswoole') ? [true, 'osw'] : [false, 'none']);
     }
 
     /**
      * Disconnect on destruct
      */
-    public function __destruct()
+    function __destruct()
     {
         $this->disconnect();
     }
 
     /**
-     * Connect client to server
+     * Connect client to swoole_server
      *
-     * @return bool
-     * @throws Exception
+     * @return $this
      */
     public function connect()
     {
-        $this->socket = new Client(SWOOLE_SOCK_TCP);
-        if (!$this->socket->connect($this->host, $this->port)) {
+        if ($this->isSwoole == 'sw') {
+            $this->socket = new swClient(SWOOLE_SOCK_TCP); // For Swoole
+        } else {
+            $this->socket = new oswClient(Constant::SOCK_TCP | Constant::KEEP); // for OpenSwoole
+        }
+        if (!$this->socket->connect($this->host, $this->port, 5))
+        {
             return false;
         }
         $this->socket->send($this->createHeader());
@@ -110,100 +84,108 @@ class WebSocketClient
     }
 
     /**
-     * Disconnect from server
+     * Disconnect from swoole_server
      */
     public function disconnect()
     {
-        if ($this->socket instanceof Client) {
-            $this->connected = false;
-            $this->socket->close();
-        }
+        $this->connected = false;
+        $this->socket->close();
     }
 
-    public function close($code = self::CLOSE_NORMAL, $reason = '')
-    {
-        $data = pack('n', $code) . $reason;
-        return $this->socket->send(Server::pack($data, self::OPCODE_CONNECTION_CLOSE, true));
-    }
-
-    /**
-     * @return false|string
-     * @throws Exception
-     */
     public function recv()
     {
-        $data = $this->socket->recv();
-        if ($data === false) {
-            /** @noinspection PhpUndefinedFieldInspection */
-            echo "Error: {$this->socket->errMsg}";
-            return false;
-        }
-        $this->buffer .= $data;
-        $recv_data = $this->parseData($this->buffer);
-        if ($recv_data) {
-            $this->buffer = '';
-            return $recv_data;
-        } else {
-            return false;
-        }
+//        try {
+//        co::run(function () {
+//            while (true) {
+                $data = @$this->socket->recv();
+                if (strlen($data) > 0) {
+                    $this->buffer .= $data;
+                    $returnVal = $this->parseData($this->buffer);
+                    if ($returnVal) {
+                        $this->buffer = '';
+                    } else {
+                        $returnVal = false;
+//                        break;
+                    }
+                }
+                else {
+                    // An empty string means the connection has been closed
+                    if ($data === '') {
+                        // We must close the connection to use the client again
+//                        $this->socket->close();
+//                        $returnVal = false;
+                    } else if ($data === false) {
+                     //echo "Constant: ".SOCKET_ETIMEDOUT.PHP_EOL;
+                        if ($this->socket->errCode === SOCKET_ETIMEDOUT) {
+                            // Not a timeout, close the connection due to an error
+//                            $client->close();
+//                            break;
+                            echo "Socket Timeout".PHP_EOL;
+                        }
+//                        echo "Socket Object:";
+//                        var_dump($this->socket);
+//                        echo PHP_EOL;
+//                        echo PHP_EOL;
+                      //echo "Error: {$this->socket->errCode}"; echo PHP_EOL;
+                            // We must close the connection to use the client again
+                        //$this->socket->close();
+                    }
+                    $returnVal = false;
+//                    break;
+                }
+                // Wait 1 second before reading data again on our loop
+//                sleep(1);
+//            }
+            return $returnVal;
+//        });
+
+//        }
+//        catch (\Exception $exception) {
+//            echo "Exception:";
+//            var_dump($exception);
+//            echo PHP_EOL;
+//
+//            echo "Data:";
+//            var_dump($data);
+//            echo PHP_EOL;
+//
+//            echo "Socket Object:";
+//            var_dump($this->socket);
+//            echo PHP_EOL;
+//        }
     }
 
     /**
-     * @param string $data
+     * @param        $data
      * @param string $type
-     * @param bool $masked
-     * @return bool
+     * @param bool   $masked
      */
-    public function send($data, $type = 'text', $masked = false) {
-        switch ($type) {
-            case 'text':
-                $_type = WEBSOCKET_OPCODE_TEXT;
-                break;
-            case 'binary':
-            case 'bin':
-                $_type = WEBSOCKET_OPCODE_BINARY;
-                break;
-            case 'ping':
-                $_type = WEBSOCKET_OPCODE_PING;
-                break;
-            default:
-                return false;
-        }
-        return $this->socket->send(Server::pack($data, $_type, $masked));
+    public function send($data, $type = 'text', $masked = true)
+    {
+        return $this->socket->send($this->hybi10Encode($data, $type, $masked));
     }
 
     /**
      * Parse received data
      *
      * @param $response
-     * @return bool
-     * @throws Exception
      */
     private function parseData($response)
     {
-        if (!$this->connected) {
-            $response = $this->parseIncomingRaw($response);
-            if (isset($response['Sec-Websocket-Accept'])
-                && base64_encode(
-                    pack('H*', sha1($this->key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'))
-                ) === $response['Sec-Websocket-Accept']
-            ) {
+        if (!$this->connected && isset($response['Sec-Websocket-Accept']))
+        {
+            if (base64_encode(pack('H*', sha1($this->key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')))
+                === $response['Sec-Websocket-Accept']
+            )
+            {
                 $this->connected = true;
-                return true;
-            } else {
-                throw new Exception("error response key.");
+            }
+            else
+            {
+                throw new \Exception("error response key.");
             }
         }
-
-//        echo "In parse Data".$this->returnData.PHP_EOL;
-//        var_dump($response);
-
-        $frame = Server::unpack($response);
-        if ($frame) {
-            return $this->returnData ? $frame->data : $frame;
-        } else {
-            throw new Exception("swoole_websocket_server::unpack failed.");
-        }
+        return $this->hybi10Decode($response);
     }
 
     /**
@@ -214,18 +196,19 @@ class WebSocketClient
     private function createHeader()
     {
         $host = $this->host;
-        if ($host === '127.0.0.1' || $host === '0.0.0.0') {
+        if ($host === '127.0.0.1' || $host === '0.0.0.0')
+        {
             $host = 'localhost';
         }
         return "GET {$this->path} HTTP/1.1" . "\r\n" .
-            "Origin: {$this->origin}" . "\r\n" .
-            "Host: {$host}:{$this->port}" . "\r\n" .
-            "Sec-WebSocket-Key: {$this->key}" . "\r\n" .
-            "User-Agent: PHPWebSocketClient/" . self::VERSION . "\r\n" .
-            "Upgrade: websocket" . "\r\n" .
-            "Connection: Upgrade" . "\r\n" .
-            "Sec-WebSocket-Protocol: wamp" . "\r\n" .
-            "Sec-WebSocket-Version: 13" . "\r\n" . "\r\n";
+        "Origin: {$this->origin}" . "\r\n" .
+        "Host: {$host}:{$this->port}" . "\r\n" .
+        "Sec-WebSocket-Key: {$this->key}" . "\r\n" .
+        "User-Agent: PHPWebSocketClient/" . self::VERSION . "\r\n" .
+        "Upgrade: websocket" . "\r\n" .
+        "Connection: Upgrade" . "\r\n" .
+        "Sec-WebSocket-Protocol: wamp" . "\r\n" .
+        "Sec-WebSocket-Version: 13" . "\r\n" . "\r\n";
     }
 
     /**
@@ -237,27 +220,36 @@ class WebSocketClient
      */
     private function parseIncomingRaw($header)
     {
-        $retval = [];
+        $retval = array();
         $content = "";
         $fields = explode("\r\n", preg_replace('/\x0D\x0A[\x09\x20]+/', ' ', $header));
-        foreach ($fields as $field) {
-            if (preg_match('/([^:]+): (.+)/m', $field, $match)) {
-                $match[1] = preg_replace_callback(
-                    '/(?<=^|[\x09\x20\x2D])./',
-                    function ($matches) {
+        foreach ($fields as $field)
+        {
+            if (preg_match('/([^:]+): (.+)/m', $field, $match))
+            {
+                $match[1] = preg_replace_callback('/(?<=^|[\x09\x20\x2D])./',
+                    function ($matches)
+                    {
                         return strtoupper($matches[0]);
                     },
-                    strtolower(trim($match[1]))
-                );
-                if (isset($retval[$match[1]])) {
-                    $retval[$match[1]] = [$retval[$match[1]], $match[2]];
-                } else {
+                    strtolower(trim($match[1])));
+                if (isset($retval[$match[1]]))
+                {
+                    $retval[$match[1]] = array($retval[$match[1]], $match[2]);
+                }
+                else
+                {
                     $retval[$match[1]] = trim($match[2]);
                 }
-            } else {
-                if (preg_match('!HTTP/1\.\d (\d)* .!', $field)) {
+            }
+            else
+            {
+                if (preg_match('!HTTP/1\.\d (\d)* .!', $field))
+                {
                     $retval["status"] = $field;
-                } else {
+                }
+                else
+                {
                     $content .= $field . "\r\n";
                 }
             }
@@ -276,13 +268,14 @@ class WebSocketClient
     private function generateToken($length)
     {
         $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!"§$%&/()=[]{}';
-        $useChars = [];
+        $useChars = array();
         // select some random chars:
-        for ($i = 0; $i < $length; $i++) {
+        for ($i = 0; $i < $length; $i++)
+        {
             $useChars[] = $characters[mt_rand(0, strlen($characters) - 1)];
         }
         // Add numbers
-        array_push($useChars, mt_rand(0, 9), mt_rand(0, 9), mt_rand(0, 9));
+        array_push($useChars, rand(0, 9), rand(0, 9), rand(0, 9));
         shuffle($useChars);
         $randomString = trim(implode('', $useChars));
         $randomString = substr($randomString, 0, self::TOKEN_LENGHT);
@@ -301,10 +294,152 @@ class WebSocketClient
         $characters = str_split('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
         srand((float)microtime() * 1000000);
         $token = '';
-        do {
+        do
+        {
             shuffle($characters);
             $token .= $characters[mt_rand(0, (count($characters) - 1))];
         } while (strlen($token) < $length);
         return $token;
+    }
+
+    /**
+     * @param        $payload
+     * @param string $type
+     * @param bool   $masked
+     *
+     * @return bool|string
+     */
+    private function hybi10Encode($payload, $type = 'text', $masked = true)
+    {
+        $frameHead = array();
+        $frame = '';
+        $payloadLength = strlen($payload);
+        switch ($type)
+        {
+            case 'text':
+                // first byte indicates FIN, Text-Frame (10000001):
+                $frameHead[0] = 129;
+                break;
+            case 'close':
+                // first byte indicates FIN, Close Frame(10001000):
+                $frameHead[0] = 136;
+                break;
+            case 'ping':
+                // first byte indicates FIN, Ping frame (10001001):
+                $frameHead[0] = 137;
+                break;
+            case 'pong':
+                // first byte indicates FIN, Pong frame (10001010):
+                $frameHead[0] = 138;
+                break;
+        }
+        // set mask and payload length (using 1, 3 or 9 bytes)
+        if ($payloadLength > 65535)
+        {
+            $payloadLengthBin = str_split(sprintf('%064b', $payloadLength), 8);
+            $frameHead[1] = ($masked === true) ? 255 : 127;
+            for ($i = 0; $i < 8; $i++)
+            {
+                $frameHead[$i + 2] = bindec($payloadLengthBin[$i]);
+            }
+            // most significant bit MUST be 0 (close connection if frame too big)
+            if ($frameHead[2] > 127)
+            {
+                $this->close(1004);
+                return false;
+            }
+        }
+        elseif ($payloadLength > 125)
+        {
+            $payloadLengthBin = str_split(sprintf('%016b', $payloadLength), 8);
+            $frameHead[1] = ($masked === true) ? 254 : 126;
+            $frameHead[2] = bindec($payloadLengthBin[0]);
+            $frameHead[3] = bindec($payloadLengthBin[1]);
+        }
+        else
+        {
+            $frameHead[1] = ($masked === true) ? $payloadLength + 128 : $payloadLength;
+        }
+        // convert frame-head to string:
+        foreach (array_keys($frameHead) as $i)
+        {
+            $frameHead[$i] = chr($frameHead[$i]);
+        }
+        if ($masked === true)
+        {
+            // generate a random mask:
+            $mask = array();
+            for ($i = 0; $i < 4; $i++)
+            {
+                $mask[$i] = chr(rand(0, 255));
+            }
+            $frameHead = array_merge($frameHead, $mask);
+        }
+        $frame = implode('', $frameHead);
+        // append payload to frame:
+        for ($i = 0; $i < $payloadLength; $i++)
+        {
+            $frame .= ($masked === true) ? $payload[$i] ^ $mask[$i % 4] : $payload[$i];
+        }
+        return $frame;
+    }
+
+    /**
+     * @param $data
+     *
+     * @return null|string
+     */
+    private function hybi10Decode($data)
+    {
+        if (empty($data))
+        {
+            return null;
+        }
+        $bytes = $data;
+        $dataLength = '';
+        $mask = '';
+        $coded_data = '';
+        $decodedData = '';
+        $secondByte = sprintf('%08b', ord($bytes[1]));
+        $masked = ($secondByte[0] == '1') ? true : false;
+        $dataLength = ($masked === true) ? ord($bytes[1]) & 127 : ord($bytes[1]);
+        if ($masked === true)
+        {
+            if ($dataLength === 126)
+            {
+                $mask = substr($bytes, 4, 4);
+                $coded_data = substr($bytes, 8);
+            }
+            elseif ($dataLength === 127)
+            {
+                $mask = substr($bytes, 10, 4);
+                $coded_data = substr($bytes, 14);
+            }
+            else
+            {
+                $mask = substr($bytes, 2, 4);
+                $coded_data = substr($bytes, 6);
+            }
+            for ($i = 0; $i < strlen($coded_data); $i++)
+            {
+                $decodedData .= $coded_data[$i] ^ $mask[$i % 4];
+            }
+        }
+        else
+        {
+            if ($dataLength === 126)
+            {
+                $decodedData = substr($bytes, 4);
+            }
+            elseif ($dataLength === 127)
+            {
+                $decodedData = substr($bytes, 10);
+            }
+            else
+            {
+                $decodedData = substr($bytes, 2);
+            }
+        }
+        return $decodedData;
     }
 }

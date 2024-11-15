@@ -6,7 +6,7 @@ declare(strict_types=1);
 
     require_once realpath(__DIR__ . '/vendor/autoload.php');
     include_once realpath(__DIR__.'/helper.php');
-    include_once realpath(__DIR__.'/websocketclient/wbsocketclient.php');
+    include_once realpath(__DIR__ . '/websocketclient/websocketclient.php');
 
     ini_set('memory_limit', -1);
 

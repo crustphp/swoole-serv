@@ -1,5 +1,11 @@
 <?php
-include 'wbsocketclient.php';
+
+namespace Websocketclient;
+
+include_once __DIR__ . '/../includes/Autoload.php';
+
+
+use Websocketclient\WebSocketClient;
 
 $ip = '127.0.0.1';
 if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
@@ -16,13 +22,13 @@ if ($x = $w->connect()) {
 
         }
         echo PHP_EOL."sending ".$cmd.PHP_EOL;
-        $w->send($cmd, 'text', false);
+        $w->send($cmd, 'text', 1);
         exit;
     }
 
     for ($i=1;$i<4;$i++)
-        $w->send('test'.$i, 'text', false);
-    $w->send('end', 'text', false);
+        $w->send('test'.$i, 'text', 0);
+    $w->send('end', 'text', 1);
     while(true) {
         $data = $w->recv();
         if ($data) {
