@@ -7,6 +7,10 @@ require_once realpath(__DIR__ . '/vendor/autoload.php');
 include_once realpath(__DIR__ . '/includes/Autoload.php'); // Our custom Autoloader
 include_once realpath(__DIR__ . '/helper.php');
 
+// Setting up Env for using $_ENV variable
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
 if (isset($argc) && isset($argv)) {
     // CommandExecutor class take care of executing the commands
     $executor = new CommandExecutor();
