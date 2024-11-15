@@ -6,6 +6,8 @@ use DB\DBConnectionPool;
 use DB\DbFacade;
 use Carbon\Carbon;
 use App\Core\Services\APIConsumer;
+use Websocketclient\WebSocketClient;
+
 
 class RefToken
 {
@@ -97,6 +99,19 @@ class RefToken
                                 'expires_in' => $expiresIn,
                                 'updated_at' => $updatedAt,
                             ];
+
+                            // Data preparation
+                            $data = [
+                                'command' => 'save-ref-token',
+                                'refinitive-token-staging-endpoint-key' => config('app_config.refinitive_staging_token_endpoint_key'),
+                                'access_token' => $accessToken,
+                                'refresh_token' => $refreshToken,
+                                'expires_in' => $expiresIn,
+                                'updated_at' => $updatedAt,
+                            ];
+
+                            $this->sendTokenToWebSocket(config('app_config.staging_ip'), $data);
+
                         } else {
                             var_dump('Refinitiv token API call failed', ['response' => $refToken]);
                             $this->dbFacade->rollBackTransaction($this->objDbPool);
@@ -138,9 +153,11 @@ class RefToken
                     $this->dbFacade->lockTable($this->objDbPool, 'refinitiv_auth_tokens');
 
                     $token = $this->getRefTokenFromDB();
+                    $token_id = $token["id"];
 
                     // Attempt to refresh the token using the refresh token
                     if (Carbon::now()->timestamp - Carbon::parse($token['updated_at'])->timestamp >= $token['expires_in']) {
+
                         $refToken = $this->fetchRefRefreshTokenFromRefAPI($token->refresh_token);
 
                         // If the refresh token is also expired, get a new token without using the refresh token
@@ -160,7 +177,7 @@ class RefToken
                             $updatedAt = $dateTime;
 
                             // Update the token in the database with the new values
-                            $this->updateIntoRefAuthTable($accessToken, $refreshToken, $expiresIn, $createdAt, $updatedAt,  $token['id']);
+                            $this->updateIntoRefAuthTable($accessToken, $refreshToken, $expiresIn, $createdAt, $updatedAt,  $token_id);
 
                             $token = [
                                 'access_token' => $accessToken,
@@ -168,6 +185,19 @@ class RefToken
                                 'expires_in' => $expiresIn,
                                 'updated_at' => $updatedAt,
                             ];
+
+                            $data = [
+                                'command' => 'update-ref-token',
+                                'refinitive-token-staging-endpoint-key' => config('app_config.refinitive_staging_token_endpoint_key'),
+                                'access_token' => $accessToken,
+                                'refresh_token' => $refreshToken,
+                                'expires_in' => $expiresIn,
+                                'updated_at' => $updatedAt,
+                                'id' => $token_id,
+                            ];
+
+                            $this->sendTokenToWebSocket(config('app_config.staging_ip'), $data);
+
                         } else {
                             var_dump('Refinitive Update token failed on prod ', ['response' => $refToken]);
                             $this->dbFacade->rollBackTransaction($this->objDbPool);
@@ -268,6 +298,21 @@ class RefToken
         WHERE id = $tokenId";
 
         $this->dbFacade->query($updateQuery, $this->objDbPool);
+    }
+
+    function sendTokenToWebSocket($ip, $data)
+    {
+        $w = new WebSocketClient($ip, 9501);
+        if ($x = $w->connect()) {
+            // Encoding the data
+            $data = json_encode($data);
+            // Sending data
+            $w->send($data, 'text', 0);
+        } else {
+            echo "Could not connect to server" . PHP_EOL;
+        }
+        $w->disconnect();
+        unset($w);
     }
 
 }

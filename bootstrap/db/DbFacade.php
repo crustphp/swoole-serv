@@ -68,6 +68,28 @@ class DbFacade {
 
         return $data;
     }
+
+    public function beginTransaction($objDbPool) {
+        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+        $postgresClient->query('BEGIN');
+    }
+
+    public function lockTable($objDbPool, $tableName) {
+        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+        $lockQuery = "LOCK TABLE " . $tableName . " IN EXCLUSIVE MODE"; // Preventing modifications but allowing reads
+        $postgresClient->query($lockQuery);
+    }
+
+    public function commitTransaction($objDbPool)
+    {
+        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+        $postgresClient->query('COMMIT');
+    }
+
+    public function rollBackTransaction ($objDbPool) {
+        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+        $postgresClient->query('ROLLBACK');
+    }
 }
 
 
