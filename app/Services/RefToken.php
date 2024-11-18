@@ -6,6 +6,7 @@ use DB\DBConnectionPool;
 use DB\DbFacade;
 use Carbon\Carbon;
 use App\Core\Services\APIConsumer;
+use Bootstrap\SwooleTableFactory;
 use Websocketclient\WebSocketClient;
 
 
@@ -13,9 +14,6 @@ class RefToken
 {
     protected $dbFacade;
     protected $objDbPool;
-    protected $dbConnectionPools;
-    protected $postgresDbKey;
-    protected $workerId;
     protected $grantType;
     protected $username;
     protected $password;
@@ -25,30 +23,14 @@ class RefToken
     protected $refreshGrantType;
     protected $url;
     protected $timeout;
+    protected $server;
 
-    public function __construct()
+    public function __construct($server, $objDbPool, $dbFacade)
     {
-        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-        $this->postgresDbKey = $swoole_pg_db_key;
-        $this->workerId = $GLOBALS['process_id'];
 
-        $app_type_database_driven = config('app_config.app_type_database_driven');
-        if ($app_type_database_driven) {
-            try {
-                // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
-                $this->dbConnectionPools[$this->workerId][$swoole_pg_db_key] = new DBConnectionPool($this->workerId, 'postgres', 'swoole', true);
-                $this->dbConnectionPools[$this->workerId][$swoole_pg_db_key]->create();
-            } catch (\Throwable $e) {
-                echo $e->getMessage() . PHP_EOL;
-                echo $e->getFile() . PHP_EOL;
-                echo $e->getLine() . PHP_EOL;
-                echo $e->getCode() . PHP_EOL;
-                var_dump($e->getTrace());
-            }
-        }
-
-        $this->objDbPool = $this->dbConnectionPools[$this->workerId][$swoole_pg_db_key];
-        $this->dbFacade = new DbFacade();
+        $this->server =  $server;
+        $this->objDbPool = $objDbPool;
+        $this->dbFacade = $dbFacade;
 
         $this->grantType = config('ref_config.grant_type');
         $this->username = config('ref_config.username');
@@ -100,17 +82,16 @@ class RefToken
                                 'updated_at' => $updatedAt,
                             ];
 
-                            // Data preparation
-                            $data = [
-                                'command' => 'save-ref-token',
-                                'refinitive-token-staging-endpoint-key' => config('app_config.refinitive_staging_token_endpoint_key'),
-                                'access_token' => $accessToken,
-                                'refresh_token' => $refreshToken,
-                                'expires_in' => $expiresIn,
-                                'updated_at' => $updatedAt,
-                            ];
+                            $data = $token;
+                            $data = json_encode($data);
 
-                            $this->sendTokenToWebSocket(config('app_config.staging_ip'), $data);
+                            $tokenFdsData =  SwooleTableFactory::getTableData(tableName: 'token_fds');
+
+                            foreach ($tokenFdsData as $fd) {
+                                if ($this->server->isEstablished((int) $fd['fd'])) {
+                                    $this->server->push($fd['fd'], $data);
+                                }
+                            }
 
                         } else {
                             var_dump('Refinitiv token API call failed', ['response' => $refToken]);
@@ -186,17 +167,16 @@ class RefToken
                                 'updated_at' => $updatedAt,
                             ];
 
-                            $data = [
-                                'command' => 'update-ref-token',
-                                'refinitive-token-staging-endpoint-key' => config('app_config.refinitive_staging_token_endpoint_key'),
-                                'access_token' => $accessToken,
-                                'refresh_token' => $refreshToken,
-                                'expires_in' => $expiresIn,
-                                'updated_at' => $updatedAt,
-                                'id' => $token_id,
-                            ];
+                            $data = $token;
+                            $data = json_encode($data);
 
-                            $this->sendTokenToWebSocket(config('app_config.staging_ip'), $data);
+                            $tokenFdsData =  SwooleTableFactory::getTableData(tableName: 'token_fds');
+
+                            foreach ($tokenFdsData as $fd) {
+                                if ($this->server->isEstablished((int) $fd['fd'])) {
+                                    $this->server->push($fd['fd'], $data);
+                                }
+                            }
 
                         } else {
                             var_dump('Refinitive Update token failed on prod ', ['response' => $refToken]);

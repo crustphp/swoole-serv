@@ -105,6 +105,8 @@ class sw_service_core {
     protected static $fds=[];
     protected $serviceContainer;
 
+    protected $customProcessCallbacks = [];
+
    function __construct($ip, $port, $serverMode, $serverProtocol) {
 
        $this->ip = $ip;
@@ -593,9 +595,43 @@ class sw_service_core {
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
 
-            // Add fd to scope
-            // Here I am storing the FD in array index also as FD for directly accessing it in array.
-            $websocketserver->fds[$request->fd] = $request->fd;
+            if (config('app_config.env') != 'local' && config('app_config.env') != 'staging' && isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && $request->header["refinitive-token-production-endpoint-key"] != null) {
+
+                if ($request->header["refinitive-token-production-endpoint-key"] === config('app_config.refinitive_production_token_endpoint_key')) {
+
+                    $worker_id = $websocketserver->worker_id;
+                    $tokenFdsTable = SwooleTableFactory::getTable('token_fds');
+                    $tokenFdsTable->set($request->fd, ['fd' => $request->fd, 'worker_id' => $worker_id]);
+
+                    $worker_id = $websocketserver->worker_id;
+                    $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
+                    $dbConnection = $this->dbConnectionPools[$worker_id][$swoole_pg_db_key];
+
+                    $dbFacade = new DbFacade();
+                    $getQuery = "SELECT * FROM refinitiv_auth_tokens LIMIT 1";
+                    $result = $dbFacade->query(
+                        $getQuery,
+                        $dbConnection
+                    );
+                    $result = $result ? $result[0] : null;
+                    $result = json_encode($result);
+
+                    if ($websocketserver->isEstablished($request->fd)) {
+                        $websocketserver->push($request->fd,  $result);
+                    }
+                } else {
+                    // Invalid token endpoint key of porduction
+                    $msg = json_encode("Unauthenticated: Invalid token endpoint key of porduction.");
+                    if ($websocketserver->isEstablished($request->fd)) {
+                        $websocketserver->push($request->fd, $msg);
+                    }
+                    var_dump("Unauthenticated: Invalid token endpoint key of porduction.");
+                }
+            } else {
+                // Add fd to scope
+                // Here I am storing the FD in array index also as FD for directly accessing it in array.
+                $websocketserver->fds[$request->fd] = $request->fd;
+            }
 
 //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
 //                $server->push($request->fd, json_encode(["hello", time()]));
@@ -790,131 +826,7 @@ class sw_service_core {
                             case 'get-fds':
                                 $message = 'Worker ID: '.$webSocketServer->worker_id . ' | FDs: '.implode(',', $webSocketServer->fds);
                                 $webSocketServer->push($frame->fd, $message);
-                                break;
-                            case 'save-ref-token':
-                                // ======================= This below code will be moved into a separate class in the next PR for refinement ======================= \\
 
-                                // Extract the required configuration value
-                                $stagingTokenKey = config('app_config.refinitive_staging_token_endpoint_key');
-
-                                // Environment checking
-                                if (config('app_config.env') != 'staging') {
-                                    var_dump("This check only works on the staging server. Unauthenticated: Invalid environment configuration.");
-                                    throw new Exception('This check only works on the staging server. Unauthenticated: Invalid environment configuration.');
-                                }
-
-                                // Check if the retrieved API key matches the one stored in the configuration
-                                if (
-                                    isset($frameData['refinitive-token-staging-endpoint-key']) &&
-                                    $frameData['refinitive-token-staging-endpoint-key'] != $stagingTokenKey
-                                ) {
-                                    var_dump("Unauthenticated: Invalid token endpoint key.");
-                                    throw new Exception('Unauthenticated: Invalid token endpoint key.');
-                                }
-
-                                try {
-                                    // Validate required fields in frameData
-                                    if (
-                                        empty($frameData['access_token']) ||
-                                        empty($frameData['refresh_token']) ||
-                                        empty($frameData['expires_in']) ||
-                                        empty($frameData['updated_at'])
-                                    ) {
-                                        var_dump("Missing required token fields in the frameData.");
-                                        throw new InvalidArgumentException('Missing required token fields in the frameData.');
-                                    }
-
-                                    $serverUpdatedAt = Carbon::parse($frameData["updated_at"])->timezone('UTC');
-                                    $localUpdatedAt = $serverUpdatedAt->timezone(config('app_config.time_zone'));
-                                    // Prepare SQL query with validated data
-                                    $createdAt = Carbon::now()->format('Y-m-d H:i:s');
-                                    $insertQuery = "INSERT INTO refinitiv_auth_tokens (access_token, refresh_token, expires_in, created_at, updated_at)
-                                        VALUES (
-                                            '" . $frameData["access_token"] . "',
-                                            '" . $frameData["refresh_token"] . "',
-                                            " . $frameData["expires_in"] . ",
-                                            '" . $createdAt . "',
-                                            '" . $localUpdatedAt . "'
-                                        )";
-
-                                    // Database connection from the pool
-                                    $dbConnection = $this->dbConnectionPools[$webSocketServer->worker_id][config('app_config.swoole_pg_db_key')];
-
-                                    $dbFacade = new DbFacade();
-                                    $dbFacade->query($insertQuery, $dbConnection);
-                                } catch (\Throwable $e) {
-                                    // Log error details for debugging
-                                    echo "Error: " . $e->getMessage() . PHP_EOL;
-                                    echo "File: " . $e->getFile() . PHP_EOL;
-                                    echo "Line: " . $e->getLine() . PHP_EOL;
-                                    echo "Code: " . $e->getCode() . PHP_EOL;
-                                    var_dump($e->getTrace());
-                                }
-
-                                break;
-                            case 'update-ref-token':
-                                // ======================= This below code will be moved into a separate class in the next PR for refinement ======================= \\
-
-                                // Extract the required configuration value
-                                $stagingTokenKey = config('app_config.refinitive_staging_token_endpoint_key');
-
-                                // Environment checking
-                                if (config('app_config.env') != 'staging') {
-                                    var_dump("This check only works on the staging server. Unauthenticated: Invalid environment configuration.");
-                                    throw new Exception('This check only works on the staging server. Unauthenticated: Invalid environment configuration.');
-                                }
-
-                                // Check if the retrieved API key matches the one stored in the configuration
-                                if (
-                                    isset($frameData['refinitive-token-staging-endpoint-key']) &&
-                                    $frameData['refinitive-token-staging-endpoint-key'] != $stagingTokenKey
-                                ) {
-                                    var_dump("Unauthenticated: Invalid token endpoint key.");
-                                    throw new Exception('Unauthenticated: Invalid token endpoint key.');
-                                }
-
-                                try {
-                                    // Validate required fields in frameData
-                                    if (
-                                        empty($frameData['access_token']) ||
-                                        empty($frameData['refresh_token']) ||
-                                        empty($frameData['expires_in']) ||
-                                        empty($frameData['updated_at'] ||
-                                            empty($frameData['id']))
-                                    ) {
-                                        var_dump("Missing required token fields in the frameData.");
-                                        throw new InvalidArgumentException('Missing required token fields in the frameData.');
-                                    }
-
-
-                                    $serverUpdatedAt = Carbon::parse($frameData["updated_at"])->timezone('UTC');
-                                    $localUpdatedAt = $serverUpdatedAt->timezone(config('app_config.time_zone'));
-                                    // Prepare SQL query with validated data
-                                    $createdAt = Carbon::now()->format('Y-m-d H:i:s');
-                                    $updateQuery = "UPDATE refinitiv_auth_tokens SET
-                                        access_token = '" . $frameData["access_token"] . "',
-                                        refresh_token = '" . $frameData["refresh_token"] . "',
-                                        expires_in = '" . $frameData["expires_in"] . "',
-                                        created_at = '" . $createdAt . "',
-                                        updated_at = '" . $localUpdatedAt . "'
-                                        WHERE id = '" . $frameData["id"] . "'";
-
-                                    // Database connection from the pool
-                                    $dbConnection = $this->dbConnectionPools[$webSocketServer->worker_id][config('app_config.swoole_pg_db_key')];
-
-                                    $dbFacade = new DbFacade();
-                                    $dbFacade->query(
-                                        $updateQuery,
-                                        $dbConnection
-                                    );
-                                } catch (\Throwable $e) {
-                                    // Log error details for debugging
-                                    echo "Error: " . $e->getMessage() . PHP_EOL;
-                                    echo "File: " . $e->getFile() . PHP_EOL;
-                                    echo "Line: " . $e->getLine() . PHP_EOL;
-                                    echo "Code: " . $e->getCode() . PHP_EOL;
-                                    var_dump($e->getTrace());
-                                }
                                 break;
                             default:
                                 if ($webSocketServer->isEstablished($frame->fd)){
