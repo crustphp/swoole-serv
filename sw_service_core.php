@@ -860,6 +860,8 @@ class sw_service_core {
                                         throw new InvalidArgumentException('Missing required token fields in the frameData.');
                                     }
 
+                                    $serverUpdatedAt = Carbon::parse($frameData["updated_at"])->timezone('UTC');
+                                    $localUpdatedAt = $serverUpdatedAt->timezone(config('app_config.time_zone'));
                                     // Prepare SQL query with validated data
                                     $createdAt = Carbon::now()->format('Y-m-d H:i:s');
                                     $insertQuery = "INSERT INTO refinitiv_auth_tokens (access_token, refresh_token, expires_in, created_at, updated_at)
@@ -868,7 +870,7 @@ class sw_service_core {
                                             '" . $frameData["refresh_token"] . "',
                                             " . $frameData["expires_in"] . ",
                                             '" . $createdAt . "',
-                                            '" . $frameData["updated_at"] . "'
+                                            '" . $localUpdatedAt . "'
                                         )";
 
                                     // Database connection from the pool
@@ -885,6 +887,70 @@ class sw_service_core {
                                     var_dump($e->getTrace());
                                 }
 
+                                break;
+                            case 'update-ref-token':
+                                // ======================= This below code will be moved into a separate class in the next PR for refinement ======================= \\
+
+                                // Extract the required configuration value
+                                $stagingTokenKey = config('app_config.refinitive_staging_token_endpoint_key');
+
+                                // Environment checking
+                                if (config('app_config.env') != 'staging') {
+                                    var_dump("This check only works on the staging server. Unauthenticated: Invalid environment configuration.");
+                                    throw new Exception('This check only works on the staging server. Unauthenticated: Invalid environment configuration.');
+                                }
+
+                                // Check if the retrieved API key matches the one stored in the configuration
+                                if (
+                                    isset($frameData['refinitive-token-staging-endpoint-key']) &&
+                                    $frameData['refinitive-token-staging-endpoint-key'] != $stagingTokenKey
+                                ) {
+                                    var_dump("Unauthenticated: Invalid token endpoint key.");
+                                    throw new Exception('Unauthenticated: Invalid token endpoint key.');
+                                }
+
+                                try {
+                                    // Validate required fields in frameData
+                                    if (
+                                        empty($frameData['access_token']) ||
+                                        empty($frameData['refresh_token']) ||
+                                        empty($frameData['expires_in']) ||
+                                        empty($frameData['updated_at'] ||
+                                            empty($frameData['id']))
+                                    ) {
+                                        var_dump("Missing required token fields in the frameData.");
+                                        throw new InvalidArgumentException('Missing required token fields in the frameData.');
+                                    }
+
+
+                                    $serverUpdatedAt = Carbon::parse($frameData["updated_at"])->timezone('UTC');
+                                    $localUpdatedAt = $serverUpdatedAt->timezone(config('app_config.time_zone'));
+                                    // Prepare SQL query with validated data
+                                    $createdAt = Carbon::now()->format('Y-m-d H:i:s');
+                                    $updateQuery = "UPDATE refinitiv_auth_tokens SET
+                                        access_token = '" . $frameData["access_token"] . "',
+                                        refresh_token = '" . $frameData["refresh_token"] . "',
+                                        expires_in = '" . $frameData["expires_in"] . "',
+                                        created_at = '" . $createdAt . "',
+                                        updated_at = '" . $localUpdatedAt . "'
+                                        WHERE id = '" . $frameData["id"] . "'";
+
+                                    // Database connection from the pool
+                                    $dbConnection = $this->dbConnectionPools[$webSocketServer->worker_id][config('app_config.swoole_pg_db_key')];
+
+                                    $dbFacade = new DbFacade();
+                                    $dbFacade->query(
+                                        $updateQuery,
+                                        $dbConnection
+                                    );
+                                } catch (\Throwable $e) {
+                                    // Log error details for debugging
+                                    echo "Error: " . $e->getMessage() . PHP_EOL;
+                                    echo "File: " . $e->getFile() . PHP_EOL;
+                                    echo "Line: " . $e->getLine() . PHP_EOL;
+                                    echo "Code: " . $e->getCode() . PHP_EOL;
+                                    var_dump($e->getTrace());
+                                }
                                 break;
                             default:
                                 if ($webSocketServer->isEstablished($frame->fd)){
