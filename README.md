@@ -22,9 +22,52 @@ sudo apt install libbrotli-dev -y
 ```
 
 ## STEP-2: Swoole Installation
+### Step 2.1
+Run the following command to install swoole
+
 ```sh
-pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-json="no" enable-swoole-curl="yes" enable-cares="yes"' swoole
+pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-json="no" enable-swoole-curl="yes" enable-cares="yes" enable-swoole-pgsql="yes" enable-debug="yes" enable-debug-log="yes" enable-trace-log="yes" enable-thread-context="yes"' swoole
 ```
+
+**Note:** If swoole is already installed (but not correctly) then remove it using following commands and run the above command again.
+
+```
+pecl uninstall swoole && \
+pecl clear-cache && \
+pear channel-update pear.php.net  && \
+pecl channel-update pecl.php.net
+```
+
+### Step 2.2
+After `pecl install` command if you see following message:
+  
+> You should add "extension=swoole.so" to php.ini
+ 
+Then run the following commands
+
+```
+bash -c "cat > /etc/php/8.3/mods-available/swoole.ini << EOF
+; Configuration for Swoole
+; priority=25
+extension=swoole
+swoole.enable_preemptive_scheduler=On
+EOF"
+```
+
+### Step 2.3
+Now you need to enable Swoole
+
+```
+phpenmod -s cli -v 8.3 swoole
+```
+
+### Step 2.4
+Now lastly you need to verify that if **swoole** is installed correctly.
+
+```
+php --ri swoole
+```
+
 ### OR
 
 ### Optionally Install Swoole using Source Code
@@ -174,7 +217,7 @@ To migrate to a specific version then use the `--target` parameter or `-t` for s
 Example:
 
 ```
-composer run-script phinx:migrate -- -e local -t 20110103081132
+composer run-script phinx:migrate -- -e db -t 20110103081132
 ```
 
 Use `--dry-run` to print the queries to standard output without executing them
@@ -188,25 +231,25 @@ The Rollback command is used to undo previous migrations executed by Phinx. It i
 You can rollback to the previous migration by using the  `rollback`  command with no arguments.
 
 ```
-composer run-script phinx:rollback -- -e local
+composer run-script phinx:rollback -- -e db
 ```
 
 To rollback all migrations to a specific version then use the `--target` parameter or `-t` for short.
 
 ```
-composer run-script phinx:rollback -- -e local -t 20120103083322
+composer run-script phinx:rollback -- -e db -t 20120103083322
 ```
 
 Specifying 0 as the target version will revert all migrations.
 
 ```
-composer run-script phinx:rollback -- -e local -t 0
+composer run-script phinx:rollback -- -e db -t 0
 ```
 
 Use `--dry-run` to print the queries to standard output without executing them
 
 ```
-composer run-script phinx:rollback -- -e local --dry-run
+composer run-script phinx:rollback -- -e db --dry-run
 ```
 
 ## Database Seeding
@@ -219,11 +262,11 @@ composer run-script phinx:seed-create MyNewSeeder
 The Seed Run command runs all of the available seed classes or optionally just one.
 
 ```
-composer run-script phinx:seed-run -- -e local
+composer run-script phinx:seed-run -- -e db
 ```
 
 To run only one seed class use the `--seed` parameter or `-s` for short.
 
 ```
-composer run-script phinx:seed-run -- -e local -s MyNewSeeder
+composer run-script phinx:seed-run -- -e db -s MyNewSeeder
 ```
