@@ -14,10 +14,10 @@ if (!function_exists('output')) {
      * You can also pass the instance of Exception / Throwable to log the exception
      *
      * @param mixed $data  The data to be printed or logged.
-     * @param mixed $server  Optional The Swoole server instance 
+     * @param mixed $server  Optional The Swoole server instance
      * @param bool $shouldExit  If true, exit the script after output.
      * @param bool $shouldVarDump  If true, use var_dump
-     * 
+     *
      * @return void
      */
     function output(mixed $data, mixed $server = null, bool $shouldExit = false, bool $shouldVarDump = false): void
@@ -88,7 +88,7 @@ if (!function_exists('forceShutdown')) {
      * Force Shutdown the Server
      *
      * @param int $port  The port of the server
-     * 
+     *
      * @return void
      */
     function forceShutdown(int $port = 9501): void
@@ -162,7 +162,7 @@ if (!function_exists('getAllDirectories')) {
      *
      * @param string $dir The base directory to start scanning from.
      * @param array $skipDirs An array of directory names to skip during scanning.
-     * 
+     *
      * @return mixed A list of final directories
      */
     function getAllDirectories($dir, $skipDirs = []): mixed
@@ -190,5 +190,107 @@ if (!function_exists('getAllDirectories')) {
         }
 
         return $allDirs;
+    }
+
+    // Reads and decodes JSON data from a file.
+    if (!function_exists('readJsonFile')) {
+        /**
+         * Reads and decodes JSON data from a file.
+         *
+         * @param string $absoluteFilePath The absolute path to the JSON file.
+         * @return array The decoded data as a PHP array, or an empty array if the file does not exist or has no valid data.
+         */
+        function readJsonFile(string $absoluteFilePath): array
+        {
+            // Check if the file exists and read its contents
+            if (file_exists($absoluteFilePath)) {
+                $fileContents = file_get_contents($absoluteFilePath);
+                $decodedData = json_decode($fileContents, true);
+
+                // Return the decoded data if it is an array (Check added as it returns null if file is empty), otherwise return an empty array
+                return is_array($decodedData) ? $decodedData : [];
+            }
+
+            // Return an empty array if the file does not exist
+            return [];
+        }
+    }
+
+// Writes data to a JSON file using a specified mode. If the file does not exist, it will be created.
+    if (!function_exists('writeDataToJsonFile')) {
+        /**
+         * Writes data to a JSON file using a specified mode. If the file does not exist, it will be created.
+         * Supported modes:
+         * - 'a': Append mode. Appends the new data to the existing content.
+         * - 'w': Write mode. Overwrites the existing content with the new data.
+         *
+         * @param array $data The data array to write to the JSON file.
+         * @param string $absoluteFilePath The absolute path to the JSON file.
+         * @param string $mode The mode of writing: 'a' (append) or 'w' (overwrite). By default it will append the data
+         *
+         * @return bool Returns true if the data has been written successfully, false otherwise.
+         */
+        function writeDataToJsonFile(array $data, string $absoluteFilePath, string $mode = 'a'): bool
+        {
+            $existingData = [];
+
+            if ($mode === 'a') {
+                // Append mode: Read existing data and add the new data
+                $existingData = readJsonFile($absoluteFilePath);
+                $existingData[] = $data;
+            } elseif ($mode === 'w') {
+                // Write mode: Overwrite with new data
+                $existingData = $data;
+            } else {
+                // Invalid mode, return false
+                return false;
+            }
+
+            // Write the updated data back to the file
+            try {
+                // Json Flags: https://www.php.net/manual/en/function.json-encode.php
+                // LOCK_EX: https://www.php.net/manual/en/function.file-put-contents.php
+                $result = file_put_contents($absoluteFilePath, json_encode($existingData, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR), LOCK_EX);
+            } catch (\Throwable $e) {
+                output($e);
+                return false;
+            }
+
+            // Return true if data was written successfully, otherwise false
+            return $result !== false;
+        }
+    }
+
+    if (!function_exists('removeItemFromJsonFile')) {
+        /**
+         * Removes an entry/record from a JSON file that matches the specified key-value pair.
+         *
+         * @param string $key The key to match for removing the entry.
+         * @param mixed $value The value to match for removing the entry.
+         * @param string $absoluteFilePath The absolute path to the JSON file.
+         *
+         * @return bool Returns True if the entry was removed, False otherwise.
+         */
+        function removeItemFromJsonFile(string $key, $value, string $absoluteFilePath): bool
+        {
+            // Read the existing data from the file
+            $data = readJsonFile($absoluteFilePath);
+
+            // Return false if there is no data
+            if (empty($data)) {
+                return false;
+            }
+
+            // Iterate over the data and remove Item that match the key-value pair
+            $filteredData = [];
+            foreach ($data as $item) {
+                if (!isset($item[$key]) || $item[$key] != $value) {
+                    $filteredData[] = $item;
+                }
+            }
+
+            // Write the updated data back to the file
+            return writeDataToJsonFile($filteredData, $absoluteFilePath, 'w');
+        }
     }
 }
