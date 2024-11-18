@@ -95,44 +95,39 @@ class NewsService
         return true;
     }
     
-    protected function getNewFilesForDownload(array $remoteFiles, string $localDirectory): array
+    protected function getNewFilesForDownload(array $remoteFiles, string $fileType): array
     {
         $today = date('Ymd');
         $result = [];
     
         try {
-            // Loop through remote files
+            // Filter remote files based on specific conditions
             foreach ($remoteFiles as $file) {
-                // Check for 'zip_KeyDevelopmentsRefSpan' and database condition
-                if ($localDirectory === 'zip_KeyDevelopmentsRefSpan') {
-                    // Query the count of records in key_dev_category_type table using Swoole's connection pool
-                    $categoryCountQuery = "SELECT COUNT(*) AS count FROM key_dev_category_type";
-                    $categoryCountResult = $this->dbFacade->query($categoryCountQuery , $this->objDbPool);
-                    $categoryCount = $categoryCountResult[0]['count'] ?? 0;
-    
-                    // Only add the file if the category count is 0 and 'Full' is in the file name
-                    if ($categoryCount === 0 && strpos($file, 'Full') !== false) {
-                        $result[] = $file;
-                    }
-                }
-                // Otherwise, check if today's date is in the file name
-                elseif (strpos($file, $today) !== false) {
+                if (strpos($file, $today) !== false) {
                     $result[] = $file;
                 }
             }
     
-            // Check for existing files in the local directory
-            $existingFiles = scandir($this->localPath . $localDirectory);
-            $existingFiles = array_diff($existingFiles, ['.', '..']); // Exclude . and ..
+            // Query downloaded files for the specified file type
+            $downloadedFilesQuery = "SELECT file_name FROM downloaded_files WHERE file_type = '$fileType'";
+            $downloadedFiles = $this->dbFacade->query($downloadedFilesQuery, $this->objDbPool);
+            $downloadedFileNames = array_column($downloadedFiles, 'file_name');
     
-            // Filter out already existing files from the result
-            foreach ($result as $key => $file) {
-                if (in_array($file, $existingFiles)) {
-                    unset($result[$key]); // Remove already existing file from the result
-                }
+            // Filter out files already downloaded
+            $result = array_filter($result, function ($file) use ($downloadedFileNames) {
+                return !in_array($file, $downloadedFileNames);
+            });
+    
+            // Download each new file and store in the database
+            foreach ($result as $file) {
+                // Here you would implement the file download logic
+    
+                // After downloading, save file name, type, and timestamp in the database
+                $insertQuery = "INSERT INTO downloaded_files (file_name, file_type, downloaded_at) VALUES ('$file', '$fileType', '" . date('Y-m-d H:i:s') . "')";
+                $this->dbFacade->query($insertQuery, $this->objDbPool);
             }
+    
         } catch (\Exception $e) {
-            // Error handling in Swoole using echo or custom logger
             echo 'Error while filtering files for download. Error: ' . $e->getMessage() . PHP_EOL;
         }
     
@@ -193,6 +188,8 @@ class NewsService
             // Clear the directories (replace File::cleanDirectory with native directory clean-up)
             $this->cleanDirectory($this->localPath . 'KeyDevelopmentsPlusSpan');
             $this->cleanDirectory($this->localPath . 'KeyDevelopmentsRefSpan');
+            $this->cleanDirectory($this->localPath . 'zip_KeyDevelopmentsPlusSpan');
+            $this->cleanDirectory($this->localPath . 'zip_KeyDevelopmentsRefSpan');
 
             $folders = ['KeyDevelopmentsPlusSpan', 'KeyDevelopmentsRefSpan'];
 
@@ -203,7 +200,7 @@ class NewsService
                     continue;
                 }
 
-                $todaysFiles = $this->getNewFilesForDownload($directory, 'zip_' . $folder);
+                $todaysFiles = $this->getNewFilesForDownload($directory, $folder);
 
                 foreach ($todaysFiles as $file) {
                     try {
