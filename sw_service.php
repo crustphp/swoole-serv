@@ -1,12 +1,11 @@
 <?php
-declare(strict_types=1);
+    declare(strict_types=1);
+    require_once realpath(__DIR__ . '/vendor/autoload.php');
+    include_once realpath(__DIR__.'/helper.php');
 
     use Swoole\Event;
     use Swoole\Process;
-
-    require_once realpath(__DIR__ . '/vendor/autoload.php');
-    include_once realpath(__DIR__.'/helper.php');
-    include_once realpath(__DIR__ . '/websocketclient/websocketclient.php');
+    use Websocketclient\WebSocketClient;
 
     ini_set('memory_limit', -1);
 
