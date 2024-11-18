@@ -492,46 +492,11 @@ class sw_service_core {
         };
 
         $revokeWorkerResources = function($server, $worker_id) {
-            $app_type_database_driven = config('app_config.app_type_database_driven');
-            if ($app_type_database_driven) {
-                if (isset($this->dbConnectionPools[$worker_id])) {
-                    $worker_dbConnectionPools = $this->dbConnectionPools[$worker_id];
-                    $mysqlPoolKey = makePoolKey($worker_id,'mysql');
-                    $pgPoolKey = makePoolKey($worker_id,'postgres');
-                    foreach ($worker_dbConnectionPools as $dbKey=>$dbConnectionPool) {
-                        if ($dbConnectionPool->pool_exist($pgPoolKey)) {
-                            echo "Closing Connection Pool: ".$pgPoolKey.PHP_EOL;
-                            // Through ConnectionPoolTrait, as used in DBConnectionPool Class
-                            $dbConnectionPool->closeConnectionPool($pgPoolKey);
-                        }
+            // Revoke Database Pool Resources
+            $this->revokeDatabasePoolResources($worker_id);
 
-                        if ($dbConnectionPool->pool_exist($mysqlPoolKey)) {
-                            echo "Closing Connection Pool: ".$mysqlPoolKey.PHP_EOL;
-                            // Through ConnectionPoolTrait, as used in DBConnectionPool Class
-                            $dbConnectionPool->closeConnectionPool($mysqlPoolKey);
-                        }
-                        unset($dbConnectionPool);
-                    }
-                    unset($this->dbConnectionPools[$worker_id]);
-                }
-            }
-
-            ////////////////////////////////////////////////////
-            ///// Code to Revoke Inotify / File Change Event////
-            ////////////////////////////////////////////////////
-            if ($worker_id == 0) {
-                global $inotify_handles;
-                global $watch_descriptors;
-                if (isset($inotify_handles)) {
-                    foreach ($inotify_handles as $index => $inotify_handle) {
-                        if (Swoole\Event::isset($inotify_handle)) {
-                            @inotify_rm_watch($inotify_handle, $watch_descriptors[$index]);
-                            Swoole\Event::del($inotify_handle);
-                        }
-                    }
-                    unset($inotify_handles);
-                }
-            }
+            // Revoke Inotify Resources
+            $this->revokeInotifyResources($worker_id);
         };
 
         $onWorkerError = function (OpenSwoole\Server $server, int $workerId) {
@@ -540,6 +505,11 @@ class sw_service_core {
         };
 
         $onWorkerStop = function ($server, int $workerId) {
+            // Revoke Database Pool Resources
+            $this->revokeDatabasePoolResources($workerId);
+
+            // Revoke Inotify Resources
+            $this->revokeInotifyResources($workerId);
             // echo "WorkerStop[$worker_id]|pid=" . posix_getpid() . ".\n".PHP_EOL;
 
             // In-case of Shutdown, inform the FDs to reconnect.
@@ -1050,6 +1020,63 @@ class sw_service_core {
         foreach($server->fds as $fd => $dummyBool) {
             if ($server->isEstablished($fd)){
                 $server->push($fd, $message);
+            }
+        }
+    }
+
+
+    /**
+     * This function revokes the database connection pool
+     *
+     * @param  mixed $worker_id The worker ID
+     * @return void
+     */
+    public function revokeDatabasePoolResources(int $worker_id)
+    {
+        $app_type_database_driven = config('app_config.app_type_database_driven');
+        if ($app_type_database_driven) {
+            if (isset($this->dbConnectionPools[$worker_id])) {
+                $worker_dbConnectionPools = $this->dbConnectionPools[$worker_id];
+                $mysqlPoolKey = makePoolKey($worker_id, 'mysql');
+                $pgPoolKey = makePoolKey($worker_id, 'postgres');
+                foreach ($worker_dbConnectionPools as $dbKey => $dbConnectionPool) {
+                    if ($dbConnectionPool->pool_exist($pgPoolKey)) {
+                        echo "Closing Connection Pool: " . $pgPoolKey . PHP_EOL;
+                        // Through ConnectionPoolTrait, as used in DBConnectionPool Class
+                        $dbConnectionPool->closeConnectionPool($pgPoolKey);
+                    }
+
+                    if ($dbConnectionPool->pool_exist($mysqlPoolKey)) {
+                        echo "Closing Connection Pool: " . $mysqlPoolKey . PHP_EOL;
+                        // Through ConnectionPoolTrait, as used in DBConnectionPool Class
+                        $dbConnectionPool->closeConnectionPool($mysqlPoolKey);
+                    }
+                    unset($dbConnectionPool);
+                }
+                unset($this->dbConnectionPools[$worker_id]);
+            }
+        }
+    }
+
+    /**
+     * This function revokes the Inotify Resources / File Change Event
+     *
+     * @param  int $worker_id
+     * @return void
+     */
+    public function revokeInotifyResources(int $worker_id)
+    {
+        if ($worker_id == 0) {
+            global $inotify_handles;
+            global $watch_descriptors;
+            if (isset($inotify_handles)) {
+                foreach ($inotify_handles as $index => $inotify_handle) {
+                    if (Swoole\Event::isset($inotify_handle)) {
+                        @inotify_rm_watch($inotify_handle, $watch_descriptors[$index]);
+                        Swoole\Event::del($inotify_handle);
+                    }
+                }
+                unset($inotify_handles);
             }
         }
     }
