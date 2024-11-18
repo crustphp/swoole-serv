@@ -2,6 +2,8 @@
 
 namespace App\Processes;
 
+use Swoole\Timer;
+
 class {{class}} {
 
 	protected $server;
@@ -15,6 +17,10 @@ class {{class}} {
 
     public function handle()
     {
+        // Following Timer is important to prevent the custom MainProcess from continuously exiting and restarting
+        // You can remove it if you are using your own Swoole Timer
+        Timer::tick(5000, function(){});
+
         // Add your code here
     }
 }

@@ -86,6 +86,8 @@ use App\Core\Enum\ResponseStatusCode;
 
 use Swoole\ExitException;
 
+use App\Core\Processes\MainProcess;
+
 class sw_service_core {
 
     protected $swoole_vesion;
@@ -221,54 +223,34 @@ class sw_service_core {
         // $testProcess = new Process($this->customProcessCallbacks['test_service'], false, SOCK_DGRAM, true);
         // $this->server->addProcess($testProcess);
 
-        // Get the service container instance
-        $serviceContainer = ServiceContainer::get_instance();
+        // Create a MainProcess. This MainProcess will start other processes
+        // When main process will be reloaded. It will start processes including new ones.
+        $this->customProcessCallbacks['MainProcess'] = function ($process) {
+            try {
+                // Create the PID file of process - Used to kill the process in Before Reload
+                $pidFile = __DIR__ . '/process_pids/MainProcess.pid';
+                file_put_contents($pidFile, $process->pid);
 
-        // Get the registered processes from the Service Container
-        $this->customProcessCallbacks = $serviceContainer->get_registered_processes();
-        // print_r($this->customProcessCallbacks);
-
-        // Following code is to create process Resident Process based on customProcessCallbacks[] and enable reload on process code.
-        $this->server->customProcesses = [];
-        foreach ($this->customProcessCallbacks as $processKey => $processInfo) {
-            // Process Options
-            $processOptions = $processInfo['process_options'] ?? [];
-
-            // Process Creation Callback
-            $processCallback = function ($process) use ($processKey, $processInfo) {
-                try {
-                    // Create the PID file of process - Used to kill the process in Before Reload
-                    $pidFile = __DIR__ . '/process_pids/' . $processKey . '.pid';
-                    file_put_contents($pidFile, $process->pid);
-
-                    // Get the ServiceContainerInstance with global process parameters
-                    $serviceContainer = ServiceContainer::get_instance($this->server, $process);
-                    $serviceContainer($processKey, null, $this->server, $process);
-
-                    // Throw the exception if no Swoole\Timer is used in.
-                    // There should be a Timer is to prevent the user process from continuously exiting and restarting as per documentation
-                    // Reference: https://wiki.swoole.com/en/#/server/methods?id=addprocess
-                    if (count(swTimer::list()) == 0) {
-                        $qualifiedClassName = $processInfo['callback'][0] ?? "";
-                        throw new ExitException('The resident process (['. $processKey .'] -> '. $qualifiedClassName .') must have a Swoole\Timer::tick()');
-                    }
-                } catch (\Throwable $e) {
-                    echo 'EXCEPTION: ' . PHP_EOL;
-                    echo 'MESSAGE: ' . $e->getMessage() . PHP_EOL;
-                    echo 'FILE:' . $e->getFile() . PHP_EOL;
-                    echo 'LINE:' . $e->getLine() . PHP_EOL;
-                    echo 'CODE:' . $e->getCode() . PHP_EOL;
-
-                    output(data: $e, shouldExit: true, server: $this->server);
+                $mainProcessBase = new MainProcess($this->server, $process);
+                $mainProcessBase->handle();
+            } catch (\Throwable $e) {
+                // On Local Environment, shutdown the server on Exception for debugging
+                // Else just log the exception without exiting/shutting down the server
+                if (config('app_config.env') == 'local') {
+                    output(data: $e, server: $this->server, shouldExit: true);
+                } else {
+                    output($e);
                 }
-            };
+            }
+        };
 
-            // Create the Process
-            $this->server->customProcesses[$processKey] = new Process($processCallback, ...$processOptions);
-
-            // Add the process to server
-            $this->server->addProcess($this->server->customProcesses[$processKey]);
+        if (!isset($this->server->customProcesses)) {
+            $this->server->customProcesses = [];
         }
+
+        $this->server->customProcesses['MainProcess'] = new Process($this->customProcessCallbacks['MainProcess'], false, SOCK_DGRAM, false);
+
+        $this->server->addProcess($this->server->customProcesses['MainProcess']);
     }
 
     protected function bindServerEvents() {
@@ -306,6 +288,17 @@ class sw_service_core {
             if ($swoole_daemonize == false && file_exists('server.pid')) {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
+
+
+            // Kill the custom user Processes
+            $this->killCustomProcesses(true);
+
+            // Remove the Main Process PID File (As this process is shutdown by Server itself so we need to remove file manually)
+            $mainProcessPidDFile = __DIR__ . '/process_pids/MainProcess.pid';
+
+            if (file_exists($mainProcessPidDFile)) {
+                unlink($mainProcessPidDFile);
+            }
         };
 
         $onBeforeShutdown = function($server) {
@@ -326,6 +319,7 @@ class sw_service_core {
         $this->server->on('BeforeReload', function($server)
         {
 //            echo "Test Statement: Before Reload". PHP_EOL;
+            $this->killCustomProcesses();
         });
 
         $this->server->on('AfterReload', function($server)
@@ -1024,6 +1018,39 @@ class sw_service_core {
         }
     }
 
+    /**
+     * This function kills the custom user processes
+     *
+     * @param bool $onlyServiceContainer If you only want to kill the processes registered in service container. Otherwise it will kill
+     * the processes of both ServiceContainer and "customProcessCallbacks" property
+     * @return void
+     */
+    public function killCustomProcesses(bool $onlyServiceContainer = false)
+    {
+        // Get the service container instance
+        $serviceContainer = ServiceContainer::get_instance();
+
+        if ($onlyServiceContainer) {
+            // Kill the proccess registered in ServiceContainer only
+            $processesToKill = $serviceContainer->get_registered_processes();
+        } else {
+            // Get the registered processes from the Service Container and merge with this file's "customProcessCallbacks"
+            $processesToKill = array_merge($this->customProcessCallbacks, $serviceContainer->get_registered_processes());
+        }
+
+        foreach ($processesToKill as $key => $callback) {
+            $processPidFile = __DIR__ . '/process_pids/' . $key . '.pid';
+
+            if (file_exists($processPidFile)) {
+                $pid = shell_exec('cat ' . $processPidFile);
+
+                Process::kill(intval($pid), SIGTERM);
+
+                // Delete the PID File
+                unlink($processPidFile);
+            }
+        }
+    }
 
     /**
      * This function revokes the database connection pool
