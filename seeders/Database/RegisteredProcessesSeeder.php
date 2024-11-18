@@ -19,13 +19,13 @@ class RegisteredProcessesSeeder extends AbstractSeed
         // Names (NewService, RefService) will be replaced in future after "make:process" command to NewsBase and RefBase respectively.
         $data = [
             [
-                'name' => 'NewsService',
+                'name' => 'NewsProcess',
                 'redirect_stdin_and_stdout' => false,
                 'pipe_type' => SOCK_DGRAM,
                 'enable_coroutine' => true,
             ],
             [
-                'name' => 'RefService',
+                'name' => 'RefProcess',
                 'redirect_stdin_and_stdout' => false,
                 'pipe_type' => SOCK_DGRAM,
                 'enable_coroutine' => true,

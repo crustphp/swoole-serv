@@ -337,14 +337,14 @@ class ServiceContainer
     private static function registerProcesses(): void
     {
         try {
-            // Fetch the Registered Processes from Database
-            $pdoService = new PdoService();
-            $pocessesFromDb = $pdoService->query('SELECT "name", "redirect_stdin_and_stdout", "pipe_type", "enable_coroutine" FROM "registered_processes"');
+            // Fetch the Registered Processes from ProcessRegistry
+            $processesRegisterPath = dirname(__DIR__) . '/app/Core/Processes/ProcessesRegister.json';
+            $registeredProcesses = readJsonFile($processesRegisterPath);
 
             // Format the fetched data
             $formattedProcesesData = [];
 
-            foreach ($pocessesFromDb as $processData) {
+            foreach ($registeredProcesses as $processData) {
                 $formattedProcesesData[$processData['name']] = [
                     // Note for Now using App\Services, but it should be from App\Processes namespace
                     // Callback of Process you want to call when the process will be created
