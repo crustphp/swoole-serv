@@ -755,6 +755,10 @@ class sw_service_core {
                                 $service = new \App\Services\SwooleTableTestService($webSocketServer, $frame);
                                 $service->handle();
                                 break;
+                            case 'get-news':
+                                $service = new \App\Services\NewsWebsocketService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id], $frameData['request']);
+                                $service->handle();
+                                break;
                             case 'users':
                                 $table = SwooleTableFactory::getTable('users');
                                 if (isset($frameData['add_data'])) {

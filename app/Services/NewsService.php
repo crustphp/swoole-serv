@@ -206,9 +206,9 @@ class NewsService
                     try {
                         $localFilePath = $this->localPath . 'zip_' . $folder . '/' . $file;
                         $sftp->get('Products/' . $folder . '/' . $file, $localFilePath);
-                        echo "Downloaded file: $file" . PHP_EOL;
+                        //echo "Downloaded file: $file" . PHP_EOL;
                     } catch (\Exception $e) {
-                        echo 'Failed to download file: ' . $file . '. Error: ' . $e->getMessage() . PHP_EOL;
+                        //echo 'Failed to download file: ' . $file . '. Error: ' . $e->getMessage() . PHP_EOL;
                     }
                 }
 
@@ -299,9 +299,9 @@ class NewsService
                                 // Execute the insert query
                                 $this->dbFacade->query($query, $this->objDbPool);
     
-                                echo "Inserted row into key_dev with keyDevId: $keyDevId" . PHP_EOL;
+                                //echo "Inserted row into key_dev with keyDevId: $keyDevId" . PHP_EOL;
                             } else {
-                                echo "Skipping row with duplicate keyDevId: $keyDevId" . PHP_EOL;
+                                //echo "Skipping row with duplicate keyDevId: $keyDevId" . PHP_EOL;
                             }
                         }
                     }
@@ -357,14 +357,14 @@ class NewsService
                                 try {
                                     // Execute the insert query
                                     $this->dbFacade->query($query, $this->objDbPool);
-                                    echo "Inserted row into key_dev_split_info with keyDevId: $keyDevId and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
+                                    //echo "Inserted row into key_dev_split_info with keyDevId: $keyDevId and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
                                 } catch (\Exception $e) {
                                     // Output the query and error message only if there's an exception
                                     echo "Error executing query: $query" . PHP_EOL;
                                     echo 'Error: ' . $e->getMessage() . PHP_EOL;
                                 }
                             } else {
-                                echo "Skipping row with duplicate keyDevId: $keyDevId and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
+                                //echo "Skipping row with duplicate keyDevId: $keyDevId and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
                             }
                         }
                     }
@@ -421,14 +421,14 @@ class NewsService
                                 try {
                                     // Execute the insert query
                                     $this->dbFacade->query($query, $this->objDbPool);
-                                    echo "Inserted row into key_dev_to_object_to_event_type with keyDevToObjectToEventTypeID: $keyDevToObjectToEventTypeID and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
+                                    //echo "Inserted row into key_dev_to_object_to_event_type with keyDevToObjectToEventTypeID: $keyDevToObjectToEventTypeID and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
                                 } catch (\Exception $e) {
                                     // Output the query and error message only if there's an exception
                                     echo "Error executing query: $query" . PHP_EOL;
                                     echo 'Error: ' . $e->getMessage() . PHP_EOL;
                                 }
                             } else {
-                                echo "Skipping row with duplicate keyDevToObjectToEventTypeID: $keyDevToObjectToEventTypeID and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
+                                //echo "Skipping row with duplicate keyDevToObjectToEventTypeID: $keyDevToObjectToEventTypeID and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
                             }
                         }
                     }
@@ -475,7 +475,7 @@ class NewsService
                             try {
                                 // Execute the insert query
                                 $this->dbFacade->query($query, $this->objDbPool);
-                                echo "Inserted row into key_dev_time_zone with announcedDateTimeZoneId: $announcedDateTimeZoneId" . PHP_EOL;
+                                //echo "Inserted row into key_dev_time_zone with announcedDateTimeZoneId: $announcedDateTimeZoneId" . PHP_EOL;
                             } catch (\Exception $e) {
                                 // Output the query and error message only if there's an exception
                                 echo "Error executing query: $query" . PHP_EOL;
@@ -526,7 +526,7 @@ class NewsService
                             try {
                                 // Execute the insert query
                                 $this->dbFacade->query($query, $this->objDbPool);
-                                echo "Inserted row into source_type with sourceTypeId: $sourceTypeId" . PHP_EOL;
+                                //echo "Inserted row into source_type with sourceTypeId: $sourceTypeId" . PHP_EOL;
                             } catch (\Exception $e) {
                                 // Output the query and error message only if there's an exception
                                 echo "Error executing query: $query" . PHP_EOL;
@@ -579,7 +579,7 @@ class NewsService
                             try {
                                 // Execute the insert query
                                 $this->dbFacade->query($query, $this->objDbPool);
-                                echo "Inserted row into key_dev_category_type with keyDevEventTypeId: $keyDevEventTypeId" . PHP_EOL;
+                                //echo "Inserted row into key_dev_category_type with keyDevEventTypeId: $keyDevEventTypeId" . PHP_EOL;
                             } catch (\Exception $e) {
                                 // Output the query and error message only if there's an exception
                                 echo "Error executing query: $query" . PHP_EOL;
@@ -630,7 +630,7 @@ class NewsService
                             try {
                                 // Execute the insert query
                                 $this->dbFacade->query($query, $this->objDbPool);
-                                echo "Inserted row into key_dev_object_role_type with keyDevToObjectRoleTypeId: $keyDevToObjectRoleTypeId" . PHP_EOL;
+                                //echo "Inserted row into key_dev_object_role_type with keyDevToObjectRoleTypeId: $keyDevToObjectRoleTypeId" . PHP_EOL;
                             } catch (\Exception $e) {
                                 // Output the query and error message only if there's an exception
                                 echo "Error executing query: $query" . PHP_EOL;
@@ -692,7 +692,7 @@ class NewsService
                                 try {
                                     // Execute the insert query
                                     $this->dbFacade->query($query, $this->objDbPool);
-                                    echo "Inserted row into key_dev_to_source_type with keyDevId: $keyDevId and sourceTypeId: $sourceTypeId" . PHP_EOL;
+                                    //echo "Inserted row into key_dev_to_source_type with keyDevId: $keyDevId and sourceTypeId: $sourceTypeId" . PHP_EOL;
                                 } catch (\Exception $e) {
                                     // Output the query and error message only if there's an exception
                                     echo "Error executing query: $query" . PHP_EOL;
