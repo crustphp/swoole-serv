@@ -57,16 +57,14 @@ class RefTokenService
     {
         // In case of stage or local make websocket connection with prod
         if (config('app_config.env') == 'local' || config('app_config.env') == 'staging') {
-            // $this->getTokenFrmProductionSever(config('app_config.production_ip')); // This line will be uncommented once prod swoole setup ready
+            $this->getTokenFrmProductionSever(config('app_config.production_ip'));
         } else {
             swTimer::tick(config('app_config.refinitive_token_time_span'), function () {
-                    // $token = new RefToken($this->server,  $this->objDbPool, $this->dbFacade); // These lines will be enabled once swoole setup ready on prod
-                    // $token->getToken();
-                    // unset($token);
+                $token = new RefToken($this->server,  $this->objDbPool, $this->dbFacade);
+                $token->getToken();
+                unset($token);
             });
-
         }
-
     }
 
     function getTokenFrmProductionSever($ip)
