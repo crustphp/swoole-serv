@@ -61,13 +61,14 @@ class MainProcess
                     // Here we pass the server and process as constructor params to avoid error of these values replaced by latest process
                     $serviceContainer($processKey, null, $this->server, $process);
 
+                    // Following Code is not needed/commented when we use $process->start();
                     // Throw the exception if no Swoole\Timer is used in.
                     // There should be a Timer is to prevent the user process from continuously exiting and restarting as per documentation
                     // Reference: https://wiki.swoole.com/en/#/server/methods?id=addprocess
-                    if (count(Timer::list()) == 0) {
-                        $qualifiedClassName = $processInfo['callback'][0] ?? "";
-                        throw new ExitException('The resident process ([' . $processKey . '] -> ' . $qualifiedClassName . ') must have a Swoole\Timer::tick()');
-                    }
+                    // if (count(Timer::list()) == 0) {
+                    //     $qualifiedClassName = $processInfo['callback'][0] ?? "";
+                    //     throw new ExitException('The resident process ([' . $processKey . '] -> ' . $qualifiedClassName . ') must have a Swoole\Timer::tick()');
+                    // }
                 } catch (\Throwable $e) {
                     // On Local Environment, shutdown the server on Exception for debugging
                     // Else just log the exception without exiting/shutting down the server

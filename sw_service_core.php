@@ -954,9 +954,15 @@ class sw_service_core {
             $processPidFile = __DIR__ . '/process_pids/' . $key . '.pid';
 
             if (file_exists($processPidFile)) {
-                $pid = shell_exec('cat ' . $processPidFile);
+                $pid = intval(shell_exec('cat ' . $processPidFile));
 
-                Process::kill(intval($pid), SIGTERM);
+                // Processes that do not have a timer or loop will exit automatically after completing their tasks.
+                // Therefore, some processes might have already terminated before reaching this point
+                // So here we need to check first if the process is running by passing signal_no param as 0, as per documentation
+                // Doc: https://wiki.swoole.com/en/#/process/process?id=kill
+                if (Process::kill($pid, 0)) {
+                    Process::kill($pid, SIGTERM);
+                }
 
                 // Delete the PID File
                 unlink($processPidFile);
