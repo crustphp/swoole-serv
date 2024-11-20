@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use DB\DBConnectionPool;
-use DB\DbFacade;
 use Carbon\Carbon;
 use App\Core\Services\APIConsumer;
 use Bootstrap\SwooleTableFactory;
@@ -25,13 +24,13 @@ class RefToken
     protected $timeout;
     protected $server;
 
-    public function __construct($server, $objDbPool, $dbFacade)
+    protected $postgresDbKey;
+    protected $worker_id;
+    protected $dbConnectionPools;
+
+
+    public function __construct($server, $dbFacade)
     {
-
-        $this->server =  $server;
-        $this->objDbPool = $objDbPool;
-        $this->dbFacade = $dbFacade;
-
         $this->grantType = config('ref_config.grant_type');
         $this->username = config('ref_config.username');
         $this->password = config('ref_config.password');
@@ -41,6 +40,30 @@ class RefToken
         $this->refreshGrantType = config('ref_config.refresh_grant_type');
         $this->url = config('ref_config.url');
         $this->timeout = config('app_config.refinitiv_req_timeout');
+
+        $this->server = $server;
+        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
+        $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
+        $this->worker_id = $this->server->worker_id;
+
+        $app_type_database_driven = config('app_config.app_type_database_driven');
+        if ($app_type_database_driven) {
+            $poolKey = makePoolKey($this->worker_id, 'postgres');
+            try {
+                // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
+                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey, 'postgres', 'swoole', true);
+                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key]->create();
+            } catch (\Throwable $e) {
+                echo $e->getMessage() . PHP_EOL;
+                echo $e->getFile() . PHP_EOL;
+                echo $e->getLine() . PHP_EOL;
+                echo $e->getCode() . PHP_EOL;
+                var_dump($e->getTrace());
+            }
+        }
+
+        $this->objDbPool = $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key];
+        $this->dbFacade = $dbFacade;
     }
 
     public function getToken( $refresh = '')
@@ -52,11 +75,14 @@ class RefToken
 
             if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
                 try {
+                    // Get Postgres Client
+                    $postgresClient = $this->dbFacade->getClient($this->objDbPool);
+
                     // Begin the transaction
-                    $this->dbFacade->beginTransaction($this->objDbPool);
+                    $this->dbFacade->beginTransaction($postgresClient);
 
                     // Lock the table to prevent concurrent operations
-                    $this->dbFacade->lockTable($this->objDbPool, 'refinitiv_auth_tokens');
+                    $this->dbFacade->lockTable($postgresClient, 'refinitiv_auth_tokens');
 
                     $token = $this->getRefTokenFromDB();
 
@@ -64,10 +90,10 @@ class RefToken
                         $refToken = $this->fetchRefTokenFromRefAPI();
 
                         if (!isset($refToken['error'])) {
-                            $refToken = $refToken['response'];
-                            $accessToken = $refToken['access_token'];
-                            $refreshToken = $refToken['refresh_token'];
-                            $expiresIn = $refToken['expires_in'];
+                            $refToken = json_decode($refToken['response']);
+                            $accessToken = $refToken->access_token;
+                            $refreshToken = $refToken->refresh_token;
+                            $expiresIn = $refToken->expires_in;
 
                             $dateTime = Carbon::now()->format('Y-m-d H:i:s');
                             $createdAt = $dateTime;
@@ -95,14 +121,14 @@ class RefToken
 
                         } else {
                             var_dump('Refinitiv token API call failed', ['response' => $refToken]);
-                            $this->dbFacade->rollBackTransaction($this->objDbPool);
+                            $this->dbFacade->rollBackTransaction($postgresClient);
                             throw new \RuntimeException('Refinitiv token API call failed' . json_encode($refToken));
                         }
                     }
 
-                    $this->dbFacade->commitTransaction($this->objDbPool);
+                    $this->dbFacade->commitTransaction($postgresClient);
                 } catch (\Exception $e) {
-                    $this->dbFacade->rollBackTransaction($this->objDbPool);
+                    $this->dbFacade->rollBackTransaction($postgresClient);
                     // Display detailed error message and stack trace
                     var_dump('Refinitiv token API call failed', [
                         'error_message' => $e->getMessage(),
@@ -127,11 +153,14 @@ class RefToken
                 $token = null;
 
                 try {
+                    // Get Postgres Client
+                    $postgresClient = $this->dbFacade->getClient($this->objDbPool);
+
                     // Begin the transaction
-                    $this->dbFacade->beginTransaction($this->objDbPool);
+                    $this->dbFacade->beginTransaction($postgresClient);
 
                     // Lock the table to prevent concurrent operations
-                    $this->dbFacade->lockTable($this->objDbPool, 'refinitiv_auth_tokens');
+                    $this->dbFacade->lockTable($postgresClient, 'refinitiv_auth_tokens');
 
                     $token = $this->getRefTokenFromDB();
                     $token_id = $token["id"];
@@ -139,7 +168,7 @@ class RefToken
                     // Attempt to refresh the token using the refresh token
                     if (Carbon::now()->timestamp - Carbon::parse($token['updated_at'])->timestamp >= $token['expires_in']) {
 
-                        $refToken = $this->fetchRefRefreshTokenFromRefAPI($token->refresh_token);
+                        $refToken = $this->fetchRefRefreshTokenFromRefAPI($token['refresh_token']);
 
                         // If the refresh token is also expired, get a new token without using the refresh token
                         if (isset($refToken['error'])) {
@@ -148,10 +177,10 @@ class RefToken
                         }
 
                         if (!isset($refToken['error'])) {
-                            $refToken = $refToken['response'];
-                            $accessToken = $refToken['access_token'];
-                            $refreshToken = $refToken['refresh_token'];
-                            $expiresIn = $refToken['expires_in'];
+                            $refToken = json_decode($refToken['response']);
+                            $accessToken = $refToken->access_token;
+                            $refreshToken = $refToken->refresh_token;
+                            $expiresIn = $refToken->expires_in;
 
                             $dateTime = Carbon::now()->format('Y-m-d H:i:s');
                             $createdAt = $dateTime;
@@ -180,14 +209,14 @@ class RefToken
 
                         } else {
                             var_dump('Refinitive Update token failed on prod ', ['response' => $refToken]);
-                            $this->dbFacade->rollBackTransaction($this->objDbPool);
+                            $this->dbFacade->rollBackTransaction($postgresClient);
                             throw new \RuntimeException('Refinitive Update token failed on prod ' . json_encode($refToken));
                         }
                     }
 
-                    $this->dbFacade->commitTransaction($this->objDbPool);
+                    $this->dbFacade->commitTransaction( $postgresClient);
                 } catch (\Exception $e) {
-                    $this->dbFacade->rollBackTransaction($this->objDbPool);
+                    $this->dbFacade->rollBackTransaction( $postgresClient);
                     // Display detailed error message and stack trace
                     var_dump('Refinitiv update token API call failed', [
                         'error_message' => $e->getMessage(),
@@ -230,7 +259,7 @@ class RefToken
         $data = http_build_query($data);
 
         $apiConsumer = new APIConsumer($endpoint, $headers, $this->timeout);
-        $token = $apiConsumer->request('POST', $data);
+        $token = $apiConsumer->request('HTTP', 'POST', $data);
         unset($apiConsumer);
         return $token;
     }
@@ -260,7 +289,7 @@ class RefToken
         $data = http_build_query($data);
 
         $apiConsumer = new APIConsumer($endpoint, $headers, $this->timeout);
-        $token = $apiConsumer->request('POST', $data);
+        $token = $apiConsumer->request('HTTP', 'POST', $data);
 
         unset($apiConsumer);
 
@@ -278,21 +307,6 @@ class RefToken
         WHERE id = $tokenId";
 
         $this->dbFacade->query($updateQuery, $this->objDbPool);
-    }
-
-    function sendTokenToWebSocket($ip, $data)
-    {
-        $w = new WebSocketClient($ip, 9501);
-        if ($x = $w->connect()) {
-            // Encoding the data
-            $data = json_encode($data);
-            // Sending data
-            $w->send($data, 'text', 0);
-        } else {
-            echo "Could not connect to server" . PHP_EOL;
-        }
-        $w->disconnect();
-        unset($w);
     }
 
 }

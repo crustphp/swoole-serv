@@ -60,7 +60,7 @@ class RefTokenService
             $this->getTokenFrmProductionSever(config('app_config.production_ip'));
         } else {
             swTimer::tick(config('app_config.refinitive_token_time_span'), function () {
-                $token = new RefToken($this->server,  $this->objDbPool, $this->dbFacade);
+                $token = new RefToken($this->server, $this->dbFacade);
                 $token->getToken();
                 unset($token);
             });
