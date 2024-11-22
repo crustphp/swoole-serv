@@ -45,13 +45,16 @@ class RefSnapshotAPIConsumer
 
             // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
             $results = $this->dbFacade->query($dbQuery, $this->dbConnectionPools);
+            $companiesRics = [];
 
-            // Process the results: create an associative array with 'ric' as the key and 'id' as the value
-            foreach ($results as $row) {
-                $companiesRics[$row['ric']] = $row;
+            if (!empty($results)) {
+                // Process the results: create an associative array with 'ric' as the key and 'id' as the value
+                foreach ($results as $row) {
+                    $companiesRics[$row['ric']] = $row;
+                }
+
+                $companiesRics = array_column($companiesRics, 'ric');
             }
-
-            $companiesRics = array_column($companiesRics, 'ric');
         }
 
         // Fetch Refinitive access token
@@ -90,7 +93,8 @@ class RefSnapshotAPIConsumer
 
             return $this->mAIndicatorsData;
         }
-        throw new \RuntimeException('Failed to retrieve data of most active.');
+        output("There is an issue retrieving the token from the database, or the companies do not exist in the database.");
+        return array();
     }
 
     /**
