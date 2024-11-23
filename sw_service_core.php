@@ -88,6 +88,8 @@ use Swoole\ExitException;
 
 use App\Core\Processes\MainProcess;
 
+use App\Core\Services\SubscriptionManager;
+
 class sw_service_core {
 
     protected $swoole_vesion;
@@ -547,13 +549,31 @@ class sw_service_core {
             }
         };
 
+        // When a working process receives a message sent by $server->sendMessage() trigger the onPipeMessage event.
+        // Both worker and task processes may trigger the onPipeMessage event. We can use it receive messages from other processes
+        // Source Worker ID is the ID of the process from which we call sendMessage() function
+        // More Details: https://wiki.swoole.com/en/#/server/events?id=onpipemessage
         $onPipeMessage = function($server, $src_worker_id, $message): void
         {
             // Source Worker ID is the ID of the process from which we call sendMessage() function
-            $message .= ' | Server FDs: '.implode(',', $server->fds). ' | Source Worker ID: '.$src_worker_id;
+            $messageData = json_decode($message, true);
+
+            // If Topic or Data is not provided than log the Error Message
+            if (!isset($messageData['topic']) || !isset($messageData['message_data'])) {
+                output('Error: Topic or Data missing for broadcasting.');
+                return;
+            }
+
+            $topic = $messageData['topic'];
+            $msgData = $messageData['message_data'];
+
+            // Get FDs subscribed to provided topic
+            $subscriptionManager = new SubscriptionManager();
+            $fds = $subscriptionManager->getSubscribersForTopic($topic, true, $server->worker_id);
+            unset($subscriptionManager);
 
             // send to your known fds in worker scope
-            $this->broadcastDataToFDs($server,$message);
+            $this->broadcastDataToFDs($server,$msgData, $fds);
         };
 
         $this->server->on('workerstart', $init);
@@ -594,6 +614,22 @@ class sw_service_core {
 
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
+
+            // Start: Take the list of Topics FD wants to Subscribe to
+            $subscriptionTopics = isset($request->get['topic_subcription']) ? array_map('trim', explode(',', $request->get['topic_subcription'])) : [];
+            if (empty($subscriptionTopics)) {
+                $websocketserver->push($request->fd, 'Warning: Please provide the topics you want to subscribe to');
+            }
+
+            // Handle subscription via SubscriptionManager
+            $subscriptionManager = new SubscriptionManager();
+            $subscriptionResults = $subscriptionManager->manageSubscriptions($request->fd, $subscriptionTopics, [], $websocketserver->worker_id);
+            unset($subscriptionManager);
+
+            if (!empty($subscriptionResults['errors'])) {
+                $websocketserver->push($request->fd, 'Subscription errors: ' . implode(', ', $subscriptionResults['errors']));
+            }
+            // End Code: Take the list of Topics FD wants to Subscribe to
 
             if (config('app_config.env') != 'local' && config('app_config.env') != 'staging' && isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && $request->header["refinitive-token-production-endpoint-key"] != null) {
 
@@ -830,7 +866,41 @@ class sw_service_core {
                             case 'get-fds':
                                 $message = 'Worker ID: '.$webSocketServer->worker_id . ' | FDs: '.implode(',', $webSocketServer->fds);
                                 $webSocketServer->push($frame->fd, $message);
+                                break;
+                            case 'get-topic-subscriptions':
+                                $topic = isset($frameData['topic']) ? trim($frameData['topic']) : "";
+                                $subscriptionManager = new SubscriptionManager();
+                                if (empty($topic)) {
+                                    $data = $subscriptionManager->getAllSubsciptionData();
+                                }
+                                else {
+                                    $data = $subscriptionManager->getSubscribersForTopic($topic);
+                                }
 
+                                unset($subscriptionManager);
+
+                                if ($webSocketServer->isEstablished($frame->fd)) {
+                                    $webSocketServer->push($frame->fd, json_encode($data));
+                                }
+                                break;
+                            case 'manage-topic-subcription':
+                                // Validate the presence of 'subscribe' and 'unsubscribe' keys and ensure they are arrays
+                                if (
+                                    !isset($frameData['subscribe'], $frameData['unsubscribe']) ||
+                                    !is_array($frameData['subscribe']) ||
+                                    !is_array($frameData['unsubscribe'])
+                                ) {
+                                    $webSocketServer->push($frame->fd, 'Error: Both subscribe and unsubscribe keys are required and must be arrays.');
+                                    break;
+                                }
+
+                                $subscriptionManager = new SubscriptionManager();
+
+                                // Manage Subscriptions
+                                $results = $subscriptionManager->manageSubscriptions($frame->fd, $frameData['subscribe'], $frameData['unsubscribe'], $webSocketServer->worker_id);
+                                unset($subscriptionManager);
+
+                                $webSocketServer->push($frame->fd, json_encode($results));
                                 break;
                             default:
                                 if ($webSocketServer->isEstablished($frame->fd)){
@@ -872,6 +942,11 @@ class sw_service_core {
                 }
             unset(self::$fds[$fd]);
 
+            // Unsubscribe the FD from its subscribed topics
+            $subscriptionManager = new SubscriptionManager();
+            $subscriptionManager->removeSubscriptionsForFD($fd);
+            unset($subscriptionManager);
+
             // delete fd from scope
             unset($server->fds[$fd]);
         });
@@ -889,6 +964,11 @@ class sw_service_core {
                 }
             }
             unset(self::$fds[$fd]);
+
+            // Unsubscribe the FD from its subscribed topics
+            $subscriptionManager = new SubscriptionManager();
+            $subscriptionManager->removeSubscriptionsForFD($fd);
+            unset($subscriptionManager);
 
             // delete fd from scope
             unset($server->fds[$fd]);
@@ -926,8 +1006,8 @@ class sw_service_core {
        ];
     }
 
-    protected function broadcastDataToFDs(&$server, $message) {
-        foreach($server->fds as $fd => $dummyBool) {
+    protected function broadcastDataToFDs(&$server, $message, $fds) {
+        foreach($fds as $fd) {
             if ($server->isEstablished($fd)){
                 $server->push($fd, $message);
             }
