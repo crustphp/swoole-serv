@@ -249,7 +249,7 @@ class RefService
 
     public function fetchRefData(mixed $companyDetail)
     {
-        $service = new RefSnapshotAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('app_config.refinitive_pricing_snapshot_url'), $_ENV['STAGING_USER_TOKEN']);
+        $service = new RefSnapshotAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('app_config.refinitive_pricing_snapshot_url'));
         $responses = $service->handle($companyDetail, self::REF_MA_FIELDS);
         unset($service);
 

@@ -10,7 +10,6 @@ class RefSnapshotAPIConsumer
 {
     protected $webSocketServer;
     protected $dbConnectionPools;
-    protected $muasheratUserToken;
     protected $chunkSize = 100;
     protected $dbFacade;
     protected $mAIndicatorsData = [];
@@ -18,18 +17,15 @@ class RefSnapshotAPIConsumer
     protected $tooManyRequestCounter = 0;
     protected $retry;
     protected $url;
-    protected $muachratTokenUrl;
     protected $timeout;
 
-    public function __construct($webSocketServer, $dbConnectionPools, $dbFacade, $url, $token)
+    public function __construct($webSocketServer, $dbConnectionPools, $dbFacade, $url)
     {
         $this->webSocketServer = $webSocketServer;
         $this->dbConnectionPools = $dbConnectionPools;
         $this->dbFacade = $dbFacade;
-        $this->muasheratUserToken = $token;
         $this->retry = config('app_config.refinitv_retry');
         $this->url = $url;
-        $this->muachratTokenUrl = config('app_config.app_url').'/api/get-refinitive-token';
         $this->timeout = config('app_config.refinitiv_req_timeout');
     }
 
@@ -104,13 +100,17 @@ class RefSnapshotAPIConsumer
      */
     function getRefToken(): string
     {
-        $headers = $this->getHeaders($this->muasheratUserToken);
+        $token = new RefToken($this->webSocketServer, $this->dbFacade);
+        $refToken = $token->getToken();
+        unset($token);
 
-        $apiConsumer = new APIConsumer($this->muachratTokenUrl, $headers, $this->timeout);
-        $response = $apiConsumer->request();
-        $data = json_decode($response['response'], true);
+        $refAccessToken = '';
 
-        return $data['access_token'] ?? '';
+        if ($refToken) {
+            $refAccessToken = $refToken['access_token'];
+        }
+
+        return $refAccessToken;
     }
 
     /**
