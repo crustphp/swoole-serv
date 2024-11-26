@@ -667,31 +667,32 @@ class sw_service_core {
                 // Add fd to scope
                 // Here I am storing the FD in array index also as FD for directly accessing it in array.
                 $websocketserver->fds[$request->fd] = $request->fd;
-            }
 
-//            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
-//                $server->push($request->fd, json_encode(["hello", time()]));
-//            });
 
-            // Push the Top Gainers Table Data to FD
-            $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
+                //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
+                //                $server->push($request->fd, json_encode(["hello", time()]));
+                //            });
 
-            // Fetch data from swoole table ma_indicator_job_runs_at
-            $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
-            $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at']) ? $mAIndicatorJobRunsAtData[0]['job_run_at'] : null;
+                // Push the Top Gainers Table Data to FD
+                $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
 
-            // Here we will check if the data is encoded without any error
-            $topGainersJson = json_encode([
-                'ref_top_gainers' => $topGainersData,
-                'job_runs_at' => $mAIndicatorJobRunsAt,
-            ]);
-
-            if ($topGainersJson == false) {
-                echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
-            } else {
-                // Push Data to FD
-                if ($websocketserver->isEstablished($request->fd)) {
-                    $websocketserver->push($request->fd, $topGainersJson);
+                // Fetch data from swoole table ma_indicator_job_runs_at
+                $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
+                $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
+                    ? $mAIndicatorJobRunsAtData[0]['job_run_at']
+                    : null;
+                // Here we will check if the data is encoded without any error
+                $topGainersJson = json_encode([
+                    'ref_top_gainers' => $topGainersData,
+                    'job_runs_at' => $mAIndicatorJobRunsAt,
+                ]);
+                if ($topGainersJson == false) {
+                    echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
+                } else {
+                    // Push Data to FD
+                    if ($websocketserver->isEstablished($request->fd)) {
+                        $websocketserver->push($request->fd, $topGainersJson);
+                    }
                 }
             }
         });
