@@ -3,6 +3,7 @@
 namespace App\Core\Processes;
 
 use Swoole\Timer;
+use Swoole\Atomic;
 use Swoole\Process;
 use Swoole\ExitException;
 use Bootstrap\ServiceContainer;
@@ -17,11 +18,22 @@ class MainProcess
 
     protected $baseDir;
 
+     // Atomic counter for process IDs
+     protected $processIdCounter = null;
+
     public function __construct($server, $process)
     {
         $this->server = $server;
         $this->process = $process;
         $this->baseDir = dirname(__DIR__, 3);
+
+        // Since we are using $process->start so we will not have $process->id ...
+        // So we use Swoole Atomic to get incremented value to be used as process ID
+        // Docs: https://wiki.swoole.com/en/#/memory/atomic
+        if ($this->processIdCounter === null) {
+            $startFrom = config('swoole_config.server_settings.worker_num') + config('swoole_config.server_settings.task_worker_num') - 1;
+            $this->processIdCounter = new Atomic($startFrom);
+        }
     }
 
     /**
@@ -52,6 +64,11 @@ class MainProcess
             // Process Creation Callback
             $processCallback = function ($process) use ($processKey, $processInfo) {
                 try {
+                    // Since we are usign $process->start so we will not have $process->id ...
+                    // So we use Swoole Atomic to get incremented value to be used as process ID
+                    // Docs: https://wiki.swoole.com/en/#/memory/atomic?id=add
+                    $process->id = $this->processIdCounter->add();
+
                     // Create the PID file of process - Used to kill the process in Before Reload
                     $pidFile = $this->baseDir . '/process_pids/' . $processKey . '.pid';
                     file_put_contents($pidFile, $process->pid);
