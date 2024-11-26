@@ -19,5 +19,8 @@ class RefTokenProcess {
     {
         $refTokenService = new RefTokenService($this->server, $this->process);
         $refTokenService->handle();
+
+        // Unset the RefTokenService
+        unset($refTokenService);
     }
 }

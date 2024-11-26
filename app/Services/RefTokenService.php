@@ -8,6 +8,8 @@ use Swoole\Timer as swTimer;
 use DB\DbFacade;
 use Websocketclient\WebSocketClient;
 
+use Swoole\Coroutine as Co;
+
 class RefTokenService
 {
     protected $server;
@@ -99,7 +101,7 @@ class RefTokenService
                         }
                     }
                 }
-                \Co::sleep(1);
+                Co::sleep(1);
             }
         } else {
             echo "Could not connect to server" . PHP_EOL;
@@ -134,5 +136,45 @@ class RefTokenService
         VALUES ('$accessToken', '$refreshToken', $expiresIn, '$createdAt', '$updatedAt')";
 
         $this->dbFacade->query($insertQuery, $this->objDbPool);
+    }
+    
+    /**
+     * __destruct
+     *
+     * @return void
+     */
+    public function __destruct() {
+        $app_type_database_driven = config('app_config.app_type_database_driven');
+        $worker_id = $this->worker_id;
+
+        if ($app_type_database_driven) {
+            if (isset($this->dbConnectionPools[$worker_id])) {
+                $worker_dbConnectionPools = $this->dbConnectionPools[$worker_id];
+                $mysqlPoolKey = makePoolKey($worker_id, 'mysql');
+                $pgPoolKey = makePoolKey($worker_id, 'postgres');
+                foreach ($worker_dbConnectionPools as $dbKey => $dbConnectionPool) {
+                    if ($dbConnectionPool->pool_exist($pgPoolKey)) {
+                        output("Closing Connection Pool: " . $pgPoolKey);
+                        // Through ConnectionPoolTrait, as used in DBConnectionPool Class
+                        $dbConnectionPool->closeConnectionPool($pgPoolKey);
+                    }
+
+                    if ($dbConnectionPool->pool_exist($mysqlPoolKey)) {
+                        output("Closing Connection Pool: " . $mysqlPoolKey);
+                        // Through ConnectionPoolTrait, as used in DBConnectionPool Class
+                        $dbConnectionPool->closeConnectionPool($mysqlPoolKey);
+                    }
+                    unset($dbConnectionPool);
+                }
+
+                unset($this->dbConnectionPools);
+            }
+        }
+
+        unset($this->objDbPool);
+
+        // Uncomment following if needed to revoke memory immediately.
+        // $this->dbConnectionPools = null;
+        // $this->objDbPool = null;
     }
 }

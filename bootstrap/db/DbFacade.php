@@ -11,15 +11,23 @@ declare(strict_types=1);
 namespace DB;
 use Swoole\Runtime;
 
+// use Swoole\Coroutine as Co;
+
 class DbFacade {
     public function query($db_query, $objDbPool, array $options=null, $transaction=false, $lock = false, $tableName = '')
     {
-
         ////////////////////////////////////////////////////////////////////////////////
         //// Get DB Connection from a Connection Pool created through 'smf' package ////
         ////////////////////////////////////////////////////////////////////////////////
 
         $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+
+        // Test Later: If there is not connection available then wait for 200 milliseconds and try again
+        // while (empty($postgresClient) || is_null($postgresClient)) {
+        //     Co::sleep(0.2);
+
+        //     $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+        // }
 
         if ($transaction){
             $postgresClient->query('BEGIN');
@@ -71,6 +79,14 @@ class DbFacade {
 
     public function getClient($objDbPool) {
         $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+
+        // Test Later: If there is not connection available then wait for 200 milliseconds and try again
+        // while (empty($postgresClient) || is_null($postgresClient)) {
+        //     Co::sleep(0.2);
+
+        //     $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+        // }
+
         return $postgresClient;
     }
 

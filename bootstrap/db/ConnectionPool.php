@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace DB;
 
+use Swoole\Coroutine as Co;
 use Swoole\Coroutine\Channel;
 
 class ConnectionPool
@@ -30,6 +31,9 @@ class ConnectionPool
     {
         $this->pool        = new Channel($this->size = $size);
         $this->constructor = $constructor;
+
+        // Todo: Heartbeat needs to be investegated
+        // $this->heartbeat();
     }
 
     public function fill(): void
@@ -92,5 +96,18 @@ class ConnectionPool
             throw $throwable;
         }
         $this->put($connection);
+    }
+
+    // This function needs to be investegated (Reference: it was taken from openswoole ClientPool class)
+    protected function heartbeat()
+    {
+        Co::create(function () {
+            while ($this->pool) {
+                Co::sleep(3);
+                $client = $this->get();
+                $client->heartbeat();
+                $this->put($client);
+            }
+        });
     }
 }
