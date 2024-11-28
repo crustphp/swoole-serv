@@ -29,7 +29,7 @@ class RefToken
     protected $dbConnectionPools;
 
 
-    public function __construct($server, $dbFacade)
+    public function __construct($server ,$dbFacade, $objDbPool)
     {
         $this->grantType = config('ref_config.grant_type');
         $this->username = config('ref_config.username');
@@ -42,27 +42,7 @@ class RefToken
         $this->timeout = config('app_config.refinitiv_req_timeout');
 
         $this->server = $server;
-        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-        $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
-        $this->worker_id = $this->server->worker_id;
-
-        $app_type_database_driven = config('app_config.app_type_database_driven');
-        if ($app_type_database_driven) {
-            $poolKey = makePoolKey($this->worker_id, 'postgres');
-            try {
-                // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
-                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey, 'postgres', 'swoole', true);
-                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key]->create();
-            } catch (\Throwable $e) {
-                echo $e->getMessage() . PHP_EOL;
-                echo $e->getFile() . PHP_EOL;
-                echo $e->getLine() . PHP_EOL;
-                echo $e->getCode() . PHP_EOL;
-                var_dump($e->getTrace());
-            }
-        }
-
-        $this->objDbPool = $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key];
+        $this->objDbPool = $objDbPool;
         $this->dbFacade = $dbFacade;
     }
 

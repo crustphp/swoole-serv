@@ -62,7 +62,7 @@ class RefTokenService
             $this->getTokenFrmProductionSever(config('app_config.production_ip'));
         } else {
             swTimer::tick(config('app_config.refinitive_token_time_span'), function () {
-                $token = new RefToken($this->server, $this->dbFacade);
+                $token = new RefToken($this->server, $this->dbFacade, $this->objDbPool);
                 $token->getToken();
                 unset($token);
             });
@@ -97,7 +97,7 @@ class RefTokenService
                         if (!$token) { // If there is no token into the DB
                             $this->insertIntoRefAuthTable($recievedata->access_token, $recievedata->refresh_token, $recievedata->expires_in, $createdAt, $localUpdatedAt);
                         } else { // Update the token if token exist already
-                            $this->updateIntoRefAuthTable($recievedata->access_token, $recievedata->refresh_token, $recievedata->expires_in, $createdAt, $localUpdatedAt, $recievedata->id);
+                            $this->updateIntoRefAuthTable($recievedata->access_token, $recievedata->refresh_token, $recievedata->expires_in, $createdAt, $localUpdatedAt, $token['id']);
                         }
                     }
                 }
@@ -137,7 +137,7 @@ class RefTokenService
 
         $this->dbFacade->query($insertQuery, $this->objDbPool);
     }
-    
+
     /**
      * __destruct
      *
