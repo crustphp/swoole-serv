@@ -10,7 +10,7 @@ use Websocketclient\WebSocketClient;
 
 use Swoole\Coroutine as Co;
 
-class RefTokenService
+class TPTokenRetrievalAndSynchService
 {
     protected $server;
     protected $postgresDbKey;

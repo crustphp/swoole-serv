@@ -2,7 +2,7 @@
 
 namespace App\Processes;
 
-use App\Services\RefTokenService;
+use App\Services\TPTokenRetrievalAndSynchService;
 
 class RefTokenProcess {
 
@@ -17,7 +17,7 @@ class RefTokenProcess {
 
     public function handle()
     {
-        $refTokenService = new RefTokenService($this->server, $this->process);
+        $refTokenService = new TPTokenRetrievalAndSynchService($this->server, $this->process);
         $refTokenService->handle();
 
         // Unset the RefTokenService
