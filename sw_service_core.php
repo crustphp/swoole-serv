@@ -418,7 +418,9 @@ class sw_service_core {
             // For Smf package based Connection Pool
             // Configure Connection Pool through SMF ConnectionPool class constructor
             // OR Swoole / OpenSwoole Connection Pool
-            if ($app_type_database_driven) {
+            // We want to create the DBConnectionPools just for Worker Processes (Not for Task Workers) ...
+            // We can pass the ConnectionPool to TaskWorkers if they need it.
+            if ($app_type_database_driven && $worker_id < $server->setting['worker_num']) {
                 $poolKey = makePoolKey($worker_id, 'postgres');
                 try {
                     // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process

@@ -32,8 +32,8 @@ $swoole_config = [
         // 'http_compression'      => false, This Key already exists Compression config
         'buffer_output_size' => 1024 * 1024 * 1024,
         'reactor_num' => 16,
-        'worker_num' => 4, // Each worker holds a connection pool
-        'task_worker_num' => 8,  // The amount of task workers to start
+        'worker_num' => intval($_ENV['WORKERS_NUM'] ?? 4), // Each worker holds a connection pool
+        'task_worker_num' => intval($_ENV['TASK_WORKERS_NUM'] ?? 0),  // The amount of task workers to start
         'task_enable_coroutine' => true,
 
         // Protocol
