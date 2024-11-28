@@ -9,7 +9,6 @@ if (!$swoole_ext) {
 return [
     'swoole_ext' => $swoole_ext,
     'swoole_app_debug' => intval($_ENV['SWOOLE_APP_DEBUG'] ?? 1),
-    'db_connection_pool_size' => $_ENV['SWOOLE_DB_CONNECTION_POOL_SIZE'] ?? 4,
     'app_type_database_driven' => intval($_ENV['SWOOLE_APP_TYPE_DATABASE_DRIVEN'] ?? 1),
     'swoole_pg_db_key' => $_ENV['SWOOLE_PG_DB_KEY'] ?? 'pg',
     'swoole_mysql_db_key' => $_ENV['SWOOLE_MYSQL_DB_KEY'] ?? 'mysql',

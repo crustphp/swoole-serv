@@ -425,6 +425,12 @@ class sw_service_core {
                 try {
                     // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
                     $this->dbConnectionPools[$worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey,'postgres', 'swoole', true);
+
+                    // Following Commented Code is for example purpose how you can dynamically update Pool Size before calling create()
+                    // if ($worker_id == 2) {
+                    //     $this->dbConnectionPools[$worker_id][$swoole_pg_db_key]->setPoolSize(5);
+                    // }
+
                     $this->dbConnectionPools[$worker_id][$swoole_pg_db_key]->create();
                 } catch (\Throwable $e) {
                     echo $e->getMessage() . PHP_EOL;

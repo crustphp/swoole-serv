@@ -18,4 +18,8 @@ return [
     'sw_postgres_server_db' => $_ENV['SWOOLE_PG_DB_DATABASE'] ?? 'database_name',
     'sw_postgres_server_user' => $_ENV['SWOOLE_PG_DB_USERNAME'] ?? 'database_user',
     'sw_postgres_server_passwd' => $_ENV['SWOOLE_PG_DB_PASSWORD'] ?? 'database_password',
+
+    // Connection Pool Size:
+    'event_workers_db_connection_pool_size' => intval($_ENV['SW_EVENT_WORKERS_DB_CONNECTION_POOL_SIZE'] ?? 3),
+    'custom_processes_db_connection_pool_size' => intval($_ENV['SW_CUSTOM_PROCESSES_DB_CONNECTION_POOL_SIZE'] ?? 3),
 ];

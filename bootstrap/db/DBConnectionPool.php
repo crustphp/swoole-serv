@@ -19,8 +19,6 @@ use OpenSwoole\Core\Coroutine\Pool\ClientPool as oswClientPool;
 use DB\SwoolePgConfig;
 use DB\SwoolePgConnectionPool;
 
-include (dirname(dirname(__DIR__)).'/config/db_config.php');
-
 class DBConnectionPool
 {
     use ConnectionPoolTrait;
@@ -30,6 +28,13 @@ class DBConnectionPool
     protected string $dbEngine = 'postgres';
     protected string $poolDriver = 'swoole';
     protected $swoole_ext;
+
+    // Number of Connections in Each Pool
+    protected $poolSize = 3;
+
+    // Worker Related Properties
+    protected $workerId;
+    protected $totalEventWorkers;
 
     function __construct($pool_key, string $dbEngine, $poolDriver='smf', bool $isPdo = true) {
         $dbEngine = strtolower($dbEngine);
@@ -45,6 +50,23 @@ class DBConnectionPool
         $this->isPdo = $isPdo;
         $this->pool_key = $pool_key;
         $this->swoole_ext = config('app_config.swoole_ext');
+
+        // Set the Default Pool Size
+        $this->workerId = getIdFromDbPoolKey($pool_key, $dbEngine);
+        
+        $this->totalEventWorkers = config('swoole_config.server_settings.worker_num');
+        if (is_null($this->totalEventWorkers)) {
+            throw new \RuntimeException('Error: Please add number of Event Worker in Swoole Config inside server_settings as worker_num');
+        }
+
+        // Set the value of Pool Size based on if its for Event Worker or Custom User Process
+        if ($this->workerId < $this->totalEventWorkers) {
+            $this->poolSize = config('db_config.event_workers_db_connection_pool_size');
+        }
+        else {
+            $this->poolSize = config('db_config.custom_processes_db_connection_pool_size');
+        }
+        
     }
 
     function __destruct() {
@@ -133,7 +155,7 @@ class DBConnectionPool
                         ->withDbname($serverDB)
                         ->withUsername($serverUser)
                         ->withPassword($serverPasswd);
-                    return new SwoolePgConnectionPool($config, config('app_config.db_connection_pool_size'));
+                    return new SwoolePgConnectionPool($config, $this->poolSize);
                 } else if ($this->swoole_ext = 2) {
                     $config = (
                     (new oswPostgresConfig())
@@ -143,7 +165,7 @@ class DBConnectionPool
                         ->withUsername($serverUser)
                         ->withPassword($serverPasswd)
                     );
-                    return new oswClientPool(oswPostgresClientFactory::class, $config, config('app_config.db_connection_pool_size'));
+                    return new oswClientPool(oswPostgresClientFactory::class, $config, $this->poolSize);
                 } else {
 //                    throw new \Swoole\ExitException("Swoole Extension Not Found");
                     throw new \RuntimeException("Swoole Extension Not Found.".PHP_EOL." File: ".__FILE__.PHP_EOL." Line: ".__LINE__);
@@ -241,5 +263,24 @@ class DBConnectionPool
     public function pool_exist($key)
     {
         return isset(static::$pools[$key]);
+    }
+    
+    /**
+     * Set the database connections pool size
+     *
+     * @param  mixed $poolSize The pool size you want to set
+     * @return void
+     */
+    public function setPoolSize(int $poolSize) {
+        $this->poolSize = $poolSize;
+    }
+
+    /**
+     * Get the database connections pool size
+     *
+     * @return int The current pool size for DBConnectionPool object
+     */
+    public function getPoolSize():int {
+        return $this->poolSize;
     }
 }
