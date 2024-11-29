@@ -353,10 +353,16 @@ class RefService
 
     public function broadCastIndicatorData(array $differentMAIndicatorData, mixed $mAIndicatorJobRunsAt)
     {
-        $jsonData = json_encode([
-            'ref_top_gainers' => $differentMAIndicatorData,
-            'job_runs_at' => $mAIndicatorJobRunsAt,
-        ]);
+        // Broadcast the Top-Gainers Data to topic "top-gainers"
+        $topGainersData = [
+            'topic' => 'top-gainers',
+            'message_data' => [
+                'ref_top_gainers' => $differentMAIndicatorData,
+                'job_runs_at' => $mAIndicatorJobRunsAt,
+            ],
+        ];
+
+        $jsonData = json_encode($topGainersData);
 
         if ($jsonData == false) {
             echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;

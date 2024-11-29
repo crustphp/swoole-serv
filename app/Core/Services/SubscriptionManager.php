@@ -160,4 +160,17 @@ class SubscriptionManager
 
         return $removed;
     }
+
+    /**
+     * Check if an FD is subscribed to a specific topic.
+     *
+     * @param int $fd The FD of the subscriber.
+     * @param string $topic The name of the topic to check subscription for.
+     * @return bool 
+     */
+    public function isSubscribed(int $fd, string $topic): bool
+    {
+        $key = "{$topic}:{$fd}";
+        return $this->subscriptionTable->exists($key);
+    }
 }

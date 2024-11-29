@@ -573,7 +573,12 @@ class sw_service_core {
             }
 
             $topic = $messageData['topic'];
-            $msgData = $messageData['message_data'];
+            $msgData = $messageData['message_data']
+
+            // Encode the msgData to json string if its an array
+            if (is_array($msgData)) {
+                $msgData = json_encode($msgData);
+            }
 
             // Get FDs subscribed to provided topic
             $subscriptionManager = new SubscriptionManager();
@@ -632,7 +637,6 @@ class sw_service_core {
             // Handle subscription via SubscriptionManager
             $subscriptionManager = new SubscriptionManager();
             $subscriptionResults = $subscriptionManager->manageSubscriptions($request->fd, $subscriptionTopics, [], $websocketserver->worker_id);
-            unset($subscriptionManager);
 
             if (!empty($subscriptionResults['errors'])) {
                 $websocketserver->push($request->fd, 'Subscription errors: ' . implode(', ', $subscriptionResults['errors']));
@@ -675,13 +679,15 @@ class sw_service_core {
                 // Add fd to scope
                 // Here I am storing the FD in array index also as FD for directly accessing it in array.
                 $websocketserver->fds[$request->fd] = $request->fd;
+            }
 
 
                 //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
                 //                $server->push($request->fd, json_encode(["hello", time()]));
                 //            });
 
-                // Push the Top Gainers Table Data to FD
+            // Push the Top Gainers Table Data to FD if it has subscribed topic "top-gainers"
+            if ($subscriptionManager->isSubscribed($request->fd, 'top-gainers')) {
                 $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
 
                 // Fetch data from swoole table ma_indicator_job_runs_at
@@ -689,13 +695,15 @@ class sw_service_core {
                 $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
                     ? $mAIndicatorJobRunsAtData[0]['job_run_at']
                     : null;
+
                 // Here we will check if the data is encoded without any error
                 $topGainersJson = json_encode([
                     'ref_top_gainers' => $topGainersData,
                     'job_runs_at' => $mAIndicatorJobRunsAt,
                 ]);
+
                 if ($topGainersJson == false) {
-                    echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
+                    output("JSON encoding error: " . json_last_error_msg());
                 } else {
                     // Push Data to FD
                     if ($websocketserver->isEstablished($request->fd)) {
@@ -703,6 +711,7 @@ class sw_service_core {
                     }
                 }
             }
+            unset($subscriptionManager);
         });
 
 
