@@ -61,23 +61,27 @@ class TPTokenRetrievalAndSynchService
         if (config('app_config.env') == 'local' || config('app_config.env') == 'staging') {
             $this->getTokenFrmProductionSever(config('app_config.production_ip'));
         } else {
-            swTimer::tick(config('app_config.refinitive_token_time_span'), function () {
-                $token = new RefToken($this->server, $this->dbFacade, $this->objDbPool);
-                $token->getToken();
-                unset($token);
+//            Co::sleep(2);
+            swTimer::tick(config('app_config.refinitive_token_time_span'), function ($timerId) {
+                $refToken = new RefToken($this->server, $this->dbFacade, $this->objDbPool);
+                $refToken->produceActiveToken();
+                unset($refToken);
+//                swTimer::clear($timerId);
             });
         }
     }
 
     function getTokenFrmProductionSever($ip)
     {
-        $w = new WebSocketClient($ip, 9501);
-        if ($x = $w->connect($this->refProductionTokenEndpointKey)) {
-
+        $objTokenRetrieval = new WebSocketClient($ip, 9501, config('swoole_config.socket_settings'));
+        if ($connTokenRetrieval = $objTokenRetrieval->connect($this->refProductionTokenEndpointKey)) {
+            //$objTokenRetrieval->send(json_encode('get-token:accesskey'));
             while (true) {
-
-                $recievedata = $w->recv();
+                Co::sleep(3);
+                $recievedata = $objTokenRetrieval->recv();
                 if ($recievedata) {
+                    echo PHP_EOL.'Getting Token from Prod'.PHP_EOL;
+                    var_dump($recievedata); echo PHP_EOL;
                     $recievedata = json_decode($recievedata);
 
                     if (
@@ -101,7 +105,7 @@ class TPTokenRetrievalAndSynchService
                         }
                     }
                 }
-                Co::sleep(1);
+                Co::sleep(2);
             }
         } else {
             echo "Could not connect to server" . PHP_EOL;

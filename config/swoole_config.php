@@ -2,10 +2,18 @@
 $swoole_config = [
     'coroutine_settings' => [
         'max_concurrency' => 100,
-        'max_coroutine' => 10000,
-
+        'max_coroutine' => 60000,
         // Can also be set using Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
         //'hook_flags' => SWOOLE_HOOK_ALL,
+    ],
+
+    'socket_settings' => [
+        'socket_buffer_size' => 1024 * 5, // 2M buffer size
+        'socket_connect_timeout' => -1,
+        'socket_timeout' => -1,
+        'socket_read_timeout' => -1,
+        'socket_write_timeout' => -1,
+        'package_max_length' => 1024 * 5
     ],
 
     'server_settings' => [
@@ -50,8 +58,8 @@ $swoole_config = [
         'open_websocket_protocol' => false, // Being set in setDefault function in sw_service.php
         'websocket_compression' => true,
         'open_websocket_close_frame' => true,
-        'open_websocket_ping_frame' => true, // added from v4.5.4
-        'open_websocket_pong_frame' => true, // added from v4.5.4
+        'open_websocket_ping_frame' => false, // added from v4.5.4
+        'open_websocket_pong_frame' => false, // added from v4.5.4
         // 'heartbeat_idle_time' => 5,
         // 'heartbeat_check_interval' => 2,
 

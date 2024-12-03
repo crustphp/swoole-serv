@@ -46,7 +46,7 @@ class RefToken
         $this->dbFacade = $dbFacade;
     }
 
-    public function getToken( $refresh = '')
+    public function produceActiveToken( $refresh = '')
     {
         // Retrieve the first RefinitivAuthToken record from the database
         $token = $this->getRefTokenFromDB();
@@ -95,7 +95,7 @@ class RefToken
 
                             foreach ($tokenFdsData as $fd) {
                                 if ($this->server->isEstablished((int) $fd['fd'])) {
-                                    $this->server->push($fd['fd'], $data);
+                                    $this->server->push($fd['fd'], $data, WEBSOCKET_OPCODE_TEXT, SWOOLE_WEBSOCKET_FLAG_FIN | SWOOLE_WEBSOCKET_FLAG_COMPRESS);
                                 }
                             }
 

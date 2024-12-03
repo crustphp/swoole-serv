@@ -2,6 +2,7 @@
 
 namespace Websocketclient;
 
+use Swoole\Coroutine as Co;
 use Swoole\Client as swClient;
 use OpenSwoole\Client as oswClient;
 use OpenSwoole\Constant;
@@ -26,6 +27,7 @@ class WebSocketClient
      * @var swoole_client
      */
     private $socket;
+    private $socket_settings = [];
     private $buffer = '';
     private $origin = null;
     /**
@@ -38,13 +40,14 @@ class WebSocketClient
      * @param int    $port
      * @param string $path
      */
-    function __construct($host = '127.0.0.1', $port = 8080, $path = '/', $origin = null)
+    function __construct($host = '127.0.0.1', $port = 8080, $socket_settings=[], $path = '/', $origin = null)
     {
         $this->host = $host;
         $this->port = $port;
         $this->path = $path;
         $this->origin = $origin;
         $this->key = $this->generateToken(self::TOKEN_LENGHT);
+        $this->socket_settings = $socket_settings;
         list($this->isSwoole, $this->swoole_ext) = extension_loaded('swoole') ? [true, 'sw'] :
             (extension_loaded('openswoole') ? [true, 'osw'] : [false, 'none']);
     }
@@ -64,14 +67,24 @@ class WebSocketClient
      */
     public function connect($key = null)
     {
-        if ($this->isSwoole == 'sw') {
+        if ($this->isSwoole) {
             $this->socket = new swClient(SWOOLE_SOCK_TCP | SWOOLE_KEEP); // For Swoole and SWOOLE_KEEP is used to keep alive connection
         } else {
             $this->socket = new oswClient(Constant::SOCK_TCP | Constant::KEEP); // for OpenSwoole
         }
-        if (!$this->socket->connect($this->host, $this->port, 5))
+
+        if (!empty($this->socket_settings)) {
+            $this->socket->set($this->socket_settings);
+        }
+
+        if (!$this->socket->connect($this->host, $this->port, -1, 0))
         {
-            return false;
+            output("connect failed. Error: {$client->errCode}\n Trying Again \n");
+            $this->socket->close(true);
+            if (!$this->socket->connect($this->host, $this->port, -1)) {
+                output("connect failed. Error: {$client->errCode}\n");
+                return false;
+            }
         }
         $this->socket->send($this->createHeader($key));
         return $this->recv();
@@ -88,7 +101,7 @@ class WebSocketClient
     public function disconnect()
     {
         $this->connected = false;
-        $this->socket->close();
+        $this->socket->close(true);
     }
 
     public function recv()
@@ -96,7 +109,8 @@ class WebSocketClient
 //        try {
 //        co::run(function () {
 //            while (true) {
-                $data = @$this->socket->recv();
+
+                $data = $this->socket->recv(5 * 1024);
                 if (strlen($data) > 0) {
                     $this->buffer .= $data;
                     $returnVal = $this->parseData($this->buffer);
@@ -110,14 +124,23 @@ class WebSocketClient
                 else {
                     // An empty string means the connection has been closed
                     if ($data === '') {
+                        output('Data is Empty');
+                        $this->socket->close(true);
                         // We must close the connection to use the client again
-//                        $this->socket->close();
-//                        $returnVal = false;
+                        for ($i=0;$i<4;$i++) {
+                            output("Trying to reconnect: Try: ". $i++);
+                            if ($this->socket->connect($this->host, $this->port, -1)) {
+                                $returnVal = true;
+                            }
+                            Co::sleep(4);
+                        }
+                        $returnVal = false;
                     } else if ($data === false) {
                      //echo "Constant: ".SOCKET_ETIMEDOUT.PHP_EOL;
                         if ($this->socket->errCode === SOCKET_ETIMEDOUT) {
                             // Not a timeout, close the connection due to an error
-//                            $client->close();
+                            $this->socket->close(true);
+                            $this->socket->connect($this->host, $this->port, -1);
 //                            break;
                             echo "Socket Timeout".PHP_EOL;
                         }
@@ -125,7 +148,7 @@ class WebSocketClient
 //                        var_dump($this->socket);
 //                        echo PHP_EOL;
 //                        echo PHP_EOL;
-                      //echo "Error: {$this->socket->errCode}"; echo PHP_EOL;
+                      echo "Error: {$this->socket->errCode}"; echo PHP_EOL;
                             // We must close the connection to use the client again
                         //$this->socket->close();
                     }
@@ -133,7 +156,7 @@ class WebSocketClient
 //                    break;
                 }
                 // Wait 1 second before reading data again on our loop
-//                sleep(1);
+//                co::sleep(1);
 //            }
             return $returnVal;
 //        });

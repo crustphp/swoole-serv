@@ -573,7 +573,7 @@ class sw_service_core {
             }
 
             $topic = $messageData['topic'];
-            $msgData = $messageData['message_data']
+            $msgData = $messageData['message_data'];
 
             // Encode the msgData to json string if its an array
             if (is_array($msgData)) {
@@ -628,90 +628,67 @@ class sw_service_core {
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
 
-            // Start: Take the list of Topics FD wants to Subscribe to
-            $subscriptionTopics = isset($request->get['topic_subcription']) ? array_map('trim', explode(',', $request->get['topic_subcription'])) : [];
-            if (empty($subscriptionTopics)) {
-                $websocketserver->push($request->fd, 'Warning: Please provide the topics you want to subscribe to');
-            }
-
-            // Handle subscription via SubscriptionManager
-            $subscriptionManager = new SubscriptionManager();
-            $subscriptionResults = $subscriptionManager->manageSubscriptions($request->fd, $subscriptionTopics, [], $websocketserver->worker_id);
-
-            if (!empty($subscriptionResults['errors'])) {
-                $websocketserver->push($request->fd, 'Subscription errors: ' . implode(', ', $subscriptionResults['errors']));
-            }
-            // End Code: Take the list of Topics FD wants to Subscribe to
-
-            if (config('app_config.env') != 'local' && config('app_config.env') != 'staging' && isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && $request->header["refinitive-token-production-endpoint-key"] != null) {
-
-                if ($request->header["refinitive-token-production-endpoint-key"] === config('app_config.refinitive_production_token_endpoint_key')) {
+            if (isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && !is_null($request->header["refinitive-token-production-endpoint-key"])) {
+                if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
 
                     $worker_id = $websocketserver->worker_id;
-                    $tokenFdsTable = SwooleTableFactory::getTable('token_fds');
-                    $tokenFdsTable->set($request->fd, ['fd' => $request->fd, 'worker_id' => $worker_id]);
-
-                    $worker_id = $websocketserver->worker_id;
-                    $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-                    $dbConnection = $this->dbConnectionPools[$worker_id][$swoole_pg_db_key];
-
-                    $dbFacade = new DbFacade();
-                    $getQuery = "SELECT * FROM refinitiv_auth_tokens LIMIT 1";
-                    $result = $dbFacade->query(
-                        $getQuery,
-                        $dbConnection
-                    );
-                    $result = $result ? $result[0] : null;
-                    $result = json_encode($result);
-
-                    if ($websocketserver->isEstablished($request->fd)) {
-                        $websocketserver->push($request->fd,  $result);
-                    }
-                } else {
-                    // Invalid token endpoint key of porduction
-                    $msg = json_encode("Unauthenticated: Invalid token endpoint key of porduction.");
-                    if ($websocketserver->isEstablished($request->fd)) {
-                        $websocketserver->push($request->fd, $msg);
-                    }
-                    var_dump("Unauthenticated: Invalid token endpoint key of porduction.");
+                    // Sending Refinitive Token to Envirenement FDS (local, stage)
+                    $pushToken = new PushToken($websocketserver, $request, $this->dbConnectionPools[$worker_id][config('app_config.swoole_pg_db_key')]);
+                    $pushToken->handle();
+                    unset($pushToken);
                 }
             } else {
                 // Add fd to scope
                 // Here I am storing the FD in array index also as FD for directly accessing it in array.
                 $websocketserver->fds[$request->fd] = $request->fd;
-            }
-
 
                 //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
                 //                $server->push($request->fd, json_encode(["hello", time()]));
                 //            });
 
-            // Push the Top Gainers Table Data to FD if it has subscribed topic "top-gainers"
-            if ($subscriptionManager->isSubscribed($request->fd, 'top-gainers')) {
-                $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
+                // Start: Take the list of Topics FD wants to Subscribe to
+                $subscriptionTopics = isset($request->get['topic_subcription']) ? array_map('trim', explode(',', $request->get['topic_subcription'])) : [];
+                if (empty($subscriptionTopics)) {
+                    $websocketserver->push($request->fd, 'Warning: Please provide the topics you want to subscribe to');
+                }
 
-                // Fetch data from swoole table ma_indicator_job_runs_at
-                $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
-                $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
-                    ? $mAIndicatorJobRunsAtData[0]['job_run_at']
-                    : null;
+                // Handle subscription via SubscriptionManager
+                $subscriptionManager = new SubscriptionManager();
+                $subscriptionResults = $subscriptionManager->manageSubscriptions($request->fd, $subscriptionTopics, [], $websocketserver->worker_id);
 
-                // Here we will check if the data is encoded without any error
-                $topGainersJson = json_encode([
-                    'ref_top_gainers' => $topGainersData,
-                    'job_runs_at' => $mAIndicatorJobRunsAt,
-                ]);
+                if (!empty($subscriptionResults['errors'])) {
+                    $websocketserver->push($request->fd, 'Subscription errors: ' . implode(', ', $subscriptionResults['errors']));
+                }
+                // End Code: Take the list of Topics FD wants to Subscribe to
 
-                if ($topGainersJson == false) {
-                    output("JSON encoding error: " . json_last_error_msg());
-                } else {
-                    // Push Data to FD
-                    if ($websocketserver->isEstablished($request->fd)) {
-                        $websocketserver->push($request->fd, $topGainersJson);
+                // Push the Top Gainers Table Data to FD if it has subscribed topic "top-gainers"
+                if ($subscriptionManager->isSubscribed($request->fd, 'top-gainers')) {
+                    $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
+
+                    // Fetch data from swoole table ma_indicator_job_runs_at
+                    $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
+                    $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
+                        ? $mAIndicatorJobRunsAtData[0]['job_run_at']
+                        : null;
+
+                    // Here we will check if the data is encoded without any error
+                    $topGainersJson = json_encode([
+                        'ref_top_gainers' => $topGainersData,
+                        'job_runs_at' => $mAIndicatorJobRunsAt,
+                    ]);
+
+                    if ($topGainersJson == false) {
+                        output("JSON encoding error: " . json_last_error_msg());
+                    } else {
+                        // Push Data to FD
+                        if ($websocketserver->isEstablished($request->fd)) {
+                            $websocketserver->push($request->fd, $topGainersJson);
+                        }
                     }
                 }
+
+                unset($subscriptionManager);
             }
-            unset($subscriptionManager);
         });
 
 
