@@ -71,7 +71,7 @@ use Swoole\Constant as swConstant;
 //Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
 
 use Bootstrap\ServiceContainer;
-use App\Services\RefService;
+use App\Services\RefDataService;
 
 use Bootstrap\SwooleTableFactory;
 
@@ -677,7 +677,7 @@ class sw_service_core {
                     $topGainersJson = json_encode([
                         'ref_top_gainers' => $topGainersData,
                         'job_runs_at' => $mAIndicatorJobRunsAt,
-                    ]);
+                    ], JSON_UNESCAPED_UNICODE);
 
                     if ($topGainersJson == false) {
                         output("JSON encoding error: " . json_last_error_msg());

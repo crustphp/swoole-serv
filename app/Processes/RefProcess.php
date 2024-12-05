@@ -2,7 +2,7 @@
 
 namespace App\Processes;
 
-use App\Services\RefService;
+use App\Services\RefDataService;
 
 class RefProcess {
 
@@ -18,7 +18,7 @@ class RefProcess {
     public function handle()
     {
         // Use/call your services Here
-        $refService = new RefService($this->server, $this->process);
+        $refService = new RefDataService($this->server, $this->process);
         $refService->handle();
     }
 }

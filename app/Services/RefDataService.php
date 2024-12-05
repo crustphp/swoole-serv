@@ -14,7 +14,7 @@ use Crust\SwooleDb\Selector\TableSelector;
 use Swoole\Coroutine\Barrier;
 use App\Enum\RefMostActiveEnum;
 
-class RefService
+class RefDataService
 {
     protected $server;
     protected $dbConnectionPools;
@@ -362,7 +362,7 @@ class RefService
             ],
         ];
 
-        $jsonData = json_encode($topGainersData);
+        $jsonData = json_encode($topGainersData, JSON_UNESCAPED_UNICODE);
 
         if ($jsonData == false) {
             echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
