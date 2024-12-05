@@ -325,7 +325,7 @@ class sw_service_core {
         $this->server->on('BeforeReload', function($server)
         {
 //            echo "Test Statement: Before Reload". PHP_EOL;
-            $this->killCustomProcesses();
+            $this->killProcessesByPidFolder();
         });
 
         $this->server->on('AfterReload', function($server)
@@ -376,7 +376,7 @@ class sw_service_core {
                                     $file_name = $file_name_arr[0] ?? '';
                                     $file_extension = $file_name_arr[1] ?? '';
 
-                                    if (in_array($file_name, ['sw_service_core']) || in_array($file_extension, ['php'])) {
+                                    if (in_array($file_name, ['sw_service_core', 'ProcessesRegister']) || in_array($file_extension, ['php'])) {
 
                                         if (($evdetails['mask'] & IN_CREATE) || ($evdetails['mask'] & IN_MODIFY) || ($evdetails['mask'] & IN_DELETE)) {
                                             // Reloads the codes included / autoloaded inside the callbacks of only those events ..
@@ -1048,6 +1048,31 @@ class sw_service_core {
                 // Delete the PID File
                 unlink($processPidFile);
             }
+        }
+    }
+
+
+    /**
+     * This function kill all the processes having PID files in process_pids folder
+     *
+     * @return void
+     */
+    public function killProcessesByPidFolder()
+    {
+        $pidFiles = glob(__DIR__ . '/process_pids/*.pid');
+        foreach ($pidFiles as $processPidFile) {
+
+            $pid = intval(shell_exec('cat ' . $processPidFile));
+            // Processes that do not have a timer or loop will exit automatically after completing their tasks.
+            // Therefore, some processes might have already terminated before reaching this point
+            // So here we need to check first if the process is running by passing signal_no param as 0, as per documentation
+            // Doc: https://wiki.swoole.com/en/#/process/process?id=kill
+            if (Process::kill($pid, 0)) {
+                Process::kill($pid, SIGTERM);
+            }
+
+            // Delete the PID File
+            unlink($processPidFile);
         }
     }
 
