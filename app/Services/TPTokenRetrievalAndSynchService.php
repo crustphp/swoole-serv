@@ -6,8 +6,7 @@ use Carbon\Carbon;
 use DB\DBConnectionPool;
 use Swoole\Timer as swTimer;
 use DB\DbFacade;
-use Websocketclient\WebSocketClient;
-
+use Swoole\Coroutine\Http\Client;
 use Swoole\Coroutine as Co;
 
 class TPTokenRetrievalAndSynchService
@@ -73,16 +72,16 @@ class TPTokenRetrievalAndSynchService
 
     function getTokenFrmProductionSever($ip)
     {
-        $objTokenRetrieval = new WebSocketClient($ip, 9501, config('swoole_config.socket_settings'));
-        if ($connTokenRetrieval = $objTokenRetrieval->connect($this->refProductionTokenEndpointKey)) {
-            //$objTokenRetrieval->send(json_encode('get-token:accesskey'));
+        $objTokenRetrieval = new Client($ip, 9501);
+        $objTokenRetrieval->set(['timeout' => -1]);
+        $objTokenRetrieval->setHeaders(['refinitive-token-production-endpoint-key' => $this->refProductionTokenEndpointKey]);
+        $connTokenRetrieval = $objTokenRetrieval->upgrade('/');
+
+        if ($connTokenRetrieval) {
             while (true) {
-                Co::sleep(3);
                 $recievedata = $objTokenRetrieval->recv();
                 if ($recievedata) {
-                    echo PHP_EOL.'Getting Token from Prod'.PHP_EOL;
-                    var_dump($recievedata); echo PHP_EOL;
-                    $recievedata = json_decode($recievedata);
+                    $recievedata = json_decode($recievedata->data ?? null);
 
                     if (
                         isset($recievedata->access_token)
@@ -105,7 +104,7 @@ class TPTokenRetrievalAndSynchService
                         }
                     }
                 }
-                Co::sleep(2);
+                Co::sleep(1);
             }
         } else {
             echo "Could not connect to server" . PHP_EOL;
