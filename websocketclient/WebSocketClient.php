@@ -79,10 +79,10 @@ class WebSocketClient
 
         if (!$this->socket->connect($this->host, $this->port, -1, 0))
         {
-            output("connect failed. Error: {$client->errCode}\n Trying Again \n");
+            output("connect failed. Error: {$this->socket->errCode}\n Trying Again \n");
             $this->socket->close(true);
             if (!$this->socket->connect($this->host, $this->port, -1)) {
-                output("connect failed. Error: {$client->errCode}\n");
+                output("connect failed. Error: {$this->socket->errCode}\n");
                 return false;
             }
         }
