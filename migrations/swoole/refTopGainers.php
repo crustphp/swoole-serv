@@ -19,5 +19,8 @@ return [
         ['name' => 'ar_long_name', 'type' => 'string', 'size' => 128], // Doubling the size
         ['name' => 'ar_short_name', 'type' => 'string', 'size' => 32], // Doubling the size
         ['name' => 'ric', 'type' => 'string', 'size' => 20], // Doubling the size
+        ['name' => 'logo', 'type' => 'string', 'size' => 600], // String
+        ['name' => 'market_id', 'type' => 'int', 'size' => 8], // int
+        ['name' => 'market_name', 'type' => 'string', 'size' => 128], // String
     ],
 ];

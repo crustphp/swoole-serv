@@ -677,7 +677,7 @@ class sw_service_core {
                     $topGainersJson = json_encode([
                         'ref_top_gainers' => $topGainersData,
                         'job_runs_at' => $mAIndicatorJobRunsAt,
-                    ], JSON_UNESCAPED_UNICODE);
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
                     if ($topGainersJson == false) {
                         output("JSON encoding error: " . json_last_error_msg());

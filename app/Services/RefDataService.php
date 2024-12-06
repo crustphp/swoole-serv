@@ -286,6 +286,10 @@ class RefDataService
                     'ar_long_name' =>  $company['arabic_name'],
                     'ar_short_name' =>  $company['arabic_short_name'],
                     'ric' =>  $company['ric'],
+                    'logo' =>  $company['logo'],
+                    'market_id' =>  $company['market_id'],
+                    'market_name' =>  $company['market_name'],
+
                 ];
                 $refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value][] = $data;
             } else if (empty($res) || !isset($res['Fields']["TRDPRC_1"]) || !isset($res['Fields']["PCTCHNG"])) {
@@ -362,7 +366,7 @@ class RefDataService
             ],
         ];
 
-        $jsonData = json_encode($topGainersData, JSON_UNESCAPED_UNICODE);
+        $jsonData = json_encode($topGainersData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         if ($jsonData == false) {
             echo "JSON encoding error: " . json_last_error_msg() . PHP_EOL;
@@ -481,10 +485,11 @@ class RefDataService
 
     public function getCompaniesFromDB()
     {
-        $dbQuery = "SELECT ric, id, name, sp_comp_id, short_name, symbol, isin_code, created_at, arabic_name, arabic_short_name  FROM companies
-            WHERE ric IS NOT NULL
-            AND ric NOT LIKE '%^%'
-            AND ric ~ '^[0-9a-zA-Z\\.]+$'";
+        $dbQuery = "SELECT ric, c.id, c.name, sp_comp_id, short_name, symbol, isin_code, c.created_at, arabic_name, arabic_short_name, logo, parent_id as market_id, m.name as market_name FROM companies as c
+        INNER JOIN markets As m On c.parent_id = m.id
+        WHERE c.ric IS NOT NULL
+        AND c.ric NOT LIKE '%^%'
+        AND c.ric ~ '^[0-9a-zA-Z\\.]+$'";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
         $results = $this->dbFacade->query($dbQuery, $this->objDbPool);
