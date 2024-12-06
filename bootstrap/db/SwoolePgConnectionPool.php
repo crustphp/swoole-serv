@@ -26,11 +26,13 @@ class SwoolePgConnectionPool extends ConnectionPool
     {
         parent::__construct(function() {
             $pg = new PostgreSQL();
-            $conn = $pg->connect($this->config->getConnectionString());
-            if (!$conn) {
+            
+            $isConnected = $pg->connect($this->config->getConnectionString(), config('db_config.sw_postgres_client_timeout'));
+            if (!$isConnected) {
                 var_dump($pg->error);
                 return;
             }
+
             return $pg;
         }, $size);
     }

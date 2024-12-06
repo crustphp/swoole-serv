@@ -1,4 +1,5 @@
 <?php
+
 /**
  * This file is part of Swoole.
  *
@@ -32,7 +33,8 @@ class ConnectionPool
         $this->pool        = new Channel($this->size = $size);
         $this->constructor = $constructor;
 
-        // Todo: Heartbeat needs to be investegated
+        // Heartbeat Checks if connection is alive, if not than unset and remove it from pool
+        // Commented Heartbeat() below as we are doing connection checks in DbFacade's query Method
         // $this->heartbeat();
     }
 
@@ -98,16 +100,151 @@ class ConnectionPool
         $this->put($connection);
     }
 
-    // This function needs to be investegated (Reference: it was taken from openswoole ClientPool class)
+    /**
+     * This function needs to be investegated (Reference: it was taken from openswoole ClientPool class) 
+     * and modified for our use-case (Inpired By: https://github.com/swoole/swoole-src/issues/4131)
+     *
+     * @return void
+     */
     protected function heartbeat()
     {
         Co::create(function () {
             while ($this->pool) {
-                Co::sleep(3);
-                $client = $this->get();
-                $client->heartbeat();
-                $this->put($client);
+                try {
+                    Co::sleep(config('db_config.sw_connection_pool_heartbeat_time'));
+
+                    // To Prevent Empty/Closed Pool Exception on shutdown
+                    if ($this->pool == null) {
+                        continue;
+                    }
+
+                    $client = $this->get();
+                    // $client->heartbeat(); // OpenSwoole client->heartbeat | in swoole we don't have this
+
+                    if ($client == null) {
+                        throw new \Exception('Database Connection client is null');
+                    }
+
+                    $result = $client->query('SELECT 1');
+
+                    // Error Codes PostgreSQL: https://www.postgresql.org/docs/current/errcodes-appendix.html
+                    // Error Codes Swoole: https://wiki.swoole.com/en/#/other/errno?id=swoole-error-code-list
+                    // Error Codes Swoole Related to Timeout: https://wiki.swoole.com/en/#/coroutine_client/http_client?id=errcode
+                    $pgConnErrCodes = ['08003', '57P03', '57014', '08006', '25P03', '57P05'];
+                    $mysqlConnErrCodes = [2013, 2006];
+                    $swooleConnErrCodes = [110, 111, 112, 8503];
+
+                    if (
+                        $result == false ||
+                        in_array($client->errCode, $pgConnErrCodes) ||
+                        in_array($client->errCode, $mysqlConnErrCodes) ||
+                        in_array($client->errCode, $swooleConnErrCodes)
+                    ) {
+                        throw new \Exception('Database Connection Error: ' . $client->errCode . ' -> ' . $client->error);
+                    }
+
+                    // Other Preventive Measure based on https://wiki.swoole.com/en/#/coroutine_client/http_client?id=extra-options
+                    if (isset($client->statusCode) && ($client->statusCode == -1 || $client->statusCode == -2)) {
+                        throw new \Exception('Server has closed the DB Client connection or request times out');
+                    }
+
+                    // If there are no errors put back the client connection
+                    $this->put($client);
+                } catch (\Throwable $e) {
+                    // Discard the connection and decrement the connections number
+                    $client = null;
+                    $result = null;
+                    unset($client);
+                    unset($result);
+
+                    $this->num--;
+
+                    // Log the exception
+                    output($e);
+                }
             }
         });
+    }
+
+    /**
+     * Returns the number of connections currently the pool has
+     *
+     * @return int
+     */
+    public function getNum(): int
+    {
+        return $this->num;
+    }
+
+    /**
+     * Returns the size of the Connection Pool
+     *
+     * @return int
+     */
+    public function getSize(): int
+    {
+        return $this->size;
+    }
+
+    /**
+     * This function removes the client
+     *
+     * @param  mixed $client
+     * @return void
+     */
+    public function removeClient(mixed &$client): void
+    {
+        $client = null;
+        unset($client);
+
+        $this->num -= 1;
+    }
+
+    /**
+     * This function checks if the Client Connection is stable and working.
+     *
+     * @param  mixed $client
+     * @return bool
+     */
+    public function checkClientConnection(mixed $client): bool
+    {
+        try {
+            // Error Codes PostgreSQL: https://www.postgresql.org/docs/current/errcodes-appendix.html
+            // Error Codes Swoole: https://wiki.swoole.com/en/#/other/errno?id=swoole-error-code-list
+            // Error Codes Swoole Related to Timeout: https://wiki.swoole.com/en/#/coroutine_client/http_client?id=errcode
+            $pgConnErrCodes = ['08003', '57P03', '57014', '08006', '25P03', '57P05'];
+            $mysqlConnErrCodes = [2013, 2006];
+            $swooleConnErrCodes = [110, 111, 112, 8503];
+
+            if (
+                in_array($client->errCode, $pgConnErrCodes) ||
+                in_array($client->errCode, $mysqlConnErrCodes) ||
+                in_array($client->errCode, $swooleConnErrCodes)
+            ) {
+                return false;
+            }
+
+            // Other Preventive Measure based on https://wiki.swoole.com/en/#/coroutine_client/http_client?id=extra-options
+            if (isset($client->statusCode) && ($client->statusCode == -1 || $client->statusCode == -2)) {
+                return false;
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            // Log the exception
+            output($e);
+
+            return false;
+        }
+    }
+
+    /**
+     * __destruct
+     *
+     * @return void
+     */
+    public function __destruct()
+    {
+        $this->close();
     }
 }

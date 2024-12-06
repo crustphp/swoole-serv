@@ -74,8 +74,14 @@ class DBConnectionPool
             $this->closeConnectionPool($this->pool_key);
         }
     }
-
-    public function create() {
+    
+    /**
+     * create
+     *
+     * @param  mixed $shouldFill
+     * @return void
+     */
+    public function create(bool $shouldFill = false) {
         $swPostgresServerHost = config('db_config.sw_postgres_server_host');
         $swPostgresServerPort = config('db_config.sw_postgres_server_port');
         $swPostgresServerDB = config('db_config.sw_postgres_server_db');
@@ -102,8 +108,11 @@ class DBConnectionPool
             $this->dbEngine
         );
 
-        // Actually create Database Connections, and fill the Pool with those connections
-        $this->fill_pool($obj_conn_pool);
+        // Actually create Database Connections, and fill the Pool with those connections if $shouldFill true
+        // Otherwise connections will be created on demand.
+        if ($shouldFill) {
+            $this->fill_pool($obj_conn_pool);
+        }
 
         // Key to access Connection Pool; through ConnectionPoolTrait
         $this->add_pool_with_key($obj_conn_pool, $this->pool_key);

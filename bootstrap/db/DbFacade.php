@@ -10,12 +10,17 @@ declare(strict_types=1);
 //use Swoole\Database\PDOPool;
 namespace DB;
 use Swoole\Runtime;
+use DB\SwoolePgConnectionPool;
 
 // use Swoole\Coroutine as Co;
 
 class DbFacade {
-    public function query($db_query, $objDbPool, array $options=null, $transaction=false, $lock = false, $tableName = '')
+
+    public function query($db_query, $objDbPool, array $options=null, $transaction=false, $lock = false, $tableName = '', $poolKey = null, $queryAttempts = 0)
     {
+        // Increment the Query Execution Attemtpt (For first time query executtion it will become First attempt)
+        $queryAttempts++;
+
         ////////////////////////////////////////////////////////////////////////////////
         //// Get DB Connection from a Connection Pool created through 'smf' package ////
         ////////////////////////////////////////////////////////////////////////////////
@@ -58,11 +63,29 @@ class DbFacade {
             }
         } else { // For Non-pdo postgresql connection use below:
             $pdo_statement = $postgresClient->query($db_query);
+
             if (!$pdo_statement) {
-//                if ($ret === false) {
-//                    throw new \RuntimeException(sprintf('Failed to connect PostgreSQL server: %s', $connection->error));
-//                }
-                throw new \RuntimeException('pdo function query() failed');
+                // if ($ret === false) {
+                //     throw new \RuntimeException(sprintf('Failed to connect PostgreSQL server: %s', $connection->error));
+                // }
+
+                // Check if Connection was disconnected
+                if (!empty($poolKey)) {
+                    $connectionPoolObj = $objDbPool->get_connection_pool_with_key($poolKey);
+
+                    if ($connectionPoolObj instanceof SwoolePgConnectionPool) {
+                        if (!$connectionPoolObj->checkClientConnection($postgresClient)) {
+                            // Remove the client and try again 
+                            $connectionPoolObj->removeClient($postgresClient);
+
+                            if ($queryAttempts <= $connectionPoolObj->getSize()) {
+                                return $this->query($db_query, $objDbPool, $options, $transaction, $lock, $tableName, $poolKey, $queryAttempts);
+                            }
+                        }
+                    }
+                }
+                
+                throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
             }
         }
         $data = $pdo_statement->fetchAll();

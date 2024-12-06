@@ -2,6 +2,7 @@
 
 return [
    'db_engine' => 'postgresql', // Other values: 'mysql' or 'both'
+   'sw_connection_pool_heartbeat_time' => intval($_ENV['SW_CONNECTION_POOL_HEARTBEAT_TIME'] ?? 3), 
 
    'sw_mysql_server_driver' => $_ENV['SWOOLE_MYSQL_DB_DRIVER'] ?? 'mysql',
    'sw_mysql_server_host' => $_ENV['SWOOLE_MYSQL_DB_HOST'] ?? 'localhost',
@@ -18,6 +19,7 @@ return [
     'sw_postgres_server_db' => $_ENV['SWOOLE_PG_DB_DATABASE'] ?? 'database_name',
     'sw_postgres_server_user' => $_ENV['SWOOLE_PG_DB_USERNAME'] ?? 'database_user',
     'sw_postgres_server_passwd' => $_ENV['SWOOLE_PG_DB_PASSWORD'] ?? 'database_password',
+    'sw_postgres_client_timeout' => intval($_ENV['SWOOLE_PG_CLIENT_TIMEOUT'] ?? -1),
 
     // Connection Pool Size:
     'event_workers_db_connection_pool_size' => intval($_ENV['SW_EVENT_WORKERS_DB_CONNECTION_POOL_SIZE'] ?? 3),
