@@ -25,11 +25,11 @@ $configuration =
             'default_environment' => $_ENV['SW_PHINX_ENV'] ?? 'db',
             'db' => [
                 'adapter' => 'pgsql', // Docs: https://book.cakephp.org/phinx/0/en/configuration.html#supported-adapters
-                'host' => $_ENV['SWOOLE_PG_DB_HOST'] ?? 'localhost',
-                'name' => $_ENV['SWOOLE_PG_DB_DATABASE'] ?? 'database_name',
-                'user' => $_ENV['SWOOLE_PG_DB_USERNAME'] ?? 'database_user',
-                'pass' => $_ENV['SWOOLE_PG_DB_PASSWORD'] ?? 'database_password',
-                'port' => $_ENV['SWOOLE_PG_DB_PORT'] ?? '5432',
+                'host' => $_ENV['SW_PG_DB_HOST'] ?? 'localhost',
+                'name' => $_ENV['SW_PG_DB_DATABASE'] ?? 'database_name',
+                'user' => $_ENV['SW_PG_DB_USERNAME'] ?? 'database_user',
+                'pass' => $_ENV['SW_PG_DB_PASSWORD'] ?? 'database_password',
+                'port' => $_ENV['SW_PG_DB_PORT'] ?? '5432',
                 'charset' => 'utf8',
             ],
         ],

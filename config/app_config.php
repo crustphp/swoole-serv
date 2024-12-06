@@ -8,12 +8,12 @@ if (!$swoole_ext) {
 
 return [
     'swoole_ext' => $swoole_ext,
-    'swoole_app_debug' => intval($_ENV['SWOOLE_APP_DEBUG'] ?? 1),
-    'app_type_database_driven' => intval($_ENV['SWOOLE_APP_TYPE_DATABASE_DRIVEN'] ?? 1),
-    'swoole_pg_db_key' => $_ENV['SWOOLE_PG_DB_KEY'] ?? 'pg',
-    'swoole_mysql_db_key' => $_ENV['SWOOLE_MYSQL_DB_KEY'] ?? 'mysql',
-    'swoole_timer_time1' => intval($_ENV['SWOOLE_TIMER_TIME1'] ?? 1000),
-    'swoole_daemonize' => intval($_ENV['SWOOLE_DAEMONIZE'] ?? 0),
+    'swoole_app_debug' => intval($_ENV['SW_APP_DEBUG'] ?? 1),
+    'app_type_database_driven' => intval($_ENV['SW_APP_TYPE_DATABASE_DRIVEN'] ?? 1),
+    'swoole_pg_db_key' => $_ENV['SW_PG_DB_KEY'] ?? 'pg',
+    'swoole_mysql_db_key' => $_ENV['SW_MYSQL_DB_KEY'] ?? 'mysql',
+    'swoole_timer_time1' => intval($_ENV['SW_TIMER_TIME1'] ?? 1000),
+    'swoole_daemonize' => intval($_ENV['SW_DAEMONIZE'] ?? 0),
     'app_url' => $_ENV['SW_APP_URL'] ?? 'https://muasherat.devdksa.com',
     'most_active_refinitive_timespan' => intval($_ENV['SW_MOST_ACTIVE_REFINITIVE_TIMESPAN'] ?? 300000),
     'time_zone' => $_ENV['SW_TIMEZONE'] ?? 'Asia/Riyadh',
