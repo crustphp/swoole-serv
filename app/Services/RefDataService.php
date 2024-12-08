@@ -26,7 +26,7 @@ class RefDataService
 
     const TOPGAINERCOLUMN = 'calculated_value';
     const ERRORLOG = 'error_logs';
-    const REF_MA_FIELDS = 'CF_VOLUME,NUM_MOVES,PCTCHNG,TRDPRC_1,TURNOVER';
+    const REF_MA_FIELDS = 'CF_HIGH,CF_LAST,CF_LOW,CF_VOLUME,HIGH_1,HST_CLOSE,LOW_1,NETCHNG_1,NUM_MOVES,OPEN_PRC,PCTCHNG,TRDPRC_1,TURNOVER,YRHIGH,YRLOW,YR_PCTCH,CF_CLOSE,BID,ASK,ASKSIZE,BIDSIZE';
 
     public function __construct($server, $process, $postgresDbKey = null)
     {
@@ -66,6 +66,18 @@ class RefDataService
     public function handle()
     {
             $companyDetail = null;
+
+            // // Get companies details from DB
+            // $companyDetail = $this->getCompaniesFromDB();
+            // // Fetch data from Refinitive
+            // $responses = $this->fetchRefData($companyDetail);
+            // // Handle responses
+            // $refSnapshotIndicatorData = $this->handleRefSnapshotResponses($responses, $companyDetail);
+            // // Save into swooole table
+            // $this->saveIntoSwooleTable($refSnapshotIndicatorData, 'ref_data_snapshot_companies');
+            // // Save into DB table
+            // $this->saveRefSnapshotDataIntoDBTable($refSnapshotIndicatorData);
+
 
             // Aggregate query to get the count from the Refinitive table
             $refCountFromDB = $this->getDataCountFromDB(RefMostActiveEnum::TOPGAINER->value);
@@ -239,7 +251,6 @@ class RefDataService
         // Save into DB Table
         $this->saveIntoDBTable($refMAIndicatorData, $tableName, $isTruncate);
     }
-
     /**
      * Most active data fetching
      *
@@ -254,6 +265,61 @@ class RefDataService
         unset($service);
 
         return $responses;
+    }
+
+    public function handleRefSnapshotResponses($responses, $companyDetail) {
+        $date = Carbon::now()->format('Y-m-d H:i:s');
+
+        $refSnapshotIndicatorData = [];
+        foreach ($responses as $res) {
+            $company = isset($res['Key']["Name"]) ? $companyDetail[str_replace('/', '', $res['Key']["Name"])] : null;
+
+            if (!isset($res['Fields'])) {
+                var_dump('Missing "Fields" key in pricing snapshot api response: ' . json_encode($res));
+                continue;
+            }
+
+            $d['cf_high'] = (float) $res['Fields']['CF_HIGH'];
+            $d['cf_last'] = (float) $res['Fields']['CF_LAST'];
+            $d['cf_low'] = (float) $res['Fields']['CF_LOW'];
+            $d['cf_volume'] = (float) $res['Fields']['CF_VOLUME'];
+            $d['high_1'] = (float) $res['Fields']['HIGH_1'];
+            $d['hst_close'] = (float) $res['Fields']['HST_CLOSE'];
+            $d['low_1'] = (float) $res['Fields']['LOW_1'];
+            $d['netchng_1'] = (float) $res['Fields']['NETCHNG_1'];
+            $d['num_moves'] = (float) $res['Fields']['NUM_MOVES'];
+            $d['open_prc'] = (float) $res['Fields']['OPEN_PRC'];
+            $d['pctchng'] = (float) $res['Fields']['PCTCHNG'];
+            $d['trdprc_1'] = (float) $res['Fields']['TRDPRC_1'];
+            $d['turnover'] = (float) $res['Fields']['TURNOVER'];
+            $d['yrhigh'] = (float) $res['Fields']['YRHIGH'];
+            $d['yrlow'] = (float) $res['Fields']['YRLOW'];
+            $d['yr_pctch'] = (float) $res['Fields']['YR_PCTCH'];
+            $d['cf_close'] = (float) $res['Fields']['CF_CLOSE'];
+            $d['bid'] = (float) $res['Fields']['BID'];
+            $d['ask'] = (float) $res['Fields']['ASK'];
+            $d['askize'] = (float) $res['Fields']['ASKSIZE'];
+            $d['bidsize'] = (float) $res['Fields']['BIDSIZE'];
+
+            $d['ric'] =  $company['ric'];
+            $d['company_id'] = $company['id'];
+            $d['created_at'] = $date;
+            $d['updated_at'] = $date;
+            $d['en_long_name'] =  $company['name'];
+            $d['sp_comp_id'] =  $company['sp_comp_id'];
+            $d['en_short_name'] =  $company['short_name'];
+            $d['symbol'] =  $company['symbol'];
+            $d['isin_code'] =  $company['isin_code'];
+            $d['ar_long_name'] =  $company['arabic_name'];
+            $d['ar_short_name'] =  $company['arabic_short_name'];
+            $d['logo'] =  $company['logo'];
+            $d['market_id'] =  $company['market_id'];
+            $d['market_name'] =  $company['market_name'];
+
+            array_push($refSnapshotIndicatorData, $d);
+        }
+
+        return $refSnapshotIndicatorData;
     }
 
     public function handleRefResponses($responses, $companyDetail)
@@ -289,7 +355,6 @@ class RefDataService
                     'logo' =>  $company['logo'],
                     'market_id' =>  $company['market_id'],
                     'market_name' =>  $company['market_name'],
-
                 ];
                 $refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value][] = $data;
             } else if (empty($res) || !isset($res['Fields']["TRDPRC_1"]) || !isset($res['Fields']["PCTCHNG"])) {
@@ -412,6 +477,47 @@ class RefDataService
             }
             $dbQuery = "INSERT INTO ref_most_active_logs (ric, type, created_at, updated_at)
             VALUES " . implode(", ", $values);
+
+            $this->dbFacade->query($dbQuery, $this->objDbPool);
+        });
+    }
+
+    public function saveRefSnapshotDataIntoDBTable(array $mAIndicatorData)
+    {
+        var_dump('Save Refinitive snapshot data into DB table');
+        go(function () use ($mAIndicatorData) {
+            $values = [];
+            foreach ($mAIndicatorData as $mAIndicator) {
+                // Collect each set of values into the array
+                $values[] = "(
+                    " . $mAIndicator['company_id'] . ",
+                    " . $mAIndicator['cf_high'] . ",
+                    " . $mAIndicator['cf_last'] . ",
+                    " . $mAIndicator['cf_low'] . ",
+                    " . $mAIndicator['cf_volume'] . ",
+                    " . $mAIndicator['high_1'] . ",
+                    " . $mAIndicator['hst_close'] . ",
+                    " . $mAIndicator['low_1'] . ",
+                    " . $mAIndicator['netchng_1'] . ",
+                    " . $mAIndicator['num_moves'] . ",
+                    " . $mAIndicator['open_prc'] . ",
+                    " . $mAIndicator['pctchng'] . ",
+                    " . $mAIndicator['trdprc_1'] . ",
+                    " . $mAIndicator['turnover'] . ",
+                    " . $mAIndicator['yrhigh'] . ",
+                    " . $mAIndicator['yrlow'] . ",
+                    " . $mAIndicator['yr_pctch'] . ",
+                    " . $mAIndicator['cf_close'] . ",
+                    '" . $mAIndicator['created_at'] . "',
+                    '" . $mAIndicator['updated_at'] . "'
+                )";
+            }
+
+            $dbQuery = "INSERT INTO ref_data_snapshot_companies (
+                company_id, cf_high, cf_last, cf_low, cf_volume, high_1, hst_close,
+                low_1, netchng_1, num_moves, open_prc, pctchng, trdprc_1, turnover,
+                yrhigh, yrlow, yr_pctch, cf_close, created_at, updated_at
+            ) VALUES " . implode(", ", $values);
 
             $this->dbFacade->query($dbQuery, $this->objDbPool);
         });
