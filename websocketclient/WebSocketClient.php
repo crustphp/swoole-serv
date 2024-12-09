@@ -65,7 +65,7 @@ class WebSocketClient
      * @param $key string
      * @return $this
      */
-    public function connect($key = null)
+    public function connect($customHeaders = null)
     {
         if ($this->isSwoole) {
             $this->socket = new swClient(SWOOLE_SOCK_TCP | SWOOLE_KEEP); // For Swoole and SWOOLE_KEEP is used to keep alive connection
@@ -86,7 +86,7 @@ class WebSocketClient
                 return false;
             }
         }
-        $this->socket->send($this->createHeader($key));
+        $this->socket->send($this->createHeader($customHeaders));
         return $this->recv();
     }
 
@@ -215,14 +215,14 @@ class WebSocketClient
      * @param $key
      * @return string
      */
-    private function createHeader($key = null)
+    private function createHeader($customHeaders = null)
     {
         $host = $this->host;
         if ($host === '127.0.0.1' || $host === '0.0.0.0')
         {
             $host = 'localhost';
         }
-        return "GET {$this->path} HTTP/1.1" . "\r\n" .
+        $headers = "GET {$this->path} HTTP/1.1" . "\r\n" .
         "Origin: {$this->origin}" . "\r\n" .
         "Host: {$host}:{$this->port}" . "\r\n" .
         "Sec-WebSocket-Key: {$this->key}" . "\r\n" .
@@ -230,8 +230,16 @@ class WebSocketClient
         "Upgrade: websocket" . "\r\n" .
         "Connection: Upgrade" . "\r\n" .
         "Sec-WebSocket-Protocol: wamp" . "\r\n" .
-        "Sec-WebSocket-Version: 13" . "\r\n" .
-        "Refinitive-token-production-endpoint-key: {$key}" . "\r\n" . "\r\n";
+        "Sec-WebSocket-Version: 13" . "\r\n";
+
+        if (!is_null($customHeaders)) {
+            // $headers .= "Refinitive-token-production-endpoint-key: {$key}" . "\r\n" . "\r\n";
+            $headers .= $customHeaders;
+        } else {
+            $headers .=  "\r\n";
+        }
+
+        return $headers;
     }
 
     /**

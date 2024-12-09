@@ -1,11 +1,13 @@
 <?php
-    declare(strict_types=1);
-    require_once realpath(__DIR__ . '/vendor/autoload.php');
+declare(strict_types=1);
+
+    include_once realpath(__DIR__ . '/vendor/autoload.php');
     include_once realpath(__DIR__.'/helper.php');
 
     use Swoole\Event;
     use Swoole\Process;
     use Websocketclient\WebSocketClient;
+
 
     ini_set('memory_limit', -1);
 
@@ -51,14 +53,16 @@
 
             $w = new WebSocketClient($ip, 9501);
             try {
-                if ($x = $w->connect()) {
+                if ($x = $w->connect("restart-server: 1\r\n\r\n")) {
                     $w->send('get-server-params', 'text', 1);
                     $data = $w->recv();
                     if ($data) {
                         echo PHP_EOL.'Shutting Down The Server'.PHP_EOL;
                         $data = json_decode($data, true);
-                        shutdown_swoole_server();
-                        sleep(1);
+
+                        $w->send('shutdown', 'text', 1);
+                        // shutdown_swoole_server();
+                        sleep(3);
                         create_swoole_server($data['ip'], $data['port'], $data['serverMode'], $data['serverProtocol']);
                     } else {
                         echo PHP_EOL.'Failed to get server params'.PHP_EOL;

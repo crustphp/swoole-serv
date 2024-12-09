@@ -71,10 +71,8 @@ use Swoole\Constant as swConstant;
 //Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
 
 use Bootstrap\ServiceContainer;
-use App\Services\RefDataService;
 
 use Bootstrap\SwooleTableFactory;
-
 use Crust\SwooleDb\Selector\TableSelector;
 use Crust\SwooleDb\Selector\Enum\ConditionElementType;
 use Crust\SwooleDb\Selector\Enum\ConditionOperator;
@@ -83,13 +81,13 @@ use Crust\SwooleDb\Selector\Bean\Condition;
 
 use Swoole\Process;
 use App\Core\Enum\ResponseStatusCode;
-
+use Carbon\Carbon;
+use DB\DbFacade;
 use Swoole\ExitException;
 
 use App\Core\Processes\MainProcess;
 
 use App\Core\Services\SubscriptionManager;
-
 use App\Services\PushToken;
 
 class sw_service_core {
@@ -107,6 +105,7 @@ class sw_service_core {
     protected $serverMode;
     protected $serverProtocol;
     protected static $fds=[];
+
     protected $serviceContainer;
 
     protected $customProcessCallbacks = [];
@@ -128,8 +127,8 @@ class sw_service_core {
         // Opposite
         // Swoole\Coroutine::disableScheduler();
 
-       // Migrate the Swoole Table Migrations
-       SwooleTableFactory::migrate();
+        // Migrate the Swoole Table Migrations
+        SwooleTableFactory::migrate();
 
        if ($this->serverProtocol=='http') {
            // Ref: https://openswoole.com/docs/modules/swoole-server-construct
@@ -169,7 +168,6 @@ class sw_service_core {
             $swoole_config['server_settings']['open_websocket_protocol'] = true;
             $swoole_config['server_settings']['enable_delay_receive'] = true;
         }
-
         $this->server->set($swoole_config['server_settings']);
 
 //        // Use function-style below for onTask event, when co-touine inside task worker is not enabled in swoole configuration
@@ -197,9 +195,13 @@ class sw_service_core {
         {
             //co::sleep(3); // Added delay only to demonstrate Asynchronous Processing. Next call to task (the one having own callback to process results) will still be processed, and due to this sleep that will call complete before this.
             echo "Task#$task_id finished, data_len=" . strlen($task_result[1]). PHP_EOL;
-            echo "\$result: {$task_result[1]} from inside onFinish"; dump($task_result);
-            $server->push($task_result[0],
-                json_encode(['data'=>$task_result[1].'from inside onFinish']));
+            echo "\$result: {$task_result[1]} from inside onFinish"; var_dump($task_result);
+
+            if ($server->isEstablished($task_result[0])) {
+                $server->push($task_result[0],
+                    json_encode(['data'=>$task_result[1].'from inside onFinish']));
+            }
+
         });
 
         // channel stuff
@@ -213,8 +215,6 @@ class sw_service_core {
 //        };
 
         // Server FDs (We use this to store the FDs each worker has)
-        // WebSocket FDs are registered in this array in onOpen event's callback
-        // $websocketserver->fds[$request->fd] = $request->fd;
         $this->server->fds = [];
 
         // Background processes
@@ -295,7 +295,6 @@ class sw_service_core {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
 
-
             // Kill the custom user Processes
             $this->killCustomProcesses(true);
 
@@ -321,16 +320,25 @@ class sw_service_core {
         $this->server->on('BeforeShutdown', $onBeforeShutdown);
     }
 
+    protected function broadcastDataToFDs(&$server, $message, $fds) {
+        foreach($fds as $fd) {
+            if ($server->isEstablished($fd)) {
+                $server->push($fd, $message);
+            }
+        }
+    }
+
     protected function bindWorkerReloadEvents() {
         $this->server->on('BeforeReload', function($server)
         {
-//            echo "Test Statement: Before Reload". PHP_EOL;
+            // We iterate through the processes and kill them. Swoole create new processes
+            // In this way we achieve reloading of custom user processes
             $this->killProcessesByPidFolder();
         });
 
         $this->server->on('AfterReload', function($server)
         {
-//            echo PHP_EOL."Test Statement: After Reload". PHP_EOL;
+            // echo PHP_EOL."Test Statement: After Reload". PHP_EOL;
         });
     }
 
@@ -349,6 +357,7 @@ class sw_service_core {
             $inotify_handles = [];
             $watch_descriptors = [];
             if ($worker_id == 0 ) {
+
                 // Convert excluded folders into an array and trim whitespace around folder names for accurate matching
                 $skipDirs = array_map('trim', explode(',', config('app_config.watch_excluded_folders')));
 
@@ -382,7 +391,7 @@ class sw_service_core {
                                             // Reloads the codes included / autoloaded inside the callbacks of only those events ..
                                             // which are scoped to Event Worker
                                             echo PHP_EOL.'Reloading Event Workers and Task Workers'.PHP_EOL;
-                                                $server->reload();
+                                            $server->reload();
                                             break;
                                         }
                                     }
@@ -392,10 +401,10 @@ class sw_service_core {
                     });
                 }
             }
+//            Swoole\Event::set($inotify_handle, null, null, SWOOLE_EVENT_READ);
             /////////////////////////////////////////////////////////
             /////////////Hot Code Reload: Code Ends Here/////////////
             /////////////////////////////////////////////////////////
-
 
             global $argv;
             $app_type_database_driven = config('app_config.app_type_database_driven');
@@ -449,6 +458,7 @@ class sw_service_core {
 //           if (!empty(MYSQL_SERVER_DB))
                 //$this->dbConnectionPools[$this->mySqlDbKey]->create(true);
 //          require __DIR__.'/init_eloquent.php';
+
             }
 
             // Get the Service Container Instance
@@ -497,6 +507,7 @@ class sw_service_core {
                 echo $e->getCode() . PHP_EOL;
                 var_dump($e->getTrace());
             }
+
         };
 
         $revokeWorkerResources = function($server, $worker_id) {
@@ -518,6 +529,7 @@ class sw_service_core {
 
             // Revoke Inotify Resources
             $this->revokeInotifyResources($workerId);
+
             // echo "WorkerStop[$worker_id]|pid=" . posix_getpid() . ".\n".PHP_EOL;
 
             // In-case of Shutdown, inform the FDs to reconnect.
@@ -543,6 +555,7 @@ class sw_service_core {
                             }
                         }
                     }
+
                 } else {
                     // In all other cases we will store the FDs to restore them during worker start
                     $fdsTable = SwooleTableFactory::getTable('fds_table');
@@ -565,7 +578,6 @@ class sw_service_core {
         // More Details: https://wiki.swoole.com/en/#/server/events?id=onpipemessage
         $onPipeMessage = function($server, $src_worker_id, $message): void
         {
-            // Source Worker ID is the ID of the process from which we call sendMessage() function
             $messageData = json_decode($message, true);
 
             // If Topic or Data is not provided than log the Error Message
@@ -592,10 +604,11 @@ class sw_service_core {
         };
 
         $this->server->on('workerstart', $init);
-        $this->server->on('workerstop', $onWorkerStop); // Executes after Worker Exit
         //To Do: Upgrade code using https://wiki.swoole.com/en/#/server/events?id=onworkererror
         $this->server->on('workererror', $revokeWorkerResources);
         $this->server->on('workerexit', $revokeWorkerResources);
+        $this->server->on('workerstop', $onWorkerStop); // Executes after Worker Exit
+        // Bind pipeMessage event to server
         $this->server->on('pipeMessage', $onPipeMessage);
 
         // https://openswoole.com/docs/modules/swoole-server-on-task
@@ -629,24 +642,27 @@ class sw_service_core {
 
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
+            
+            // Is FD connected for purpose of restarting server
+            $isFDForRestart = isset($request->header) && isset($request->header['restart-server']);
 
-            if (isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && !is_null($request->header["refinitive-token-production-endpoint-key"])) {
-                if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
+            if (isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && !empty($request->header["refinitive-token-production-endpoint-key"])) {
+              if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
 
-                    $worker_id = $websocketserver->worker_id;
-                    // Sending Refinitive Token to Envirenement FDS (local, stage)
-                    $pushToken = new PushToken($websocketserver, $request, $this->dbConnectionPools[$worker_id][config('app_config.swoole_pg_db_key')]);
-                    $pushToken->handle();
-                    unset($pushToken);
-                }
-            } else {
+                $worker_id = $websocketserver->worker_id;
+                // Sending Refinitive Token to Envirenement FDS (local, stage)
+                $pushToken = new PushToken($websocketserver, $request, $this->dbConnectionPools[$worker_id][config('app_config.swoole_pg_db_key')]);
+                $pushToken->handle();
+                unset($pushToken);
+              }
+            } else if (!$isFDForRestart) {
                 // Add fd to scope
                 // Here I am storing the FD in array index also as FD for directly accessing it in array.
                 $websocketserver->fds[$request->fd] = $request->fd;
 
-                //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
-                //                $server->push($request->fd, json_encode(["hello", time()]));
-                //            });
+            //            $websocketserver->tick(1000, function() use ($websocketserver, $request) {
+            //                $server->push($request->fd, json_encode(["hello", time()]));
+            //            });
 
                 // Start: Take the list of Topics FD wants to Subscribe to
                 $subscriptionTopics = isset($request->get['topic_subcription']) ? array_map('trim', explode(',', $request->get['topic_subcription'])) : [];
@@ -670,8 +686,8 @@ class sw_service_core {
                     // Fetch data from swoole table ma_indicator_job_runs_at
                     $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
                     $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
-                        ? $mAIndicatorJobRunsAtData[0]['job_run_at']
-                        : null;
+                    ? $mAIndicatorJobRunsAtData[0]['job_run_at']
+                    : null;
 
                     // Here we will check if the data is encoded without any error
                     $topGainersJson = json_encode([
@@ -732,20 +748,21 @@ class sw_service_core {
                 // Reply with Pong frame
                 $pongFrame = (($this->extension=1) ? new swFrame() : new oswFrame());
                 $pongFrame->opcode = WEBSOCKET_OPCODE_PONG;
-                if ($webSocketServer->isEstablished($frame->fd)){
+
+                if ($webSocketServer->isEstablished($frame->fd)) {
                     $webSocketServer->push($frame->fd, $pongFrame);
                 }
             } else {
                 $mainCommand = strtolower($cmd[0]);
                 if ($mainCommand == 'shutdown') {
-
                     // Setting the Shutdown Flag to True in Swoole Table
                     $stopCodeTable = SwooleTableFactory::getTable('worker_stop_code');
                     $stopCodeTable->set(1, ['is_shutting_down' => 1]);
-                    // Turn off the server
+
                     // Force shutdown the server if it is not shutdown gracefully
                     // Shutdown method returns true on success: Reference https://wiki.swoole.com/en/#/server/methods?id=shutdown
                     $shutdownRes = $webSocketServer->shutdown();
+
                     if (!$shutdownRes) {
                         // If the server.pid file exists, kill the process by its PID; otherwise, kill processes listening on the server port.
                         if (file_exists('server.pid')) {
@@ -754,6 +771,7 @@ class sw_service_core {
                             exec('cd ' . __DIR__ . ' && kill -SIGKILL $(lsof -t -i:' . $this->port . ') 2>&1 1> /dev/null');
                         }
                     }
+
                 } else if ($mainCommand == 'reload-code') {
                     swTimer::clearAll();
 //                    if ($this->swoole_ext == 1) { // for Swoole
@@ -772,6 +790,7 @@ class sw_service_core {
                         'serverMode' => $this->serverMode,
                         'serverProtocol' => $this->serverProtocol,
                     ];
+
                     if ($webSocketServer->isEstablished($frame->fd)) {
                         $webSocketServer->push($frame->fd, json_encode($server_params));
                     }
@@ -780,8 +799,7 @@ class sw_service_core {
                     if (array_key_exists('command', $frameData)) {
                         switch($frameData['command']) {
                             case 'boiler-http-client':
-                                include_once __DIR__ . '/app/Services/HttpClientTestService.php';
-                                $service = new HttpClientTestService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
+                                $service = new \App\Services\HttpClientTestService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
                                 $service->handle();
                                 break;
                             case 'boiler-swoole-table':
@@ -793,73 +811,79 @@ class sw_service_core {
                                 $service->handle();
                                 break;
                             case 'users':
-                                $table = SwooleTableFactory::getTable('users');
-                                if (isset($frameData['add_data'])) {
-                                    // Add Data to Table
-                                    $table->set($table->count(), $frameData['add_data']);
-                                    $webSocketServer->push($frame->fd, "Data Added");
-                                }
-                                else {
-                                    // Fetch all the records saved in table
-                                    $selector = new \Crust\SwooleDb\Selector\TableSelector('users');
-                                    $records = $selector->execute();
+                                    $table = SwooleTableFactory::getTable('users');
+                                    if (isset($frameData['add_data'])) {
+                                        // Add Data to Table
+                                        $table->set($table->count(), $frameData['add_data']);
 
-                                    foreach ($records as $record) {
-                                        $data = [
-                                            'id' => $record['users']->getValue('id'),
-                                            'name' => $record['users']->getValue('name'),
-                                            'email' => $record['users']->getValue('email'),
-                                        ];
+                                        if ($webSocketServer->isEstablished($frame->fd)) {
+                                            $webSocketServer->push($frame->fd, "Data Added");
+                                        }
+                                    }
+                                    else {
+                                        // Fetch all the records saved in table
+                                        $selector = new \Crust\SwooleDb\Selector\TableSelector('users');
+                                        $records = $selector->execute();
 
-                                        $webSocketServer->push($frame->fd, json_encode($data));
+                                        foreach ($records as $record) {
+                                            $data = [
+                                                'id' => $record['users']->getValue('id'),
+                                                'name' => $record['users']->getValue('name'),
+                                                'email' => $record['users']->getValue('email'),
+                                            ];
+
+                                            if ($webSocketServer->isEstablished($frame->fd)) {
+                                                $webSocketServer->push($frame->fd, json_encode($data));
+                                            }
+                                        }
+
+                                    }
+                                    break;
+                            case 'frontend-broadcasting-eg':
+                                    try {
+                                        // You can get the list of registered services using get_registered_services() method
+                                        $registeredServices = $this->serviceContainer->get_registered_services();
+
+                                        var_dump($registeredServices);
+
+                                        // Create a Service Using Default Factory
+                                        $serviceContainer = $this->serviceContainer;
+
+
+                                        // Following code demonstrate how we can get the service instance using our custom factory in invokeable function
+                                        // $frontendBraodcastingService = $serviceContainer('FrontendBroadcastingService', function($webSocketServer) {
+                                        //     return new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
+                                        // }, $webSocketServer);
+
+                                        // You can also get the instance of frontend broadcasting service by providing alias and constructor params to create_service_object()
+                                        // In this sepecific example create_service_object will use the factory FrontendBroadcastingFactory as it is configured as default factory for FrontendBroadcastingService
+                                        $frontendBraodcastingService = $serviceContainer->create_service_object('FrontendBroadcastingService', $webSocketServer);
+
+                                        // ----------- Code related to frontend-broadcasting-eg command ----------------------
+                                        $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;
+                                        // Here $message is the data to be broadcasted. (Can be string or an array)
+                                        $frontendBraodcastingService($message);
+
+                                        // Following Message will be broadcasted only to the FDs of current worker (Example usecase of callback)
+                                        $message = 'For FDs of Worker:' .$webSocketServer->worker_id . ' only';
+                                        $frontendBraodcastingService($message, function($server, $msg) {
+                                            foreach($server->fds as $fd){
+                                                $server->push($fd, $msg);
+                                            }
+                                        });
+
+                                        // Following code will also work due to custom autoload
+                                        $fbs = new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
+                                        $fbs('Hello World');
+                                    } catch (\Throwable $e) {
+                                        echo $e->getMessage() . PHP_EOL;
+                                        echo $e->getFile() . PHP_EOL;
+                                        echo $e->getLine() . PHP_EOL;
+                                        echo $e->getCode() . PHP_EOL;
+                                        var_dump($e->getTrace());
                                     }
 
-                                }
-                                break;
-                            case 'frontend-broadcasting-eg':
-                                try {
-                                    // You can get the list of registered services using get_registered_services() method
-                                    $registeredServices = $this->serviceContainer->get_registered_services();
-                                    dump($registeredServices);
-
-                                    // Create a Service Using Default Factory
-                                    $serviceContainer = $this->serviceContainer;
-
-
-                                    // Following code demonstrate how we can get the service instance using our custom factory in invokeable function
-                                    // $frontendBraodcastingService = $serviceContainer('FrontendBroadcastingService', function($webSocketServer) {
-                                    //     return new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
-                                    // }, $webSocketServer);
-
-                                    // You can also get the instance of frontend broadcasting service by providing alias and constructor params to create_service_object()
-                                    // In this sepecific example create_service_object will use the factory FrontendBroadcastingFactory as it is configured as default factory for FrontendBroadcastingService
-                                    $frontendBraodcastingService = $serviceContainer->create_service_object('FrontendBroadcastingService', $webSocketServer);
-
-                                    // ----------- Code related to frontend-broadcasting-eg command ----------------------
-                                    $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;
-                                    // Here $message is the data to be broadcasted. (Can be string or an array)
-                                    $frontendBraodcastingService($message);
-
-                                    // Following Message will be broadcasted only to the FDs of current worker (Example usecase of callback)
-                                    $message = 'For FDs of Worker:' .$webSocketServer->worker_id . ' only';
-                                    $frontendBraodcastingService($message, function($server, $msg) {
-                                        foreach($server->fds as $fd){
-                                            $server->push($fd, $msg);
-                                        }
-                                    });
-
-                                    // Following code will also work due to custom autoload
-                                    $fbs = new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
-                                    $fbs('Hello World');
-                                } catch (\Throwable $e) {
-                                    echo $e->getMessage() . PHP_EOL;
-                                    echo $e->getFile() . PHP_EOL;
-                                    echo $e->getLine() . PHP_EOL;
-                                    echo $e->getCode() . PHP_EOL;
-                                    var_dump($e->getTrace());
-                                }
-
-                                break;
+                                    break;
                             case 'get-fds':
                                 $message = 'Worker ID: '.$webSocketServer->worker_id . ' | FDs: '.implode(',', $webSocketServer->fds);
                                 $webSocketServer->push($frame->fd, $message);
@@ -898,9 +922,10 @@ class sw_service_core {
                                 unset($subscriptionManager);
 
                                 $webSocketServer->push($frame->fd, json_encode($results));
+
                                 break;
                             default:
-                                if ($webSocketServer->isEstablished($frame->fd)){
+                                if ($webSocketServer->isEstablished($frame->fd)) {
                                     $webSocketServer->push($frame->fd, 'Invalid command given');
                                 }
                         }
@@ -1003,14 +1028,6 @@ class sw_service_core {
        ];
     }
 
-    protected function broadcastDataToFDs(&$server, $message, $fds) {
-        foreach($fds as $fd) {
-            if ($server->isEstablished($fd)){
-                $server->push($fd, $message);
-            }
-        }
-    }
-
     /**
      * This function kills the custom user processes
      *
@@ -1050,7 +1067,6 @@ class sw_service_core {
             }
         }
     }
-
 
     /**
      * This function kill all the processes having PID files in process_pids folder
@@ -1131,6 +1147,17 @@ class sw_service_core {
             }
         }
     }
+
+    /**
+     * Remove the server.pid when server shutdown
+     */
+    // function removeServerPidFile() {
+    //     if (file_exists('server.pid')){
+    //         shell_exec('cd '.__DIR__.' && kill -15 `cat server.pid` 2>&1 1> /dev/null&'); //&& sudo rm -f server.pid
+    //     } else {
+    //         echo PHP_EOL.'server.pid file not found. Looks like server is not running already.'.PHP_EOL;
+    //     }
+    // }
 }
 
 #################
