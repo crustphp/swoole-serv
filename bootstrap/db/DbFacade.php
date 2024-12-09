@@ -16,16 +16,11 @@ use DB\SwoolePgConnectionPool;
 
 class DbFacade {
 
-    public function query($db_query, $objDbPool, array $options=null, $transaction=false, $lock = false, $tableName = '', $poolKey = null, $queryAttempts = 0)
+    public function query($db_query, $objDbPool, array $options = null, $transaction = false, $lock = false, $tableName = '')
     {
-        // Increment the Query Execution Attemtpt (For first time query executtion it will become First attempt)
-        $queryAttempts++;
-
         ////////////////////////////////////////////////////////////////////////////////
         //// Get DB Connection from a Connection Pool created through 'smf' package ////
         ////////////////////////////////////////////////////////////////////////////////
-
-        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
 
         // Test Later: If there is not connection available then wait for 200 milliseconds and try again
         // while (empty($postgresClient) || is_null($postgresClient)) {
@@ -34,25 +29,53 @@ class DbFacade {
         //     $postgresClient = $objDbPool->get_dbObject_using_pool_key();
         // }
 
-        if ($transaction){
-            $postgresClient->query('BEGIN');
+        $connectionPoolObj = $objDbPool->get_connection_pool_with_key();
+        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+        $connectionTested = false;
+
+        if ($transaction) {
+            $pdo_statement = $postgresClient->query('BEGIN');
+
+            if (!$pdo_statement = $postgresClient->query($db_query)) {
+                $postgresClient = $this->getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool);
+                $pdo_statement = $postgresClient->query($db_query);
+                $connectionTested = true;
+                
+                if(!$pdo_statement) {
+                    throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
+                }
+            }
         }
 
-         // Apply table-level lock conditionally
+        // Apply table-level lock conditionally
         if ($lock && !empty($tableName)) {
             $lockQuery = "LOCK TABLE " . $tableName . " IN ACCESS EXCLUSIVE MODE";
-            $postgresClient->query($lockQuery);
+            $pdo_statement = $postgresClient->query($lockQuery);
+
+            if (!$connectionTested && !$pdo_statement = $postgresClient->query($db_query)) {
+                $postgresClient = $this->getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool);
+                $pdo_statement = $postgresClient->query($db_query);
+                $connectionTested = true;
+
+                if(!$pdo_statement) {
+                    if ($transaction) {
+                        $postgresClient->query('ROLLBACK');
+                    }
+
+                    throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
+                }
+            }
         }
 
         if ($postgresClient instanceof \PDO) {
             $pdo_statement = $postgresClient->prepare($db_query);
 
             if (!$pdo_statement) {
-//                try {
-//                    $connection = new \PDO($config['dsn'], $config['username'] ?? '', $config['password'] ?? '', $config['options'] ?? []);
-//                } catch (\Throwable $e) {
-//                    throw new \RuntimeException(sprintf('Failed to connect the requested database: [%d] %s', $e->getCode(), $e->getMessage()));
-//                }
+                //                try {
+                //                    $connection = new \PDO($config['dsn'], $config['username'] ?? '', $config['password'] ?? '', $config['options'] ?? []);
+                //                } catch (\Throwable $e) {
+                //                    throw new \RuntimeException(sprintf('Failed to connect the requested database: [%d] %s', $e->getCode(), $e->getMessage()));
+                //                }
                 throw new \RuntimeException('Prepare failed');
             }
 
@@ -62,42 +85,47 @@ class DbFacade {
                 throw new \RuntimeException('Execute failed');
             }
         } else { // For Non-pdo postgresql connection use below:
-            $pdo_statement = $postgresClient->query($db_query);
-
-            if (!$pdo_statement) {
-                // if ($ret === false) {
-                //     throw new \RuntimeException(sprintf('Failed to connect PostgreSQL server: %s', $connection->error));
-                // }
-
-                // Check if Connection was disconnected
-                if (!empty($poolKey)) {
-                    $connectionPoolObj = $objDbPool->get_connection_pool_with_key($poolKey);
-
-                    if ($connectionPoolObj instanceof SwoolePgConnectionPool) {
-                        if (!$connectionPoolObj->checkClientConnection($postgresClient)) {
-                            // Remove the client and try again 
-                            $connectionPoolObj->removeClient($postgresClient);
-
-                            if ($queryAttempts <= $connectionPoolObj->getSize()) {
-                                return $this->query($db_query, $objDbPool, $options, $transaction, $lock, $tableName, $poolKey, $queryAttempts);
-                            }
-                        }
-                    }
-                }
+            if (!$connectionTested && !$pdo_statement = $postgresClient->query($db_query)) {
+                $postgresClient = $this->getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool);
+                $pdo_statement = $postgresClient->query($db_query);
+                // $connectionTested = true; // Not Required Here
                 
-                throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
+                if(!$pdo_statement) {
+                    if ($transaction) {
+                        $postgresClient->query('ROLLBACK');
+                    }
+
+                    throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
+                }
             }
         }
+
         $data = $pdo_statement->fetchAll();
 
-        if ($transaction){
+        if ($transaction) {
             $postgresClient->query('COMMIT');
         }
 
         // Return the connection to pool as soon as possible
         $objDbPool->put_dbObject_using_pool_key($postgresClient);
 
-        return $data;
+        return $data;        
+    }
+    
+    /**
+     * This function replaces disconnected Postgres Client with a fresh one.
+     *
+     * @param  mixed $postgresClient
+     * @param  mixed $connectionPoolObj
+     * @param  mixed $objDbPool
+     * @return mixed
+     */
+    public function getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool): mixed {
+        if (!$connectionPoolObj->isClientConnected($postgresClient)) {
+            return $objDbPool->get_replaced_dbObject();
+        }
+
+        return $postgresClient;
     }
 
     public function getClient($objDbPool) {

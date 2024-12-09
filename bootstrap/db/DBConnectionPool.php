@@ -215,9 +215,15 @@ class DBConnectionPool
     public function add_pool_with_key($obj_conn_pool, $poolKey = null) {
         $this->addConnectionPool($poolKey ?? $this->pool_key, $obj_conn_pool);
     }
-
-    public function get_connection_pool_with_key($pool_key) {
-        return $this->getConnectionPool($pool_key);
+    
+    /**
+     * Returns the Connection Pool object by given key
+     *
+     * @param  string $pool_key
+     * @return mixed
+     */
+    public function get_connection_pool_with_key(string $pool_key = null) {
+        return $this->getConnectionPool(is_null($pool_key) ? $this->pool_key : $pool_key);
     }
 
     public function get_dbObject_from_connection_pool($objConnectionPool) {
@@ -248,6 +254,36 @@ class DBConnectionPool
             // for OpenSwoole it is of type OpenSwoole\Core\Coroutine\Pool\ClientPool
             // For Swoole get() returns new Swoole\Coroutine\PostgreSQL();
             // For OpenSwoole get() returns new OpenSwoole\Coroutine\PostgreSQL();
+            return $objConnectionPool->get();
+        }
+    }
+    
+    /**
+     * This function returns replaced database Client object
+     *
+     * @param  mixed $pool_key Optional pool key
+     * @return mixed
+     */
+    public function get_replaced_dbObject($pool_key = null) {
+        if (is_null($pool_key)) {
+            $pool_key = $this->pool_key;
+        }
+
+        $objConnectionPool = $this->getConnectionPool($pool_key);
+
+        $poolDriver = $this->poolDriver;
+        if ($poolDriver == 'smf') {
+            // Creates a Connection Pool (Channel) of Connections
+            return $objConnectionPool->borrow();
+        } else if ($poolDriver == 'swoole') {
+            output('Getting Replaced Connection');
+            // For swoole $objConnectionPool is of type SwoolePgConnectionPool, and ...
+            // for OpenSwoole it is of type OpenSwoole\Core\Coroutine\Pool\ClientPool
+            // For Swoole get() returns new Swoole\Coroutine\PostgreSQL();
+            // For OpenSwoole get() returns new OpenSwoole\Coroutine\PostgreSQL();
+            return $objConnectionPool->get(replace: true);
+        }
+        else if($poolDriver=='openSwoole') {
             return $objConnectionPool->get();
         }
     }
