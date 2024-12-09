@@ -100,14 +100,14 @@ class RefSnapshotAPIConsumer
      */
     function getRefToken(): string
     {
-        $token = new RefToken($this->webSocketServer, $this->dbFacade, $this->dbConnectionPools);
-        $refToken = $token->getToken();
-        unset($token);
+        $refToken = new RefToken($this->webSocketServer, $this->dbFacade, $this->dbConnectionPools);
+        $token = $refToken->produceActiveToken();
+        unset($refToken);
 
         $refAccessToken = '';
 
-        if ($refToken) {
-            $refAccessToken = $refToken['access_token'];
+        if ($token) {
+            $refAccessToken = $token['access_token'];
         }
 
         return $refAccessToken;
