@@ -23,10 +23,14 @@ class RefDataService
     protected $worker_id;
     protected $objDbPool;
     protected $dbFacade;
+    protected $fields;
 
     const TOPGAINERCOLUMN = 'calculated_value';
     const ERRORLOG = 'error_logs';
-    const REF_MA_FIELDS = 'CF_HIGH,CF_LAST,CF_LOW,CF_VOLUME,HIGH_1,HST_CLOSE,LOW_1,NETCHNG_1,NUM_MOVES,OPEN_PRC,PCTCHNG,TRDPRC_1,TURNOVER,YRHIGH,YRLOW,YR_PCTCH,CF_CLOSE,BID,ASK,ASKSIZE,BIDSIZE';
+    const ALLCHANGEDRECORDS = 'all_changed_records';
+    const ALLRECORDS = 'all_records';
+    const REFSNAPSHOTCOMPANIES = 'ref_data_snapshot_companies';
+    const ISREFDATA = 'is_ref_data';
 
     public function __construct($server, $process, $postgresDbKey = null)
     {
@@ -56,6 +60,7 @@ class RefDataService
 
         $this->objDbPool = $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key];
         $this->dbFacade = new DbFacade();
+        $this->fields = config('app_config.ref_fields');
     }
 
     /**
@@ -67,17 +72,40 @@ class RefDataService
     {
             $companyDetail = null;
 
-            // // Get companies details from DB
-            // $companyDetail = $this->getCompaniesFromDB();
-            // // Fetch data from Refinitive
-            // $responses = $this->fetchRefData($companyDetail);
-            // // Handle responses
-            // $refSnapshotIndicatorData = $this->handleRefSnapshotResponses($responses, $companyDetail);
-            // // Save into swooole table
-            // $this->saveIntoSwooleTable($refSnapshotIndicatorData, 'ref_data_snapshot_companies');
-            // // Save into DB table
-            // $this->saveRefSnapshotDataIntoDBTable($refSnapshotIndicatorData);
+            // Aggregate query to get the count from the Refinitive table
+            $refCountFromDB = $this->getDataCountFromDB(self::REFSNAPSHOTCOMPANIES);
 
+            if ($refCountFromDB && $refCountFromDB[0]['count'] > 0) {
+                // Get Refinintive Indicator data from DB
+                $indicatorDataFromDB = $this->getRefDataFromDB(self::REFSNAPSHOTCOMPANIES);
+
+                // If the data is fresh, initialize from the database
+                if ($this->isFreshRefData($indicatorDataFromDB)) {
+                    $this->loadSwooleTableWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES, $indicatorDataFromDB);
+                    var_dump("Data is loaded into the swoole");
+                } else {
+                    var_dump("There is older data than five minutes");
+                    // Get companies details with Ref Data from DB
+                    $companyDetailWithRefData = $this->getCompaniesWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES);
+                    $isProcessedRefIndicatorData = $this->processRefData($companyDetailWithRefData, self::REFSNAPSHOTCOMPANIES, true);
+
+                    if(!$isProcessedRefIndicatorData) {
+                        var_dump('Refinitive API is not returning data at this time');
+                    }
+                }
+            } else {
+                var_dump("There is no Refinitive Company data in DB");
+                $companyDetail = $this->getCompaniesFromDB();
+
+                $isProcessedRefIndicatorData = $this->processRefData($companyDetail, self::REFSNAPSHOTCOMPANIES);
+
+                if(!$isProcessedRefIndicatorData) {
+                    var_dump('Refinitive API is not returning data at this time');
+                }
+
+            }
+
+            ////////////////// Code will be removed start /////////
 
             // Aggregate query to get the count from the Refinitive table
             $refCountFromDB = $this->getDataCountFromDB(RefMostActiveEnum::TOPGAINER->value);
@@ -115,6 +143,8 @@ class RefDataService
                     var_dump('Refinitive API is not returning data at this time');
                 }
             }
+
+             ////////////////// Code will be removed end /////////
 
             // Schedule of Most Active Data Fetching
             swTimer::tick(config('app_config.most_active_refinitive_timespan'), function () use ($companyDetail) {
@@ -207,11 +237,32 @@ class RefDataService
         return $isFreshDBData;
     }
 
+    public function isFreshRefData($indicatorDataFromDB)
+    {
+        $isFreshDBData = false;
+        // Parse the latest_update timestamp
+        $latestUpdate = Carbon::parse($indicatorDataFromDB[0]['updated_at']);
+        // Check if the latest update is more than 5 minutes old
+        if ($latestUpdate->diffInMilliseconds(Carbon::now()) < config('app_config.most_active_refinitive_timespan')) {
+            $isFreshDBData = true;
+        }
+
+        return $isFreshDBData;
+    }
+
     public function getDataFromDB($tableName)
     {
         $dbQuery = "SELECT refTable.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
         c.isin_code, c.created_at, c.arabic_name AS ar_long_name, c.arabic_short_name AS ar_short_name, c.ric
         FROM $tableName refTable JOIN companies c ON refTable.company_id = c.id";
+        return $this->dbFacade->query($dbQuery, $this->objDbPool);
+    }
+    public function getRefDataFromDB($tableName)
+    {
+        $dbQuery = "SELECT refTable.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
+        c.isin_code, c.created_at, c.arabic_name AS ar_long_name, c.arabic_short_name AS ar_short_name, c.ric
+        FROM $tableName refTable JOIN companies c ON refTable.company_id = c.id
+         ORDER BY refTable.updated_at DESC";
         return $this->dbFacade->query($dbQuery, $this->objDbPool);
     }
 
@@ -243,6 +294,56 @@ class RefDataService
         }
     }
 
+    public function loadSwooleTableWithRefDataFromDB($tableName, $mAIndicatorDBData)
+    {
+        var_dump("Record is within the last 5 minutes. Data prepared.");
+        $table = SwooleTableFactory::getTable($tableName);
+        foreach ($mAIndicatorDBData as $mAIndicatorDBRec) {
+            if ($tableName == RefMostActiveEnum::TOPGAINER->value) {
+                $data = [
+                    'cf_high' => (float)$mAIndicatorDBRec['cf_high'],
+                    'cf_last' => (float)$mAIndicatorDBRec['cf_last'],
+                    'cf_low' => (float)$mAIndicatorDBRec['cf_low'],
+                    'cf_volume' => (float)$mAIndicatorDBRec['cf_volume'],
+                    'high_1' => (float)$mAIndicatorDBRec['high_1'],
+                    'hst_close' => (float)$mAIndicatorDBRec['hst_close'],
+                    'low_1' => (float)$mAIndicatorDBRec['low_1'],
+                    'netchng_1' => (float)$mAIndicatorDBRec['netchng_1'],
+                    'num_moves' => (float)$mAIndicatorDBRec['num_moves'],
+                    'open_prc' => (float)$mAIndicatorDBRec['open_prc'],
+                    'pctchng' => (float)$mAIndicatorDBRec['pctchng'],
+                    'trdprc_1' => (float)$mAIndicatorDBRec['trdprc_1'],
+                    'turnover' => (float)$mAIndicatorDBRec['turnover'],
+                    'yrhigh' => (float)$mAIndicatorDBRec['yrhigh'],
+                    'yrlow' => (float)$mAIndicatorDBRec['yrlow'],
+                    'yr_pctch' => (float)$mAIndicatorDBRec['yr_pctch'],
+                    'cf_close' => (float)$mAIndicatorDBRec['cf_close'],
+                    'bid' => (float)$mAIndicatorDBRec['bid'],
+                    'ask' => (float)$mAIndicatorDBRec['ask'],
+                    'asksize' => (float)$mAIndicatorDBRec['asksize'],
+                    'bidsize' => (float)$mAIndicatorDBRec['bidsize'],
+
+                    'company_id' => $mAIndicatorDBRec['company_id'],
+                    'en_long_name' =>  $mAIndicatorDBRec['en_long_name'],
+                    'sp_comp_id' =>  $mAIndicatorDBRec['sp_comp_id'],
+                    'en_short_name' =>  $mAIndicatorDBRec['en_short_name'],
+                    'symbol' =>  $mAIndicatorDBRec['symbol'],
+                    'isin_code' =>  $mAIndicatorDBRec['isin_code'],
+                    'created_at' =>  $mAIndicatorDBRec['created_at'],
+                    'updated_at' =>  $mAIndicatorDBRec['updated_at'],
+                    'ar_long_name' =>  $mAIndicatorDBRec['ar_long_name'],
+                    'ar_short_name' =>  $mAIndicatorDBRec['ar_short_name'],
+                    'ric' =>  $mAIndicatorDBRec['ric'],
+                    'logo' =>  $mAIndicatorDBRec['logo'],
+                    'market_id' =>  $mAIndicatorDBRec['market_id'],
+                    'market_name' =>  $mAIndicatorDBRec['market_name'],
+                ];
+
+                $table->set($data['company_id'], $data);
+            }
+        }
+    }
+
     public function loadDatastoresFromRef($refMAIndicatorData, $tableName, $column, $isTruncate)
     {
         var_dump("Initialize fresh data from Refinitive for top gainers");
@@ -261,16 +362,19 @@ class RefDataService
     public function fetchRefData(mixed $companyDetail)
     {
         $service = new RefSnapshotAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('app_config.refinitive_pricing_snapshot_url'));
-        $responses = $service->handle($companyDetail, self::REF_MA_FIELDS);
+        $responses = $service->handle($companyDetail, $this->fields);
         unset($service);
 
         return $responses;
     }
 
-    public function handleRefSnapshotResponses($responses, $companyDetail) {
+    public function handleRefSnapshotResponses($responses, $companyDetail)
+    {
         $date = Carbon::now()->format('Y-m-d H:i:s');
 
         $refSnapshotIndicatorData = [];
+        $fields = explode(',', $this->fields);
+
         foreach ($responses as $res) {
             $company = isset($res['Key']["Name"]) ? $companyDetail[str_replace('/', '', $res['Key']["Name"])] : null;
 
@@ -279,47 +383,120 @@ class RefDataService
                 continue;
             }
 
-            $d['cf_high'] = (float) $res['Fields']['CF_HIGH'];
-            $d['cf_last'] = (float) $res['Fields']['CF_LAST'];
-            $d['cf_low'] = (float) $res['Fields']['CF_LOW'];
-            $d['cf_volume'] = (float) $res['Fields']['CF_VOLUME'];
-            $d['high_1'] = (float) $res['Fields']['HIGH_1'];
-            $d['hst_close'] = (float) $res['Fields']['HST_CLOSE'];
-            $d['low_1'] = (float) $res['Fields']['LOW_1'];
-            $d['netchng_1'] = (float) $res['Fields']['NETCHNG_1'];
-            $d['num_moves'] = (float) $res['Fields']['NUM_MOVES'];
-            $d['open_prc'] = (float) $res['Fields']['OPEN_PRC'];
-            $d['pctchng'] = (float) $res['Fields']['PCTCHNG'];
-            $d['trdprc_1'] = (float) $res['Fields']['TRDPRC_1'];
-            $d['turnover'] = (float) $res['Fields']['TURNOVER'];
-            $d['yrhigh'] = (float) $res['Fields']['YRHIGH'];
-            $d['yrlow'] = (float) $res['Fields']['YRLOW'];
-            $d['yr_pctch'] = (float) $res['Fields']['YR_PCTCH'];
-            $d['cf_close'] = (float) $res['Fields']['CF_CLOSE'];
-            $d['bid'] = (float) $res['Fields']['BID'];
-            $d['ask'] = (float) $res['Fields']['ASK'];
-            $d['askize'] = (float) $res['Fields']['ASKSIZE'];
-            $d['bidsize'] = (float) $res['Fields']['BIDSIZE'];
+            $d = [];
+            // Dyanmically process the fields
+            foreach ($fields as $field) {
+                $value = (float) ($res['Fields'][$field] ?? 0);
+                $field = strtolower($field);
 
-            $d['ric'] =  $company['ric'];
-            $d['company_id'] = $company['id'];
-            $d['created_at'] = $date;
-            $d['updated_at'] = $date;
-            $d['en_long_name'] =  $company['name'];
-            $d['sp_comp_id'] =  $company['sp_comp_id'];
-            $d['en_short_name'] =  $company['short_name'];
-            $d['symbol'] =  $company['symbol'];
-            $d['isin_code'] =  $company['isin_code'];
-            $d['ar_long_name'] =  $company['arabic_name'];
-            $d['ar_short_name'] =  $company['arabic_short_name'];
-            $d['logo'] =  $company['logo'];
-            $d['market_id'] =  $company['market_id'];
-            $d['market_name'] =  $company['market_name'];
+                $d[$field] = $value;
+            }
 
-            array_push($refSnapshotIndicatorData, $d);
+            if(!empty($d)) {
+                $d = $this->appendCompanyDetails($d, $company, $date);
+                array_push($refSnapshotIndicatorData, $d);
+            }
+
         }
 
         return $refSnapshotIndicatorData;
+    }
+
+    public function handleRefSnapshotResponsesWithOldData($responses, $companyDetail)
+    {
+        $date = Carbon::now()->format('Y-m-d H:i:s');
+
+        $refSnapshotIndicatorData = [
+            RefMostActiveEnum::TOPGAINER->value => [],
+            self::ALLCHANGEDRECORDS => [],
+            self::ALLRECORDS => [],
+            self::ISREFDATA => false,
+        ];
+
+        $isChangedTopGainer = false;
+        $isChangedData = false;
+        $fields = explode(',', $this->fields);
+
+        foreach ($responses as $res) {
+            $company = isset($res['Key']["Name"]) ? $companyDetail[str_replace('/', '', $res['Key']["Name"])] : null;
+
+            if (!isset($res['Fields'])) {
+                var_dump('Missing "Fields" key in pricing snapshot api response: ' . json_encode($res));
+                continue;
+            }
+
+            $d = [];
+            $isChangedData = false;
+            $isChangedTopGainer = false;
+
+            // Dyanmically process the fields
+            foreach ($fields as $field) {
+                $value = (float) ($res['Fields'][$field] ?? 0);
+                $field = strtolower($field);
+
+                if (
+                    !empty($value)
+                    &&
+                    $value != $company[$field]
+                ) {
+                    $d[$field] = $value;
+                    $isChangedData = true;
+                    $refSnapshotIndicatorData[self::ISREFDATA] = true;
+
+                    if ($field === 'pctchng') {
+                        $isChangedTopGainer = true;
+                    }
+                } else {
+                    $d[$field] = (float) isset($company[$field]) ?? null;
+                }
+            }
+
+            $d = $this->appendCompanyDetails($d, $company, $date);
+            $refSnapshotIndicatorData[self::ALLRECORDS][] = $d;
+
+            if ($isChangedData) {
+                if ($isChangedTopGainer) {
+
+                    $refSnapshotIndicatorData[RefMostActiveEnum::TOPGAINER->value][] = [
+                        'trdprc_1' => $d['trdprc_1'],
+                        'pctchng' => $d['pctchng'],
+                        'created_at' => $d['created_at'],
+                        'en_long_name' => $d['en_long_name'],
+                        'sp_comp_id' => $d['sp_comp_id'],
+                        'en_short_name' => $d['en_short_name'],
+                        'symbol' => $d['symbol'],
+                        'isin_code' => $d['isin_code'],
+                        'ar_long_name' => $d['ar_long_name'],
+                        'ar_short_name' => $d['ar_short_name'],
+                        'ric' => $d['ric']
+                    ];
+                }
+
+                $refSnapshotIndicatorData[self::ALLCHANGEDRECORDS][] = $d;
+            }
+        }
+
+        return $refSnapshotIndicatorData;
+    }
+
+    public function appendCompanyDetails($data, $company, $date)
+    {
+        return array_merge($data, [
+            'ric' => $company['ric'],
+            'company_id' => $company['id'],
+            'created_at' => $date,
+            'updated_at' => $date,
+            'en_long_name' => $company['name'],
+            'sp_comp_id' => $company['sp_comp_id'],
+            'en_short_name' => $company['short_name'],
+            'symbol' => $company['symbol'],
+            'isin_code' => $company['isin_code'],
+            'ar_long_name' => $company['arabic_name'],
+            'ar_short_name' => $company['arabic_short_name'],
+            'logo' => $company['logo'],
+            'market_id' => $company['market_id'],
+            'market_name' => $company['market_name']
+        ]);
     }
 
     public function handleRefResponses($responses, $companyDetail)
@@ -466,6 +643,52 @@ class RefDataService
         });
     }
 
+    public function saveIntoRefDataCompnayDBTable(array $mAIndicatorData, string $tableName )
+    {
+        var_dump('Save data into DB table ' . $tableName);
+        go(function () use ($mAIndicatorData, $tableName) {
+            $dbQuery ="";
+            $dbQuery .= $this->makeInsertQuery($tableName, $mAIndicatorData);
+            $this->dbFacade->query($dbQuery, $this->objDbPool, null, true, true, $tableName);
+        });
+    }
+
+    public function UpdateIntoDBTable(array $mAIndicatorData, string $tableName )
+    {
+        var_dump('Update data into DB table '. $tableName);
+        go(function () use ($mAIndicatorData, $tableName) {
+            foreach ($mAIndicatorData as $mAIndicator) {
+                $dbQuery = "UPDATE $tableName
+                            SET
+                                cf_high = " . $mAIndicator['cf_high'] . ",
+                                cf_last = " . $mAIndicator['cf_last'] . ",
+                                cf_low = " . $mAIndicator['cf_low'] . ",
+                                cf_volume = " . $mAIndicator['cf_volume'] . ",
+                                high_1 = " . $mAIndicator['high_1'] . ",
+                                hst_close = " . $mAIndicator['hst_close'] . ",
+                                low_1 = " . $mAIndicator['low_1'] . ",
+                                netchng_1 = " . $mAIndicator['netchng_1'] . ",
+                                num_moves = " . $mAIndicator['num_moves'] . ",
+                                open_prc = " . $mAIndicator['open_prc'] . ",
+                                pctchng = " . $mAIndicator['pctchng'] . ",
+                                trdprc_1 = " . $mAIndicator['trdprc_1'] . ",
+                                turnover = " . $mAIndicator['turnover'] . ",
+                                yrhigh = " . $mAIndicator['yrhigh'] . ",
+                                yrlow = " . $mAIndicator['yrlow'] . ",
+                                yr_pctch = " . $mAIndicator['yr_pctch'] . ",
+                                cf_close = " . $mAIndicator['cf_close'] . ",
+                                bid = " . $mAIndicator['bid'] . ",
+                                ask = " . $mAIndicator['ask'] . ",
+                                asksize = " . $mAIndicator['asksize'] . ",
+                                updated_at = '" . $mAIndicator['updated_at'] . "'
+                            WHERE company_id = " . $mAIndicator['company_id'];
+
+                $this->dbFacade->query($dbQuery, $this->objDbPool);
+            }
+        });
+
+    }
+
     public function saveLogsIntoDBTable(array $mAIndicatorLogs)
     {
         var_dump('Save logs into DB table ref_most_active_logs');
@@ -482,10 +705,26 @@ class RefDataService
         });
     }
 
-    public function saveRefSnapshotDataIntoDBTable(array $mAIndicatorData)
+    public function saveLogsRefDataIntoDBTable(array $mAIndicatorLogs)
+    {
+        var_dump('Save logs into DB table ref_most_active_logs');
+        go(function () use ($mAIndicatorLogs) {
+            $values = [];
+            foreach ($mAIndicatorLogs as $mAIndicatorlog) {
+                // Collect each set of values into the array
+                $values[] = "('" . $mAIndicatorlog['ric'] . "', 'company', '" . $mAIndicatorlog['created_at'] . "', '" . $mAIndicatorlog['updated_at'] . "')";
+            }
+            $dbQuery = "INSERT INTO ref_most_active_logs (ric, type, created_at, updated_at)
+            VALUES " . implode(", ", $values);
+
+            $this->dbFacade->query($dbQuery, $this->objDbPool);
+        });
+    }
+
+    public function saveRefSnapshotDataIntoDBTable(array $mAIndicatorData, $tableName)
     {
         var_dump('Save Refinitive snapshot data into DB table');
-        go(function () use ($mAIndicatorData) {
+        go(function () use ($mAIndicatorData, $tableName) {
             $values = [];
             foreach ($mAIndicatorData as $mAIndicator) {
                 // Collect each set of values into the array
@@ -508,15 +747,19 @@ class RefDataService
                     " . $mAIndicator['yrlow'] . ",
                     " . $mAIndicator['yr_pctch'] . ",
                     " . $mAIndicator['cf_close'] . ",
+                    " . $mAIndicator['bid'] . ",
+                    " . $mAIndicator['ask'] . ",
+                    " . $mAIndicator['asksize'] . ",
+                    " . $mAIndicator['bidsize'] . ",
                     '" . $mAIndicator['created_at'] . "',
                     '" . $mAIndicator['updated_at'] . "'
                 )";
             }
 
-            $dbQuery = "INSERT INTO ref_data_snapshot_companies (
+            $dbQuery = "INSERT INTO $tableName (
                 company_id, cf_high, cf_last, cf_low, cf_volume, high_1, hst_close,
                 low_1, netchng_1, num_moves, open_prc, pctchng, trdprc_1, turnover,
-                yrhigh, yrlow, yr_pctch, cf_close, created_at, updated_at
+                yrhigh, yrlow, yr_pctch, cf_close, bid, ask, asksize, bidsize, created_at, updated_at
             ) VALUES " . implode(", ", $values);
 
             $this->dbFacade->query($dbQuery, $this->objDbPool);
@@ -609,6 +852,27 @@ class RefDataService
         return $companyDetail;
     }
 
+    public function getCompaniesWithRefDataFromDB()
+    {
+        $dbQuery = "SELECT r.*, ric, c.id, c.name, sp_comp_id, short_name, symbol, isin_code, c.created_at, arabic_name, arabic_short_name, logo, parent_id as market_id, m.name as market_name FROM companies as c
+        INNER JOIN markets As m On c.parent_id = m.id
+        LEFT JOIN ref_data_snapshot_companies As r On c.id = r.company_id
+        WHERE c.ric IS NOT NULL
+        AND c.ric NOT LIKE '%^%'
+        AND c.ric ~ '^[0-9a-zA-Z\\.]+$'";
+
+        // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
+        $results = $this->dbFacade->query($dbQuery, $this->objDbPool);
+
+        // Process the results: create an associative array with 'ric' as the key and 'id' as the value
+        $companyDetail = [];
+        foreach ($results as $row) {
+            $companyDetail[$row['ric']] = $row;
+        }
+
+        return $companyDetail;
+    }
+
     public function getDataCountFromDB(string $tableName)
     {
         $dbQuery = "SELECT count(*)  FROM " . $tableName;
@@ -645,6 +909,65 @@ class RefDataService
         if (count($refMAIndicatorData[self::ERRORLOG]) > 0) {
             $this->saveLogsIntoDBTable($refMAIndicatorData[self::ERRORLOG]);
         }
+
+        return $isProcessedRefMAIndicatorData;
+    }
+
+    public function processRefData($companyDetail, $tableName, $isWithOldData = null)
+    {
+        $isProcessedRefMAIndicatorData = false;
+        // Fetch data from Refinitive
+        $responses = $this->fetchRefData($companyDetail);
+
+        // Handle Refinitive responses
+        if($isWithOldData) {
+            $refMAIndicatorData = $this->handleRefSnapshotResponsesWithOldData($responses, $companyDetail);
+
+            if (count($refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value]) > 0) {
+                // Broadcasting changed data
+                $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
+                $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
+                ? $mAIndicatorJobRunsAtData[0]['job_run_at']
+                : null;
+                $this->broadCastIndicatorData($refMAIndicatorData[RefMostActiveEnum::TOPGAINER->value], $mAIndicatorJobRunsAt);
+            }
+
+            if(count($refMAIndicatorData[self::ALLRECORDS]) > 0 ) {
+                // Load into the swoole Table
+                $this->saveIntoSwooleTable($refMAIndicatorData[self::ALLRECORDS], $tableName);
+                // Load Job run at into swoole table
+                $this->saveRefJobRunAtIntoSwooleTable($refMAIndicatorData[self::ALLRECORDS][0]['created_at']);
+            }
+
+            // Update Into the Database
+            if(count($refMAIndicatorData[self::ALLCHANGEDRECORDS]) > 0) {
+                $this->UpdateIntoDBTable($refMAIndicatorData[self::ALLCHANGEDRECORDS], $tableName);
+            }
+
+            // Is Refinitive return data
+            $isProcessedRefMAIndicatorData = $refMAIndicatorData[self::ISREFDATA];
+
+        } else {
+            $refMAIndicatorData = $this->handleRefSnapshotResponses($responses, $companyDetail);
+
+            // Initialize fresh data from Refinitive for top gainers
+            if (count($refMAIndicatorData) > 0) {
+                var_dump("Initialize fresh data from Refinitive for top gainers");
+                // Save into swoole table
+                $this->saveIntoSwooleTable($refMAIndicatorData, $tableName);
+                // Save into DB Table
+                $this->saveRefSnapshotDataIntoDBTable($refMAIndicatorData, self::REFSNAPSHOTCOMPANIES);
+
+                $isProcessedRefMAIndicatorData = true;
+                // Load Job run at into swoole table
+                $this->saveRefJobRunAtIntoSwooleTable($refMAIndicatorData[0]['created_at']);
+            }
+        }
+
+        // // Save Refinitive most active logs into DB table
+        // if (count($refMAIndicatorData[self::ERRORLOG]) > 0) {
+        //     $this->loadDatastoresFromRef($refMAIndicatorData[self::ERRORLOG]);
+        // }
 
         return $isProcessedRefMAIndicatorData;
     }
