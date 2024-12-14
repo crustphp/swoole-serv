@@ -62,14 +62,12 @@ class NewsService
         // You can also reload the code using include statement directly in handle() or Timer function
         // include(__DIR__. '/echo.php');
         
-        echo 'Echo FROM OUTSIDE INCLUDE - 1' . PHP_EOL;       
-
         // The following timer is just to prevent the user process from continuously exiting and restarting as per documentation
         // In such cases we shutdown server, so its very important to have a Timer in Resident Processes
         // Reference: https://wiki.swoole.com/en/#/server/methods?id=addprocess
 
         // You can modify it according to business logic
-        Timer::tick(3000, function() {
+        Timer::tick(600000, function() {
             $this->downloadAndProcessFiles();
         });
     }
@@ -168,8 +166,8 @@ class NewsService
     {
         try {
             // Establish SFTP connection (replace this with your Swoole-compatible SFTP logic)
-            $sftp = new SFTP('edx.spglobal.com');
-            if (!$sftp->login('Muas2321', '1j1c4Z$05')) {
+            $sftp = new SFTP(config('app_config.spglobal_ftp_url'));
+            if (!$sftp->login(config('app_config.spglobal_username'), config('app_config.spglobal_password'))) {
                 echo "SFTP login failed" . PHP_EOL;
                 return;
             }

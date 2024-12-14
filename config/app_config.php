@@ -28,4 +28,9 @@ return [
     'refinitive_production_token_endpoint_key' => $_ENV['SW_REFINITIVE_PRODUCTION_TOKEN_ENDPOINT_KEY'] ?? 'auqSGJ89Kp3DGJ*!%4',
     'refinitive_token_time_span' => $_ENV['SW_REFINITIVE_TOKEN_TIME_SPAN'] ?? '60000',
     'production_ip' => $_ENV['SW_PRODUCTION_IP'],
+    'privileged_fd_secret' => $_ENV['SW_PRIVILEGED_FD_SECRET'] ?? 'YpGN0qwO80',
+    'spglobal_ftp_url' => $_ENV['SPGLOBAL_FTP_URL'] ?? 'sftp2.spglobal.com',
+    'spglobal_username' => $_ENV['SPGLOBAL_USERNAME'] ?? 'Muas2321PC',
+    'spglobal_password' => $_ENV['SPGLOBAL_PASSWORD'] ?? '1j1c4Z$05',
+    'ref_fields' => $_ENV['SW_REF_FIELDS'],
 ];
