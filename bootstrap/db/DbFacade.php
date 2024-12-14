@@ -34,15 +34,13 @@ class DbFacade {
         $connectionTested = false;
 
         if ($transaction) {
-            $pdo_statement = $postgresClient->query('BEGIN');
-
-            if (!$pdo_statement = $postgresClient->query($db_query)) {
+            if (!$pdo_statement = $postgresClient->query('BEGIN')) {
                 $postgresClient = $this->getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool);
-                $pdo_statement = $postgresClient->query($db_query);
+                $pdo_statement = $postgresClient->query('BEGIN');
                 $connectionTested = true;
                 
                 if(!$pdo_statement) {
-                    throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
+                    throw new \RuntimeException('pdo function query() failed: ' . (isset($postgresClient->errCode) ? $postgresClient->errCode : ''));
                 }
             }
         }
@@ -52,9 +50,9 @@ class DbFacade {
             $lockQuery = "LOCK TABLE " . $tableName . " IN ACCESS EXCLUSIVE MODE";
             $pdo_statement = $postgresClient->query($lockQuery);
 
-            if (!$connectionTested && !$pdo_statement = $postgresClient->query($db_query)) {
+            if (!$connectionTested && !$pdo_statement) {
                 $postgresClient = $this->getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool);
-                $pdo_statement = $postgresClient->query($db_query);
+                $pdo_statement = $postgresClient->query($lockQuery);
                 $connectionTested = true;
 
                 if(!$pdo_statement) {
@@ -62,7 +60,7 @@ class DbFacade {
                         $postgresClient->query('ROLLBACK');
                     }
 
-                    throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
+                    throw new \RuntimeException('pdo function query() failed: ' . (isset($postgresClient->errCode) ? $postgresClient->errCode : ''));
                 }
             }
         }
@@ -95,7 +93,7 @@ class DbFacade {
                         $postgresClient->query('ROLLBACK');
                     }
 
-                    throw new \RuntimeException('pdo function query() failed: ' . isset($postgresClient->errCode) ? $postgresClient->errCode : '');
+                    throw new \RuntimeException('pdo function query() failed: ' . (isset($postgresClient->errCode) ? $postgresClient->errCode : ''));
                 }
             }
         }
