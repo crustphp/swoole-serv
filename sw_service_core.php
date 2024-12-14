@@ -644,14 +644,15 @@ class sw_service_core {
 
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
-            
+
             // Is connected FD a Privileged FD
+            // Only Priviledged FDs will be able to issue priviledged commands like ShutDown, Stats, and Restart on WebSocket Service
             $isPrivilegedFd = isset($request->header) && isset($request->header['privileged-key']) && $request->header['privileged-key'] == config('app_config.privileged_fd_secret');
 
             if ($isPrivilegedFd) {
                 $websocketserver->privilegedFds[$request->fd] = $request->fd;
             }
-            
+
             if (isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && !empty($request->header["refinitive-token-production-endpoint-key"])) {
               if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
 
@@ -826,7 +827,7 @@ class sw_service_core {
                                 $webSocketServer->push($frame->fd, json_encode($stats));
                             }
                             break;
-                            
+
                         default:
                             if ($webSocketServer->isEstablished($frame->fd)) {
                                 $webSocketServer->push($frame->fd, 'Invalid command given');
@@ -1190,7 +1191,7 @@ class sw_service_core {
                 unset($inotify_handles);
             }
         }
-    }    
+    }
 
     /**
      * Remove the server.pid when server shutdown
