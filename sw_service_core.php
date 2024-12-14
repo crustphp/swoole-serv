@@ -93,7 +93,7 @@ use App\Services\PushToken;
 class sw_service_core {
 
     protected $swoole_vesion;
-    protected $server;
+    public $server;
     protected $postgresDbKey = 'pg';
     protected $mySqlDbKey = 'mysql';
     protected $dbConnectionPools;
@@ -104,7 +104,7 @@ class sw_service_core {
     protected $port;
     protected $serverMode;
     protected $serverProtocol;
-    protected static $fds=[];
+    // protected static $fds=[];
 
     protected $serviceContainer;
 
@@ -304,6 +304,8 @@ class sw_service_core {
             if (file_exists($mainProcessPidDFile)) {
                 unlink($mainProcessPidDFile);
             }
+
+            unset($this->server);
         };
 
         $onBeforeShutdown = function($server) {
@@ -643,9 +645,13 @@ class sw_service_core {
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
             
-            // Is FD connected for purpose of restarting server
-            $isFDForRestart = isset($request->header) && isset($request->header['restart-server']);
+            // Is connected FD a Privileged FD
+            $isPrivilegedFd = isset($request->header) && isset($request->header['privileged-key']) && $request->header['privileged-key'] == config('app_config.privileged_fd_secret');
 
+            if ($isPrivilegedFd) {
+                $websocketserver->privilegedFds[$request->fd] = $request->fd;
+            }
+            
             if (isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && !empty($request->header["refinitive-token-production-endpoint-key"])) {
               if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
 
@@ -655,7 +661,7 @@ class sw_service_core {
                 $pushToken->handle();
                 unset($pushToken);
               }
-            } else if (!$isFDForRestart) {
+            } else if (!$isPrivilegedFd) {
                 // Add fd to scope
                 // Here I am storing the FD in array index also as FD for directly accessing it in array.
                 $websocketserver->fds[$request->fd] = $request->fd;
@@ -711,26 +717,27 @@ class sw_service_core {
 
 
         // This callback will be used in callback for onMessage event. next
-        $respond = function($timerId, $webSocketServer, $frame, $sw_websocket_controller) {
-            if ($webSocketServer->isEstablished($frame->fd)) { // if the user / fd is connected then push else clear timer.
-                if ($frame->data) { // when a new message arrives from connected client with some data in it
-                    $bl_response = $sw_websocket_controller->handle();
-                    $frame->data = false;
-                } else {
-                    $bl_response = 1;
-                }
+        // $respond = function($timerId, $webSocketServer, $frame, $sw_websocket_controller) {
+        //     if ($webSocketServer->isEstablished($frame->fd)) { // if the user / fd is connected then push else clear timer.
+        //         if ($frame->data) { // when a new message arrives from connected client with some data in it
+        //             $bl_response = $sw_websocket_controller->handle();
+        //             $frame->data = false;
+        //         } else {
+        //             $bl_response = 1;
+        //         }
 
-                $webSocketServer->push($frame->fd,
-                    json_encode($bl_response),
-                    WEBSOCKET_OPCODE_TEXT,
-                    SWOOLE_WEBSOCKET_FLAG_FIN); // SWOOLE_WEBSOCKET_FLAG_FIN OR OpenSwoole\WebSocket\Server::WEBSOCKET_FLAG_FIN
+        //         $webSocketServer->push($frame->fd,
+        //             json_encode($bl_response),
+        //             WEBSOCKET_OPCODE_TEXT,
+        //             SWOOLE_WEBSOCKET_FLAG_FIN); // SWOOLE_WEBSOCKET_FLAG_FIN OR OpenSwoole\WebSocket\Server::WEBSOCKET_FLAG_FIN
 
-            } else {
-                echo "Inside Event's Callback: Clearing Timer ".$timerId.PHP_EOL;
-                swTimer::clear($timerId);
-            }
-        };
-        $this->server->on('message', function($webSocketServer, $frame) use($respond) {
+        //     } else {
+        //         echo "Inside Event's Callback: Clearing Timer ".$timerId.PHP_EOL;
+        //         swTimer::clear($timerId);
+        //     }
+        // };
+
+        $this->server->on('message', function($webSocketServer, $frame)  {
             $cmd = explode(" ", trim($frame->data));
             $cmd_len = count($cmd);
 
@@ -754,50 +761,84 @@ class sw_service_core {
                 }
             } else {
                 $mainCommand = strtolower($cmd[0]);
-                if ($mainCommand == 'shutdown') {
-                    // Setting the Shutdown Flag to True in Swoole Table
-                    $stopCodeTable = SwooleTableFactory::getTable('worker_stop_code');
-                    $stopCodeTable->set(1, ['is_shutting_down' => 1]);
 
-                    // Force shutdown the server if it is not shutdown gracefully
-                    // Shutdown method returns true on success: Reference https://wiki.swoole.com/en/#/server/methods?id=shutdown
-                    $shutdownRes = $webSocketServer->shutdown();
+                $isPrivilegedFd = false;
+                if (isset($webSocketServer->privilegedFds) && in_array($frame->fd, $webSocketServer->privilegedFds)) {
+                    $isPrivilegedFd = true;
+                }
 
-                    if (!$shutdownRes) {
-                        // If the server.pid file exists, kill the process by its PID; otherwise, kill processes listening on the server port.
-                        if (file_exists('server.pid')) {
-                            exec('cd ' . __DIR__ . ' && kill -9 `cat server.pid` 2>&1 1> /dev/null && rm -f server.pid');
-                        } else {
-                            exec('cd ' . __DIR__ . ' && kill -SIGKILL $(lsof -t -i:' . $this->port . ') 2>&1 1> /dev/null');
-                        }
+                // Privileged FD Cases/Commands
+                if ($isPrivilegedFd) {
+                    switch ($mainCommand) {
+                        case 'shutdown':
+                            // Setting the Shutdown Flag to True in Swoole Table
+                            $stopCodeTable = SwooleTableFactory::getTable('worker_stop_code');
+                            $stopCodeTable->set(1, ['is_shutting_down' => 1]);
+
+                            // Force shutdown the server if it is not shutdown gracefully
+                            // Shutdown method returns true on success: Reference https://wiki.swoole.com/en/#/server/methods?id=shutdown
+                            $shutdownRes = $webSocketServer->shutdown();
+
+                            if (!$shutdownRes) {
+                                // If the server.pid file exists, kill the process by its PID; otherwise, kill processes listening on the server port.
+                                if (file_exists('server.pid')) {
+                                    exec('cd ' . __DIR__ . ' && kill -9 `cat server.pid` 2>&1 1> /dev/null && rm -f server.pid');
+                                } else {
+                                    exec('cd ' . __DIR__ . ' && kill -SIGKILL $(lsof -t -i:' . $this->port . ') 2>&1 1> /dev/null');
+                                }
+                            }
+
+                            break;
+
+                        case 'reload-code':
+                            swTimer::clearAll();
+                            //                    if ($this->swoole_ext == 1) { // for Swoole
+                            echo PHP_EOL . 'In Reload-Code: Clearing All Swoole-based Timers' . PHP_EOL;
+                            //                    } else { // for openSwoole
+                            //                        echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
+                            //                    }
+                            echo "Reloading Code Changes (by Reloading All Workers)" . PHP_EOL;
+
+                            $reloadStatus = $webSocketServer->reload();
+                            echo (($reloadStatus === true) ? PHP_EOL . 'Code Reloaded' . PHP_EOL  :  PHP_EOL . 'Code Not Reloaded') . PHP_EOL;
+
+                            break;
+
+                        case 'get-server-params':
+
+                            $server_params = [
+                                'ip' => $this->ip,
+                                'port' => $this->port,
+                                'serverMode' => $this->serverMode,
+                                'serverProtocol' => $this->serverProtocol,
+                            ];
+
+                            if ($webSocketServer->isEstablished($frame->fd)) {
+                                $webSocketServer->push($frame->fd, json_encode($server_params));
+                            }
+
+                            break;
+
+                        case 'get-server-stats':
+                            $stats = $webSocketServer->stats() ?? [];
+
+                            if ($webSocketServer->isEstablished($frame->fd)) {
+                                $webSocketServer->push($frame->fd, json_encode($stats));
+                            }
+                            break;
+                            
+                        default:
+                            if ($webSocketServer->isEstablished($frame->fd)) {
+                                $webSocketServer->push($frame->fd, 'Invalid command given');
+                            }
                     }
-
-                } else if ($mainCommand == 'reload-code') {
-                    swTimer::clearAll();
-//                    if ($this->swoole_ext == 1) { // for Swoole
-                    echo PHP_EOL.'In Reload-Code: Clearing All Swoole-based Timers'.PHP_EOL;
-//                    } else { // for openSwoole
-//                        echo PHP_EOL.'In Reload-Code: Clearing All OpenSwoole-based Timers'.PHP_EOL;
-//                    }
-                    echo "Reloading Code Changes (by Reloading All Workers)".PHP_EOL;
-
-                    $reloadStatus = $webSocketServer->reload();
-                    echo (($reloadStatus === true) ? PHP_EOL.'Code Reloaded'.PHP_EOL  :  PHP_EOL.'Code Not Reloaded').PHP_EOL;
-                } else if ($mainCommand == 'get-server-params') {
-                    $server_params = [
-                        'ip' => $this->ip,
-                        'port' => $this->port,
-                        'serverMode' => $this->serverMode,
-                        'serverProtocol' => $this->serverProtocol,
-                    ];
-
-                    if ($webSocketServer->isEstablished($frame->fd)) {
-                        $webSocketServer->push($frame->fd, json_encode($server_params));
-                    }
-                } else {
+                }
+                // Non Priviliged FD Cases/Commands
+                else {
                     $frameData = json_decode($frame->data, true) ?? [];
+
                     if (array_key_exists('command', $frameData)) {
-                        switch($frameData['command']) {
+                        switch ($frameData['command']) {
                             case 'boiler-http-client':
                                 $service = new \App\Services\HttpClientTestService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
                                 $service->handle();
@@ -811,81 +852,79 @@ class sw_service_core {
                                 $service->handle();
                                 break;
                             case 'users':
-                                    $table = SwooleTableFactory::getTable('users');
-                                    if (isset($frameData['add_data'])) {
-                                        // Add Data to Table
-                                        $table->set($table->count(), $frameData['add_data']);
+                                $table = SwooleTableFactory::getTable('users');
+                                if (isset($frameData['add_data'])) {
+                                    // Add Data to Table
+                                    $table->set($table->count(), $frameData['add_data']);
+
+                                    if ($webSocketServer->isEstablished($frame->fd)) {
+                                        $webSocketServer->push($frame->fd, "Data Added");
+                                    }
+                                } else {
+                                    // Fetch all the records saved in table
+                                    $selector = new \Crust\SwooleDb\Selector\TableSelector('users');
+                                    $records = $selector->execute();
+
+                                    foreach ($records as $record) {
+                                        $data = [
+                                            'id' => $record['users']->getValue('id'),
+                                            'name' => $record['users']->getValue('name'),
+                                            'email' => $record['users']->getValue('email'),
+                                        ];
 
                                         if ($webSocketServer->isEstablished($frame->fd)) {
-                                            $webSocketServer->push($frame->fd, "Data Added");
+                                            $webSocketServer->push($frame->fd, json_encode($data));
                                         }
                                     }
-                                    else {
-                                        // Fetch all the records saved in table
-                                        $selector = new \Crust\SwooleDb\Selector\TableSelector('users');
-                                        $records = $selector->execute();
-
-                                        foreach ($records as $record) {
-                                            $data = [
-                                                'id' => $record['users']->getValue('id'),
-                                                'name' => $record['users']->getValue('name'),
-                                                'email' => $record['users']->getValue('email'),
-                                            ];
-
-                                            if ($webSocketServer->isEstablished($frame->fd)) {
-                                                $webSocketServer->push($frame->fd, json_encode($data));
-                                            }
-                                        }
-
-                                    }
-                                    break;
+                                }
+                                break;
                             case 'frontend-broadcasting-eg':
-                                    try {
-                                        // You can get the list of registered services using get_registered_services() method
-                                        $registeredServices = $this->serviceContainer->get_registered_services();
+                                try {
+                                    // You can get the list of registered services using get_registered_services() method
+                                    $registeredServices = $this->serviceContainer->get_registered_services();
 
-                                        var_dump($registeredServices);
+                                    var_dump($registeredServices);
 
-                                        // Create a Service Using Default Factory
-                                        $serviceContainer = $this->serviceContainer;
+                                    // Create a Service Using Default Factory
+                                    $serviceContainer = $this->serviceContainer;
 
 
-                                        // Following code demonstrate how we can get the service instance using our custom factory in invokeable function
-                                        // $frontendBraodcastingService = $serviceContainer('FrontendBroadcastingService', function($webSocketServer) {
-                                        //     return new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
-                                        // }, $webSocketServer);
+                                    // Following code demonstrate how we can get the service instance using our custom factory in invokeable function
+                                    // $frontendBraodcastingService = $serviceContainer('FrontendBroadcastingService', function($webSocketServer) {
+                                    //     return new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
+                                    // }, $webSocketServer);
 
-                                        // You can also get the instance of frontend broadcasting service by providing alias and constructor params to create_service_object()
-                                        // In this sepecific example create_service_object will use the factory FrontendBroadcastingFactory as it is configured as default factory for FrontendBroadcastingService
-                                        $frontendBraodcastingService = $serviceContainer->create_service_object('FrontendBroadcastingService', $webSocketServer);
+                                    // You can also get the instance of frontend broadcasting service by providing alias and constructor params to create_service_object()
+                                    // In this sepecific example create_service_object will use the factory FrontendBroadcastingFactory as it is configured as default factory for FrontendBroadcastingService
+                                    $frontendBraodcastingService = $serviceContainer->create_service_object('FrontendBroadcastingService', $webSocketServer);
 
-                                        // ----------- Code related to frontend-broadcasting-eg command ----------------------
-                                        $message = 'From Frontend command | Tiggered by worker: '.$webSocketServer->worker_id;
-                                        // Here $message is the data to be broadcasted. (Can be string or an array)
-                                        $frontendBraodcastingService($message);
+                                    // ----------- Code related to frontend-broadcasting-eg command ----------------------
+                                    $message = 'From Frontend command | Tiggered by worker: ' . $webSocketServer->worker_id;
+                                    // Here $message is the data to be broadcasted. (Can be string or an array)
+                                    $frontendBraodcastingService($message);
 
-                                        // Following Message will be broadcasted only to the FDs of current worker (Example usecase of callback)
-                                        $message = 'For FDs of Worker:' .$webSocketServer->worker_id . ' only';
-                                        $frontendBraodcastingService($message, function($server, $msg) {
-                                            foreach($server->fds as $fd){
-                                                $server->push($fd, $msg);
-                                            }
-                                        });
+                                    // Following Message will be broadcasted only to the FDs of current worker (Example usecase of callback)
+                                    $message = 'For FDs of Worker:' . $webSocketServer->worker_id . ' only';
+                                    $frontendBraodcastingService($message, function ($server, $msg) {
+                                        foreach ($server->fds as $fd) {
+                                            $server->push($fd, $msg);
+                                        }
+                                    });
 
-                                        // Following code will also work due to custom autoload
-                                        $fbs = new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
-                                        $fbs('Hello World');
-                                    } catch (\Throwable $e) {
-                                        echo $e->getMessage() . PHP_EOL;
-                                        echo $e->getFile() . PHP_EOL;
-                                        echo $e->getLine() . PHP_EOL;
-                                        echo $e->getCode() . PHP_EOL;
-                                        var_dump($e->getTrace());
-                                    }
+                                    // Following code will also work due to custom autoload
+                                    $fbs = new \App\Core\Services\FrontendBroadcastingService($webSocketServer);
+                                    $fbs('Hello World');
+                                } catch (\Throwable $e) {
+                                    echo $e->getMessage() . PHP_EOL;
+                                    echo $e->getFile() . PHP_EOL;
+                                    echo $e->getLine() . PHP_EOL;
+                                    echo $e->getCode() . PHP_EOL;
+                                    var_dump($e->getTrace());
+                                }
 
-                                    break;
+                                break;
                             case 'get-fds':
-                                $message = 'Worker ID: '.$webSocketServer->worker_id . ' | FDs: '.implode(',', $webSocketServer->fds);
+                                $message = 'Worker ID: ' . $webSocketServer->worker_id . ' | FDs: ' . implode(',', $webSocketServer->fds);
                                 $webSocketServer->push($frame->fd, $message);
                                 break;
                             case 'get-topic-subscriptions':
@@ -893,8 +932,7 @@ class sw_service_core {
                                 $subscriptionManager = new SubscriptionManager();
                                 if (empty($topic)) {
                                     $data = $subscriptionManager->getAllSubsciptionData();
-                                }
-                                else {
+                                } else {
                                     $data = $subscriptionManager->getSubscribersForTopic($topic);
                                 }
 
@@ -929,21 +967,24 @@ class sw_service_core {
                                     $webSocketServer->push($frame->fd, 'Invalid command given');
                                 }
                         }
-                    }
-                    else {
-                        // Default Code
-                        include_once __DIR__ . '/controllers/WebSocketController.php';
-
-                        $app_type_database_driven = config('app_config.app_type_database_driven');
-                        if ($app_type_database_driven) {
-                            $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
-                        } else {
-                            $sw_websocket_controller = new WebSocketController($webSocketServer, $frame);
+                    } else {
+                        if ($webSocketServer->isEstablished($frame->fd)) {
+                            $webSocketServer->push($frame->fd, 'Invalid Command/Message Format');
                         }
 
-                        $timerTime = config('app_config.swoole_timer_time1');
-                        $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
-                        self::$fds[$frame->fd][$timerId] = 1;
+                        // Default Code
+                        // include_once __DIR__ . '/controllers/WebSocketController.php';
+
+                        // $app_type_database_driven = config('app_config.app_type_database_driven');
+                        // if ($app_type_database_driven) {
+                        //     $sw_websocket_controller = new WebSocketController($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id]);
+                        // } else {
+                        //     $sw_websocket_controller = new WebSocketController($webSocketServer, $frame);
+                        // }
+
+                        // $timerTime = config('app_config.swoole_timer_time1');
+                        // $timerId = swTimer::tick($timerTime, $respond, $webSocketServer, $frame, $sw_websocket_controller);
+                        // self::$fds[$frame->fd][$timerId] = 1;
                     }
                 }
             }
@@ -952,17 +993,17 @@ class sw_service_core {
         $this->server->on('close', function($server, $fd, $reactorId) {
             echo PHP_EOL."client {$fd} closed in ReactorId:{$reactorId}".PHP_EOL;
 
-                if (isset(self::$fds[$fd])) {
-                    echo PHP_EOL.'On Close: Clearing Swoole-based Timers for Connection-'.$fd.PHP_EOL;
-                    $fd_timers = self::$fds[$fd];
-                    foreach ($fd_timers as $fd_timer=>$value){
-                        if (swTimer::exists($fd_timer)) {
-                            echo PHP_EOL."In Connection-Close: clearing timer: ".$fd_timer.PHP_EOL;
-                            swTimer::clear($fd_timer);
-                        }
-                    }
-                }
-            unset(self::$fds[$fd]);
+            // if (isset(self::$fds[$fd])) {
+            //     echo PHP_EOL.'On Close: Clearing Swoole-based Timers for Connection-'.$fd.PHP_EOL;
+            //     $fd_timers = self::$fds[$fd];
+            //     foreach ($fd_timers as $fd_timer=>$value){
+            //         if (swTimer::exists($fd_timer)) {
+            //             echo PHP_EOL."In Connection-Close: clearing timer: ".$fd_timer.PHP_EOL;
+            //             swTimer::clear($fd_timer);
+            //         }
+            //     }
+            // }
+            // unset(self::$fds[$fd]);
 
             // Unsubscribe the FD from its subscribed topics
             $subscriptionManager = new SubscriptionManager();
@@ -971,21 +1012,23 @@ class sw_service_core {
 
             // delete fd from scope
             unset($server->fds[$fd]);
+            unset($server->privilegedFds[$fd]);
         });
 
         $this->server->on('disconnect', function(Server $server, int $fd) {
             echo "connection disconnect: {$fd}\n";
-            if (isset(self::$fds[$fd])) {
-                echo PHP_EOL.'On Disconnect: Clearing Swoole-based Timers for Connection-'.$fd.PHP_EOL;
-                $fd_timers = self::$fds[$fd];
-                foreach ($fd_timers as $fd_timer){
-                    if (swTimer::exists($fd_timer)) {
-                        echo PHP_EOL."In Disconnect: clearing timer: ".$fd_timer.PHP_EOL;
-                        swTimer::clear($fd_timer);
-                    }
-                }
-            }
-            unset(self::$fds[$fd]);
+
+            // if (isset(self::$fds[$fd])) {
+            //     echo PHP_EOL.'On Disconnect: Clearing Swoole-based Timers for Connection-'.$fd.PHP_EOL;
+            //     $fd_timers = self::$fds[$fd];
+            //     foreach ($fd_timers as $fd_timer){
+            //         if (swTimer::exists($fd_timer)) {
+            //             echo PHP_EOL."In Disconnect: clearing timer: ".$fd_timer.PHP_EOL;
+            //             swTimer::clear($fd_timer);
+            //         }
+            //     }
+            // }
+            // unset(self::$fds[$fd]);
 
             // Unsubscribe the FD from its subscribed topics
             $subscriptionManager = new SubscriptionManager();
@@ -994,6 +1037,7 @@ class sw_service_core {
 
             // delete fd from scope
             unset($server->fds[$fd]);
+            unset($server->privilegedFds[$fd]);
         });
 
 // The Request event closure callback is passed the context of $server
@@ -1146,7 +1190,7 @@ class sw_service_core {
                 unset($inotify_handles);
             }
         }
-    }
+    }    
 
     /**
      * Remove the server.pid when server shutdown

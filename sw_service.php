@@ -23,75 +23,98 @@ declare(strict_types=1);
         include('service_creation_params.php');
         include('sw_service_core.php');
 
+        // Priviliged Connection / FD
+        $priviligedConnHeader = "privileged-key:" . config('app_config.privileged_fd_secret') . "\r\n\r\n";
+
+        // Shutdown Server
         if ($serverProtocol == 'shutdown') {
+            output('--- Shutting Down the Server ---');
 
-            $ip = '127.0.0.1';
-            if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
-                $ip = '45.76.35.99';
-            }
-
-            $w = new WebSocketClient($ip, 9501);
+            $w = new WebSocketClient($ip, $port);
             try {
-                if ($x = $w->connect()) {
+                if ($x = $w->connect($priviligedConnHeader)) {
                     $w->send('shutdown', 'text', 1);
                 } else {
-                    echo PHP_EOL . 'Failed to connect WebSocket Server using TCP Client' . PHP_EOL;
+                    output('Failed to connect WebSocket Server using TCP Client');
                 }
             } catch (\RuntimeException $e) {
-                echo PHP_EOL . $e->getMessage() . PHP_EOL;
+                output($e);
             }
 
             // Stop the the server
             // shutdown_swoole_server();
-        } else if ($serverProtocol == 'restart') {
-                // Stop the the server
+        } 
+        // Restart the Server
+        else if ($serverProtocol == 'restart') {
+            output('--- Restarting the Server ---');
 
-            $ip = '127.0.0.1';
-            if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
-                $ip = '45.76.35.99';
-            }
-
-            $w = new WebSocketClient($ip, 9501);
+            $w = new WebSocketClient($ip, $port);
             try {
-                if ($x = $w->connect("restart-server: 1\r\n\r\n")) {
+                if ($x = $w->connect($priviligedConnHeader)) {
                     $w->send('get-server-params', 'text', 1);
                     $data = $w->recv();
                     if ($data) {
-                        echo PHP_EOL.'Shutting Down The Server'.PHP_EOL;
+                        output('--> Shutting Down the Server');
+
                         $data = json_decode($data, true);
 
                         $w->send('shutdown', 'text', 1);
-                        // shutdown_swoole_server();
-                        sleep(3);
+                        
+                        do {    
+                            sleep(1);
+                        }
+                        while(isset($sw_service) && !is_null($sw_service->server));
+                        
+                        output('--> Starting the Server');
                         create_swoole_server($data['ip'], $data['port'], $data['serverMode'], $data['serverProtocol']);
                     } else {
-                        echo PHP_EOL.'Failed to get server params'.PHP_EOL;
+                        output('Failed to get server params');
                     }
                 } else {
-                    echo PHP_EOL.'Failed to connect WebSocket Server using TCP Client'.PHP_EOL;
+                    output('Failed to connect WebSocket Server using TCP Client');
                 }
             } catch (\RuntimeException $e) {
-                echo PHP_EOL.$e->getMessage().PHP_EOL;
+                output($e);
             }
-        }  else if ($serverProtocol == 'reload-code') {
-            // Stop the the server
+        } 
+        // Reload code
+        else if ($serverProtocol == 'reload-code') {
+            output('--- Reloading the Code ---');
 
-            $ip = '127.0.0.1';
-            if (isset($argv[1]) && in_array($argv[1], ['remote'])) { // Set Default IP
-                $ip = '45.76.35.99';
-            }
-
-            $w = new WebSocketClient($ip, 9501);
+            $w = new WebSocketClient($ip, $port);
             try {
-                if ($x = $w->connect()) {
+                if ($x = $w->connect($priviligedConnHeader)) {
                     $w->send('reload-code', 'text', 1);
                 } else {
-                    echo PHP_EOL.'Failed to connect WebSocket Server using TCP Client'.PHP_EOL;
+                    output('Failed to connect WebSocket Server using TCP Client');
                 }
             } catch (\RuntimeException $e) {
-                echo PHP_EOL.$e->getMessage().PHP_EOL;
+                output($e);
             }
-        } else {
+        }  
+        // Get the Server Stats
+        else if ($serverProtocol == 'stats') {
+            output('--- Fetching Server Stats ---');
+
+            try {
+                $w = new WebSocketClient($ip, $port);
+
+                if ($x = $w->connect($priviligedConnHeader)) {
+                    $w->send('get-server-stats', 'text', 1);
+                    $statsData = $w->recv();
+                    
+                    output(json_decode($statsData, true));
+                } else {
+                    output('Failed to connect WebSocket Server using TCP Client');
+                }
+            } catch (\Throwable $e) {
+                output($e);
+            }
+        }
+        // Start the Server
+        else {
+            output('--- Starting the Server ---');
+            
             //    $serverProcess = new Process(function() use ($ip, $port, $serverMode, $serverProtocol) {
             create_swoole_server($ip, $port, $serverMode, $serverProtocol);
 //                echo "Exiting";
@@ -125,4 +148,6 @@ declare(strict_types=1);
         global $sw_service;
         $sw_service  = new sw_service_core($ip, $port, $serverMode, $serverProtocol);
         $sw_service->start();
+        unset($sw_service);
     }
+    

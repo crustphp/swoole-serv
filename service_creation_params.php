@@ -1,16 +1,17 @@
 <?php
 ini_set("register_argc_argv", true);
 $serverProtocol='';
-if (isset($argv[1]) && in_array($argv[1], ['reload-code', 'restart', 'shutdown', 'websocket', 'http','http2', 'tcp', 'udp', 'mqtt', 'grpc', 'socket'])) { // Set Default IP
+if (isset($argv[1]) && in_array($argv[1], ['reload-code', 'restart', 'shutdown', 'websocket', 'http','http2', 'tcp', 'udp', 'mqtt', 'grpc', 'socket', 'stats'])) { // Set Default IP
    $serverProtocol = $argv[1];
 } else {
     $serverProtocol = 'http';
 }
 
 if (isset($argv[2])) { // Set Default IP
-    $ip = $argv[2];
-    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-        echo "Invalid format of IP address";
+    $ip = strtolower($argv[2]);
+
+    if (!filter_var($ip, FILTER_VALIDATE_IP) && !preg_match('/^(?!\-)(?:[a-z0-9\-]{1,63}\.)+[a-z]{2,}$/', $ip)) {
+        echo "Invalid format of IP address or Domain";
         exit;
     }
 } else {
@@ -20,7 +21,7 @@ if (isset($argv[2])) { // Set Default IP
 // Default port 9501
 $port = '9501';
 if (isset($argv[3]) &&
-    preg_match('^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$', $argv[3])) {
+    preg_match('/^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$/', $argv[3])) {
    $port = $argv[3];
 }
 
