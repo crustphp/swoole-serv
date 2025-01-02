@@ -20,10 +20,12 @@ class SwooleTableFactory
      * @param string tableName The name of the table that you want to create
      * @param int rows The number of rows that the table should have. Default 1024
      * @param array columns_defs Contains definitions for the columns of the table being created
+     * @param bool $allColsNullable Set all table columns to nullable. However, column-level settings take priority—if a column is explicitly defined as not nullable, it will remain not nullable.
+     * @param bool $allColsSigned Set int/float type table columns to signed. However, column-level settings take priority.
      *
      * @return mixed Returns the table that is created or false if it fails
      */
-    public static function createTable(string $tableName, int $rows = 1024, array $columns_defs = [])
+    public static function createTable(string $tableName, int $rows = 1024, array $columns_defs = [], bool $allColsNullable = false, bool $allColsSigned = false)
     {
         // For avoiding memory allocation error we will set the min rows to 1024
         $rows = $rows > 1024 ? $rows : 1024;
@@ -53,11 +55,21 @@ class SwooleTableFactory
                         'string' => ColumnType::string,
                     ];
 
-                    if ($cDef['type'] == 'float') {
-                        $table->addColumn(new Column($cDef['name'], $mapping[$cDef['type']]));
-                    } else {
-                        $table->addColumn(new Column($cDef['name'], $mapping[$cDef['type']], $cDef['size']));
+                    // Check if Columns has its own preference for meta data, otherwise use Table Level Meta
+                    $isNullable = $cDef['is_nullable'] ?? $allColsNullable;
+                    
+                    $isSigned = false;
+                    if ($cDef['type'] == 'int' || $cDef['type'] == 'float') {
+                        $isSigned = $cDef['is_signed'] ?? $allColsSigned;
                     }
+
+                    if ($cDef['type'] == 'float') {
+                        $colObj = new Column(name: $cDef['name'], type: $mapping[$cDef['type']], isNullable: $isNullable, isSigned: $isSigned);
+                    } else {
+                        $colObj = new Column(name: $cDef['name'], type: $mapping[$cDef['type']], size: $cDef['size'], isNullable: $isNullable, isSigned: $isSigned);
+                    }
+
+                    $table->addColumn($colObj);
                 }
             }
 
@@ -78,13 +90,20 @@ class SwooleTableFactory
     /**
      * Returns the table object by provided name
      *
-     * @param  string $tableName
+     * @param  string $tableName The name of the Table you want to get
+     * @param  bool $tableName Pass True to get the underlaying Swoole Table
      * @return mixed
      */
-    public static function getTable(string $tableName)
+    public static function getTable(string $tableName, bool $getSwooleTable = false)
     {
         try {
-            return TableRegistry::getInstance()->getTable($tableName);
+            $table = TableRegistry::getInstance()->getTable($tableName);
+
+            if ($getSwooleTable) {
+                return $table->getSwooleTable();
+            }
+
+            return $table;
         } catch (TableNotExists $e) {
             echo $e->getMessage();
             echo $e->getCode();
@@ -106,6 +125,8 @@ class SwooleTableFactory
     }
 
     /**
+     * @deprecated This function is deprecated as if we update the size, its scope limits to only current Worker/Process instead of entire application.
+     * 
      * The function updates the size of a table by creating a new table with the
      * specified size and transferring the data from the original table to the new one.
      *
@@ -270,7 +291,11 @@ class SwooleTableFactory
                     throw new \Exception("Swoole Table Migration: $migrationFileName | Table " . $migration['name'] . " already exists");
                 }
 
-                self::createTable($migration['table_name'], $migration['table_size'], $migration['columns']);
+                // Add or not Meta Columns (e.g ::sign, ::null) by Crust Relational DB package
+                $allColsNullable = $migration['is_nullable'] ?? false;
+                $allColsSigned = $migration['is_signed'] ?? false;
+
+                self::createTable($migration['table_name'], $migration['table_size'], $migration['columns'], $allColsNullable, $allColsSigned);
             }
 
             self::$migrationsExecuted = true;
@@ -289,7 +314,7 @@ class SwooleTableFactory
      *
      * @param  string $tableName Name of the table
      * @param  bool $withNulls Optional: If set to true it will also include columns having ::null
-     * @param  mixed $encodeValues Optiona: Array of columns and target encoding if you want to encode the column values
+     * @param  mixed $encodeValues Optional: Array of columns and target encoding if you want to encode the column values
      * @return mixed
      */
     public static function getTableData(string $tableName, bool $withMetaData = false, array $encodeValues = []): mixed
@@ -357,6 +382,28 @@ class SwooleTableFactory
             echo $e->getCode() . PHP_EOL;
             echo $e->getFile() . PHP_EOL;
             echo $e->getLine() . PHP_EOL;
+            throw $e;
+        }
+    }
+
+    /**
+     * Get the data directly from underlying Swoole Table
+     *
+     * @param  mixed $tableName The name of the table you want to get data from.
+     * @param  array $selectColumns List of columns to retrieve. If empty, all columns are returned.
+     * @param  array $encodeValues Optional: Array of columns and target encoding if you want to encode the column values
+     * @param  bool $returnJson Optional: If true, the returned response will be JSON string
+     * @return mixed
+     */
+    public static function getSwooleTableData(string $tableName, ?array $selectColumns = null, ?array $encodeValues = null, $returnJson = false): mixed
+    {
+        try {
+            $table = self::getTable($tableName);
+            return $table->getSwooleTableData($selectColumns, $encodeValues, $returnJson);
+        } catch (\Throwable $e) {
+            output('Failed to get data from Swoole Table: ' . $tableName);
+            output($e);
+
             throw $e;
         }
     }

@@ -3,6 +3,11 @@
 namespace App\Services;
 
 use Bootstrap\SwooleTableFactory;
+use Crust\SwooleDb\Selector\TableSelector;
+use Crust\SwooleDb\Selector\Enum\ConditionElementType;
+use Crust\SwooleDb\Selector\Enum\ConditionOperator;
+use Crust\SwooleDb\Selector\Bean\ConditionElement;
+use Crust\SwooleDb\Selector\Bean\Condition;
 
 class SwooleTableTestService
 {
@@ -18,18 +23,90 @@ class SwooleTableTestService
 
         // Create the Swoole Table
         // Types can be (string, int, float)
-        // Size is required in case type is string or int
-        $columns = [
-            ['name' => 'email', 'type' => 'string', 'size' => 100],
-            ['name' => 'rollno', 'type' => 'int', 'size' => 10],
-            ['name' => 'height', 'type' => 'float'],
+        // Size is required in case type is string or int 
+        // $columns = [
+        //     ['name' => 'email', 'type' => 'string', 'size' => 100],
+        //     ['name' => 'rollno', 'type' => 'int', 'size' => 10],
+        //     ['name' => 'height', 'type' => 'float'],
+        // ];
+
+        // // Create table (TableName, TotalRows, ColumnDefinitions)
+        // if (!SwooleTableFactory::tableExists('test_table')) {
+        //     $this->swooleTableFactory = SwooleTableFactory::createTable('test_table', 32, $columns);
+        // }
+    }
+
+    public function newHandle()
+    {
+        $crustTable = SwooleTableFactory::getTable('users');
+        $swooleTable = $crustTable->getSwooleTable();
+
+        $user3 = [
+            'id' => 3,
+            'name' => null,
+            'email' => 'michael.johnson@example.com',
+            'height' => 6.1,
+            'age' => null,
         ];
 
-        // Create table (TableName, TotalRows, ColumnDefinitions)
-        if (!SwooleTableFactory::tableExists('test_table')) {
-            // dump('creating table');
-            $this->swooleTableFactory = SwooleTableFactory::createTable('test_table', 32, $columns);
+        // Add New Users
+        if ($crustTable->count() == 0) {
+            $users = $this->getDummyUsers();
+            $counter = 1;
+            foreach ($users as $user) {
+                if ($user['id'] == 3) {
+                    $user = [
+                        'id' => 3,
+                        'name' => null,
+                        'email' => 'michael.johnson@example.com',
+                        'height' => 6.1,
+                        'age' => null,
+                    ];
+                }
+
+                $crustTable->set($user['id'], $user);
+                
+                if ($counter == 3) {
+                    break;
+                }
+
+                $counter++;
+            }
         }
+
+        // $data = SwooleTableFactory::getSwooleTableData('users', ['name', 'email'], null, true);
+        // output($data);
+        // $data = $crustTable->getSwooleTableData();
+        // output(data: $data, shouldVarDump: true);
+
+        // --- Test Case #1 >> Check if Table contains meta columns
+        // output(SwooleTableFactory::getColumnsStructure($crustTable));
+        output($crustTable->getSwooleTable());
+
+        // $userCrust = $crustTable->get(3);
+        // $swooleTable->set(3, $user3);
+        $userSwoole = $swooleTable->get(3);
+
+        // output($userCrust);
+        output($userSwoole);
+
+        // output('------------------');
+        // $data = SwooleTableFactory::getDataFromSwooleTable('users');
+
+        // output($data);
+        
+        // $this->push($userCrust->toArray());
+        
+        // --- Test Case #2 >> Can we loop through Crust Table
+        // foreach($swooleTable as $row) {
+        //     output($row);
+        // }
+
+        // foreach($crustTable as $row) {
+        //     output($row->getData());
+        // }
+
+        $this->push('Operation Completed');
     }
 
     public function handle()
@@ -95,5 +172,90 @@ class SwooleTableTestService
                 echo $table->get($i, 'rollno') . PHP_EOL;
             }
         });
+    }
+
+    public function getDummyUsers()
+    {
+        $users = [
+            [
+                'id' => 1,
+                'name' => 'John Doe',
+                'email' => 'john.doe@example.com',
+                'height' => 5.9,
+                'age' => 17,
+            ],
+            [
+                'id' => 2,
+                'name' => 'Jane Smith',
+                'email' => 'jane.smith@example.com',
+                'height' => 5.4,
+                'age' => 24,
+            ],
+            [
+                'id' => 3,
+                'name' => 'Michael Johnson',
+                'email' => 'michael.johnson@example.com',
+                'height' => 6.1,
+                'age' => 31,
+            ],
+            [
+                'id' => 4,
+                'name' => 'Emily Davis',
+                'email' => 'emily.davis@example.com',
+                'height' => 5.7,
+                'age' => 9,
+            ],
+            [
+                'id' => 5,
+                'name' => 'Chris Brown',
+                'email' => 'chris.brown@example.com',
+                'height' => 6.0,
+                'age' => 31,
+            ],
+            [
+                'id' => 6,
+                'name' => 'Jessica White',
+                'email' => 'jessica.white@example.com',
+                'height' => 5.6,
+                'age' => 29,
+            ],
+            [
+                'id' => 7,
+                'name' => 'David Wilson',
+                'email' => 'david.wilson@example.com',
+                'height' => 5.8,
+                'age' => 60,
+            ],
+            [
+                'id' => 8,
+                'name' => 'Sarah Miller',
+                'email' => 'sarah.miller@example.com',
+                'height' => 5.4,
+                'age' => 24,
+            ],
+            [
+                'id' => 9,
+                'name' => 'James Anderson',
+                'email' => 'james.anderson@example.com',
+                'height' => 5.9,
+                'age' => 40,
+            ],
+            [
+                'id' => 10,
+                'name' => 'Laura Martinez',
+                'email' => 'laura.martinez@example.com',
+                'height' => 5.5,
+                'age' => 19,
+            ],
+        ];
+
+        return $users;
+    }
+
+    public function push(mixed $data) {
+        if ($this->webSocketServer->isEstablished($this->frame->fd)) {
+            $dataToPush = is_array($data) ? json_encode($data) : $data;
+            $this->webSocketServer->push($this->frame->fd, $dataToPush);
+        }
     }
 }

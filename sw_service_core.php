@@ -90,7 +90,11 @@ use App\Core\Processes\MainProcess;
 use App\Core\Services\SubscriptionManager;
 use App\Services\PushToken;
 
+use App\Core\Traits\CustomProcessesTrait;
+
 class sw_service_core {
+
+    use CustomProcessesTrait;
 
     protected $swoole_vesion;
     public $server;
@@ -520,9 +524,10 @@ class sw_service_core {
             $this->revokeInotifyResources($worker_id);
         };
 
-        $onWorkerError = function (OpenSwoole\Server $server, int $workerId) {
+        // Docs: https://wiki.swoole.com/en/#/server/events?id=onworkererror
+        $onWorkerError = function ($server, $worker_id, $worker_pid, $exit_code, $signal) use($revokeWorkerResources) {
             echo "worker abnormal exit.".PHP_EOL."WorkerId=$worker_id|Pid=$worker_pid|ExitCode=$exit_code|ExitSignal=$signal\n".PHP_EOL;
-            $revokeWorkerResources($serv, $worker_id);
+            $revokeWorkerResources($server, $worker_id);
         };
 
         $onWorkerStop = function ($server, int $workerId) {
@@ -598,7 +603,7 @@ class sw_service_core {
 
             // Get FDs subscribed to provided topic
             $subscriptionManager = new SubscriptionManager();
-            $fds = $subscriptionManager->getSubscribersForTopic($topic, true, $server->worker_id);
+            $fds = $subscriptionManager->getFdsOfTopic($topic, true, $server->worker_id);
             unset($subscriptionManager);
 
             // send to your known fds in worker scope
@@ -644,14 +649,14 @@ class sw_service_core {
 
         $this->server->on('open', function($websocketserver, $request) {
             echo "server: handshake success with fd{$request->fd}\n";
-            
+
             // Is connected FD a Privileged FD
             $isPrivilegedFd = isset($request->header) && isset($request->header['privileged-key']) && $request->header['privileged-key'] == config('app_config.privileged_fd_secret');
 
             if ($isPrivilegedFd) {
                 $websocketserver->privilegedFds[$request->fd] = $request->fd;
             }
-            
+
             if (isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && !empty($request->header["refinitive-token-production-endpoint-key"])) {
               if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
 
@@ -673,7 +678,8 @@ class sw_service_core {
                 // Start: Take the list of Topics FD wants to Subscribe to
                 $subscriptionTopics = isset($request->get['topic_subcription']) ? array_map('trim', explode(',', $request->get['topic_subcription'])) : [];
                 if (empty($subscriptionTopics)) {
-                    $websocketserver->push($request->fd, 'Warning: Please provide the topics you want to subscribe to');
+                    $warnMsg = ['message' => 'Warning: Please provide the topics you want to subscribe to', 'status_code' => ResponseStatusCode::UNSUPPORTED_PAYLOAD->value];
+                    $websocketserver->push($request->fd, json_encode($warnMsg));
                 }
 
                 // Handle subscription via SubscriptionManager
@@ -685,31 +691,44 @@ class sw_service_core {
                 }
                 // End Code: Take the list of Topics FD wants to Subscribe to
 
-                // Push the Top Gainers Table Data to FD if it has subscribed topic "top-gainers"
-                if ($subscriptionManager->isSubscribed($request->fd, 'top-gainers')) {
-                    $topGainersData = SwooleTableFactory::getTableData(tableName: 'ref_top_gainers', encodeValues: ['ar_short_name' => 'UTF-8', 'ar_long_name' => 'UTF-8']);
+                // Start Code: Broadcast data of Ref Company's Indicators Data
 
+                // Get all Indicators of Ref Company Data
+                $allRefCompanyDataTopics = array_map('strtolower', explode(',', config('ref_config.ref_fields')));
+
+                // Get All topics of Fd
+                $topics = $subscriptionManager->getTopicsOfFD($request->fd);
+
+                // Get only Company's Ref Data Topics from All Topics of a FD
+                $companyTopics = array_intersect($topics, $allRefCompanyDataTopics);
+
+                if (count($companyTopics) > 0) {
                     // Fetch data from swoole table ma_indicator_job_runs_at
-                    $mAIndicatorJobRunsAtData = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
+                    $mAIndicatorJobRunsAtData = SwooleTableFactory::getSwooleTableData(tableName: 'ma_indicator_job_runs_at');
                     $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
-                    ? $mAIndicatorJobRunsAtData[0]['job_run_at']
-                    : null;
+                        ? $mAIndicatorJobRunsAtData[0]['job_run_at']
+                        : null;
 
+                    // Get common attributes
+                    $commonAttributes = config('common_attributes_config');
+
+                    $data = SwooleTableFactory::getSwooleTableData(tableName: 'ref_data_snapshot_companies', selectColumns: array_merge($companyTopics, $commonAttributes));
                     // Here we will check if the data is encoded without any error
-                    $topGainersJson = json_encode([
-                        'ref_top_gainers' => $topGainersData,
+                    $dataJson = json_encode([
+                        'data' => $data,
                         'job_runs_at' => $mAIndicatorJobRunsAt,
                     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-                    if ($topGainersJson == false) {
+                    if ($dataJson == false) {
                         output("JSON encoding error: " . json_last_error_msg());
                     } else {
                         // Push Data to FD
                         if ($websocketserver->isEstablished($request->fd)) {
-                            $websocketserver->push($request->fd, $topGainersJson);
+                            $websocketserver->push($request->fd, $dataJson);
                         }
                     }
                 }
+                // End Code: Broadcast data of Ref Company's Indicators Data
 
                 unset($subscriptionManager);
             }
@@ -826,7 +845,7 @@ class sw_service_core {
                                 $webSocketServer->push($frame->fd, json_encode($stats));
                             }
                             break;
-                            
+
                         default:
                             if ($webSocketServer->isEstablished($frame->fd)) {
                                 $webSocketServer->push($frame->fd, 'Invalid command given');
@@ -845,11 +864,16 @@ class sw_service_core {
                                 break;
                             case 'boiler-swoole-table':
                                 $service = new \App\Services\SwooleTableTestService($webSocketServer, $frame);
-                                $service->handle();
+                                $service->newHandle();
                                 break;
                             case 'get-news':
-                                $service = new \App\Services\NewsWebsocketService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id], $frameData['request']);
-                                $service->handle();
+                                $subscriptionManager = new SubscriptionManager();
+                                if ($subscriptionManager->isSubscribed($frame->fd, 'news')) {
+                                    $service = new \App\Services\NewsWebsocketService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id], $frameData['request']);
+                                    $service->handle();
+                                }else{
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please subscribe to news first', 'status_code' => 401]));
+                                }
                                 break;
                             case 'users':
                                 $table = SwooleTableFactory::getTable('users');
@@ -927,14 +951,40 @@ class sw_service_core {
                                 $message = 'Worker ID: ' . $webSocketServer->worker_id . ' | FDs: ' . implode(',', $webSocketServer->fds);
                                 $webSocketServer->push($frame->fd, $message);
                                 break;
-                            case 'get-topic-subscriptions':
+                            case 'get-fds-of-topic':
                                 $topic = isset($frameData['topic']) ? trim($frameData['topic']) : "";
-                                $subscriptionManager = new SubscriptionManager();
                                 if (empty($topic)) {
-                                    $data = $subscriptionManager->getAllSubsciptionData();
-                                } else {
-                                    $data = $subscriptionManager->getSubscribersForTopic($topic);
+                                    if ($webSocketServer->isEstablished($frame->fd)) {
+                                        $errMsg = ['message' => 'Topic is required.', 'status_code' => ResponseStatusCode::UNSUPPORTED_PAYLOAD->value];
+                                        $webSocketServer->push($frame->fd, json_encode($errMsg));
+                                    }
+
+                                    break;
                                 }
+
+                                $subscriptionManager = new SubscriptionManager();
+                                $data = $subscriptionManager->getFdsOfTopic($topic);
+
+                                unset($subscriptionManager);
+
+                                if ($webSocketServer->isEstablished($frame->fd)) {
+                                    $webSocketServer->push($frame->fd, json_encode($data));
+                                }
+                                break;
+                            case 'get-topics-of-fd':
+                                // Get the Provided FD, or current fd as default
+                                $fd = isset($frameData['fd']) ? intval($frameData['fd']) : $frame->fd;
+                                $subscriptionManager = new SubscriptionManager();
+                                $subscribedTopics = $subscriptionManager->getTopicsOfFD($fd);
+
+                                if ($webSocketServer->isEstablished($frame->fd)) {
+                                    $webSocketServer->push($frame->fd, json_encode($subscribedTopics));
+                                }
+                                break;
+                            case 'get-subscription-manager-data':
+                                // This command will return all the data of Subscription Manager (For Framework Testing)
+                                $subscriptionManager = new SubscriptionManager();
+                                $data = $subscriptionManager->getAllSubsciptionData();
 
                                 unset($subscriptionManager);
 
@@ -1015,7 +1065,7 @@ class sw_service_core {
             unset($server->privilegedFds[$fd]);
         });
 
-        $this->server->on('disconnect', function(Server $server, int $fd) {
+        $this->server->on('disconnect', function($server, int $fd) {
             echo "connection disconnect: {$fd}\n";
 
             // if (isset(self::$fds[$fd])) {
@@ -1113,30 +1163,6 @@ class sw_service_core {
     }
 
     /**
-     * This function kill all the processes having PID files in process_pids folder
-     *
-     * @return void
-     */
-    public function killProcessesByPidFolder()
-    {
-        $pidFiles = glob(__DIR__ . '/process_pids/*.pid');
-        foreach ($pidFiles as $processPidFile) {
-
-            $pid = intval(shell_exec('cat ' . $processPidFile));
-            // Processes that do not have a timer or loop will exit automatically after completing their tasks.
-            // Therefore, some processes might have already terminated before reaching this point
-            // So here we need to check first if the process is running by passing signal_no param as 0, as per documentation
-            // Doc: https://wiki.swoole.com/en/#/process/process?id=kill
-            if (Process::kill($pid, 0)) {
-                Process::kill($pid, SIGTERM);
-            }
-
-            // Delete the PID File
-            unlink($processPidFile);
-        }
-    }
-
-    /**
      * This function revokes the database connection pool
      *
      * @param  mixed $worker_id The worker ID
@@ -1190,7 +1216,7 @@ class sw_service_core {
                 unset($inotify_handles);
             }
         }
-    }    
+    }
 
     /**
      * Remove the server.pid when server shutdown
