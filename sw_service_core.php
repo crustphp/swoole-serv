@@ -703,29 +703,10 @@ class sw_service_core {
                 $companyTopics = array_intersect($topics, $allRefCompanyDataTopics);
 
                 if (count($companyTopics) > 0) {
-                    // Fetch data from swoole table ma_indicator_job_runs_at
-                    $mAIndicatorJobRunsAtData = SwooleTableFactory::getSwooleTableData(tableName: 'ma_indicator_job_runs_at');
-                    $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
-                        ? $mAIndicatorJobRunsAtData[0]['job_run_at']
-                        : null;
-
-                    // Get common attributes
-                    $commonAttributes = config('common_attributes_config');
-
-                    $data = SwooleTableFactory::getSwooleTableData(tableName: 'ref_data_snapshot_companies', selectColumns: array_merge($companyTopics, $commonAttributes));
-                    // Here we will check if the data is encoded without any error
-                    $dataJson = json_encode([
-                        'data' => $data,
-                        'job_runs_at' => $mAIndicatorJobRunsAt,
-                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-                    if ($dataJson == false) {
-                        output("JSON encoding error: " . json_last_error_msg());
-                    } else {
-                        // Push Data to FD
-                        if ($websocketserver->isEstablished($request->fd)) {
-                            $websocketserver->push($request->fd, $dataJson);
-                        }
+                    $dataJson = $this->getCompaniesIndicatorsTopicsData($companyTopics);
+                    // Push Data to FD
+                    if ($websocketserver->isEstablished($request->fd)) {
+                        $websocketserver->push($request->fd, $dataJson);
                     }
                 }
                 // End Code: Broadcast data of Ref Company's Indicators Data
@@ -1007,9 +988,29 @@ class sw_service_core {
 
                                 // Manage Subscriptions
                                 $results = $subscriptionManager->manageSubscriptions($frame->fd, $frameData['subscribe'], $frameData['unsubscribe'], $webSocketServer->worker_id);
-                                unset($subscriptionManager);
 
+                                // Broadcast the results of Subscription
                                 $webSocketServer->push($frame->fd, json_encode($results));
+
+                                // -------- Start: Broadcast the newly subscribed topics ----------- //
+                                $newlySubscribedTopics = $results['subscribed'];
+                                
+                                // Get all Indicators of Ref Company Data
+                                $allRefCompanyDataTopics = array_map('strtolower', explode(',', config('ref_config.ref_fields')));
+
+                                // Get only Company's Ref Data Topics from All Topics of a FD
+                                $companyTopics = array_intersect($newlySubscribedTopics, $allRefCompanyDataTopics);
+
+                                if (count($companyTopics) > 0) {
+                                    $dataJson = $this->getCompaniesIndicatorsTopicsData($companyTopics);
+                                    // Push Data to FD
+                                    if ($webSocketServer->isEstablished($frame->fd)) {
+                                        $webSocketServer->push($frame->fd, $dataJson);
+                                    }
+                                }
+
+                                // -------- End: Broadcast the newly subscribed topics ----------- //
+                                unset($subscriptionManager);
 
                                 break;
                             default:
@@ -1215,6 +1216,39 @@ class sw_service_core {
                 }
                 unset($inotify_handles);
             }
+        }
+    }
+
+    /**
+     * Get the Companies indicators data based on subscribed Topics of FD
+     *
+     * @param  mixed $companyTopics The company topics that FD has subscribed
+     * @return mixed
+     */
+    public function getCompaniesIndicatorsTopicsData($companyTopics): mixed
+    {
+        // Fetch data from swoole table ma_indicator_job_runs_at
+        $mAIndicatorJobRunsAtData = SwooleTableFactory::getSwooleTableData(tableName: 'ma_indicator_job_runs_at');
+        $mAIndicatorJobRunsAt = isset($mAIndicatorJobRunsAtData[0]['job_run_at'])
+        ? $mAIndicatorJobRunsAtData[0]['job_run_at']
+        : null;
+
+        // Get common attributes
+        $commonAttributes = config('common_attributes_config');
+
+        $data = SwooleTableFactory::getSwooleTableData(tableName: 'ref_data_snapshot_companies', selectColumns: array_merge($companyTopics, $commonAttributes));
+        // Here we will check if the data is encoded without any error
+        $dataJson = json_encode([
+            'ref_data_snapshot_companies' => $data,
+            'job_runs_at' => $mAIndicatorJobRunsAt,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if ($dataJson == false) {
+            output("JSON encoding error: " . json_last_error_msg());
+
+            return false;
+        } else {
+            return $dataJson;
         }
     }
 
