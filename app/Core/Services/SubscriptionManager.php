@@ -4,6 +4,12 @@ namespace App\Core\Services;
 
 use Bootstrap\SwooleTableFactory;
 
+use Crust\SwooleDb\Selector\TableSelector;
+use Crust\SwooleDb\Selector\Enum\ConditionElementType;
+use Crust\SwooleDb\Selector\Enum\ConditionOperator;
+use Crust\SwooleDb\Selector\Bean\ConditionElement;
+use Crust\SwooleDb\Selector\Bean\Condition;
+
 class SubscriptionManager
 {
     protected $subscriptionTable = null;
@@ -27,7 +33,7 @@ class SubscriptionManager
      */
     public function subscribe(int $fd, mixed $topic, int $worker_id): bool
     {
-        $key = "{$topic}:{$fd}";
+        $key = $this->generateKey($fd, $topic);
 
         // Check if the FD is already subscribed
         if (!$this->subscriptionTable->exists($key)) {
@@ -52,7 +58,7 @@ class SubscriptionManager
      */
     public function unsubscribe(int $fd, string $topic): bool
     {
-        $key = "{$topic}:{$fd}";
+        $key = $this->generateKey($fd, $topic);
 
         // Check if the key exists in the table
         if (!$this->subscriptionTable->exists($key)) {
@@ -80,7 +86,7 @@ class SubscriptionManager
      * @param int|null $worker_id Optional worker ID to filter the FDs for provided worker
      * @return array 
      */
-    public function getSubscribersForTopic(string $topic, bool $fdsOnly = false, ?int $worker_id = null): array
+    public function getFdsOfTopic(string $topic, bool $fdsOnly = true, ?int $worker_id = null): array
     {
         $subscribedData = [];
         $subscriptionSwooleTable = $this->subscriptionTable->getSwooleTable();
@@ -101,6 +107,36 @@ class SubscriptionManager
 
         return $subscribedData;
     }
+
+    /**
+     * Get all topics that a specific FD has subscribed to.
+     *
+     * @param int $fd The file descriptor (FD).
+     * @param bool $fdsOnly If true, returns only an array of FDs; if false, returns all data of the row.
+     * @return array
+     */
+    public function getTopicsOfFD(int $fd, bool $fdsOnly = true): array
+    {
+        $subscribedTopics = [];
+        $subscriptionSwooleTable = $this->subscriptionTable->getSwooleTable();
+
+        foreach ($subscriptionSwooleTable as $row) {
+            if ($row['fd'] === $fd) {
+                if ($fdsOnly) {
+                    $subscribedTopics[] = $row['topic'];
+                } else {
+                    $subscribedTopics[] = [
+                        'topic' => $row['topic'],
+                        'fd' => $row['fd'],
+                        'worker_id' => $row['worker_id'],
+                    ];
+                }
+            }
+        }
+
+        return $subscribedTopics;
+    }
+
 
     /**
      * Manage subscriptions (Subscribe/Unsubscribe) for an FD.
@@ -149,13 +185,25 @@ class SubscriptionManager
     public function removeSubscriptionsForFD(int $fd): bool
     {
         $removed = false;
-        $subscriptionSwooleTable = $this->subscriptionTable->getSwooleTable();
 
-        foreach ($subscriptionSwooleTable as $key => $row) {
-            if ($row['fd'] === $fd) {
-                $subscriptionSwooleTable->del($key);
-                $removed = true;
-            }
+        // First Check if FD is Subscribed to any Topic Before Fetching and looping all data.
+        $selector = new TableSelector($this->swooleTableName);
+
+        $selector->where()
+            ->firstCondition(new Condition(
+                new ConditionElement(ConditionElementType::var, 'fd', $this->swooleTableName),
+                ConditionOperator::equal,
+                new ConditionElement(ConditionElementType::const, $fd)
+            ));
+
+        $fdRecords = $selector->execute();
+        
+        // Here we will load the fds into the server
+        foreach ($fdRecords as $record) {
+            $fd = $record[$this->swooleTableName]->getValue('fd');
+            $topic = $record[$this->swooleTableName]->getValue('topic');
+            
+            $removed = $this->subscriptionTable->del($this->generateKey($fd, $topic));
         }
 
         return $removed;
@@ -170,7 +218,19 @@ class SubscriptionManager
      */
     public function isSubscribed(int $fd, string $topic): bool
     {
-        $key = "{$topic}:{$fd}";
+        $key = $this->generateKey($fd, $topic);
         return $this->subscriptionTable->exists($key);
+    }
+
+    /**
+     * This function creates the Key of record for Subscription's Swoole Table
+     *
+     * @param  int $fd
+     * @param  string $topic
+     * @return string
+     */
+    public function generateKey(int $fd, string $topic): string
+    {
+        return "{$topic}:{$fd}";
     }
 }
