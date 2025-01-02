@@ -22,7 +22,7 @@ class PushToken
 
     public function handle()
     {
-        if ($this->request->header["refinitive-token-production-endpoint-key"] == config('app_config.refinitive_production_token_endpoint_key')) {
+        if ($this->request->header["refinitive-token-production-endpoint-key"] == config('ref_config.ref_production_token_endpoint_key')) {
 
             $worker_id = $this->websocketserver->worker_id;
             $tokenFdsTable = SwooleTableFactory::getTable('token_fds');

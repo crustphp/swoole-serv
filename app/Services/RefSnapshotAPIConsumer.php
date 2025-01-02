@@ -10,7 +10,7 @@ class RefSnapshotAPIConsumer
 {
     protected $webSocketServer;
     protected $dbConnectionPools;
-    protected $chunkSize = 100;
+    protected $chunkSize;
     protected $dbFacade;
     protected $mAIndicatorsData = [];
     protected $authCounter = 0;
@@ -24,9 +24,10 @@ class RefSnapshotAPIConsumer
         $this->webSocketServer = $webSocketServer;
         $this->dbConnectionPools = $dbConnectionPools;
         $this->dbFacade = $dbFacade;
-        $this->retry = config('app_config.refinitv_retry');
+        $this->retry = config('app_config.api_calls_retry');
         $this->url = $url;
-        $this->timeout = config('app_config.refinitiv_req_timeout');
+        $this->timeout = config('app_config.api_req_timeout');
+        $this->chunkSize = config('ref_config.ref_chunk_size');
     }
 
     public function handle($companies = null, $fields)

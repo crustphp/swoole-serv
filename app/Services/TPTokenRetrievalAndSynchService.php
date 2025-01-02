@@ -22,7 +22,7 @@ class TPTokenRetrievalAndSynchService
 
     public function __construct($server, $process, $postgresDbKey = null)
     {
-        $this->refProductionTokenEndpointKey = config('app_config.refinitive_production_token_endpoint_key');
+        $this->refProductionTokenEndpointKey = config('ref_config.ref_production_token_endpoint_key');
         $this->server = $server;
         $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
         $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
@@ -61,7 +61,7 @@ class TPTokenRetrievalAndSynchService
             $this->getTokenFrmProductionSever(config('app_config.production_ip'));
         } else {
 //            Co::sleep(2);
-            swTimer::tick(config('app_config.refinitive_token_time_span'), function ($timerId) {
+            swTimer::tick(config('app_config.api_token_time_span'), function ($timerId) {
                 $refToken = new RefToken($this->server, $this->dbFacade, $this->objDbPool);
                 $refToken->produceActiveToken();
                 unset($refToken);

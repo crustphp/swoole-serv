@@ -5,6 +5,7 @@ use DB\DBConnectionPool;
 use Swoole\Timer;
 use phpseclib3\Net\SFTP;
 use DB\DbFacade;
+use App\Services\TranslateService;
 class NewsService
 {
     protected $server;
@@ -166,8 +167,8 @@ class NewsService
     {
         try {
             // Establish SFTP connection (replace this with your Swoole-compatible SFTP logic)
-            $sftp = new SFTP(config('app_config.spglobal_ftp_url'));
-            if (!$sftp->login(config('app_config.spglobal_username'), config('app_config.spglobal_password'))) {
+            $sftp = new SFTP(config('spg_config.spglobal_ftp_url'));
+            if (!$sftp->login(config('spg_config.spglobal_username'), config('spg_config.spglobal_password'))) {
                 echo "SFTP login failed" . PHP_EOL;
                 return;
             }
@@ -256,6 +257,8 @@ class NewsService
                         $rows = array_filter($rows, function ($value) {
                             return !is_null($value) && $value !== '';
                         });
+
+                        $translateService = new TranslateService();
     
                         foreach ($rows as $row) {
                             $columns = explode("'~'", $row);
@@ -265,7 +268,9 @@ class NewsService
                             $spEffectiveDate = date('Y-m-d H:i:s', strtotime(trim($columns[2], "'")));
                             $spToDate = date('Y-m-d H:i:s', strtotime(trim($columns[3], "'")));
                             $headline = str_replace("'", "''", trim($columns[4], "'"));
+                            $headline_ar = $translateService->translateToArabic($headline);
                             $situation = str_replace("'", "''", trim($columns[5], "'"));
+                            $situation_ar = $translateService->translateToArabic($situation);
                             $announcedDate = date('Y-m-d H:i:s', strtotime(trim($columns[6], "'")));
                             $announcedDateTimeZoneId = is_numeric(trim($columns[7], "'")) ? trim($columns[7], "'") : 'NULL';
                             $announceddateUTC = date('Y-m-d H:i:s', strtotime(trim($columns[8], "'")));
@@ -284,15 +289,17 @@ class NewsService
     
                             if (!$exists) {
                                 // Construct the insert query with all columns included
+
                                 $query = "INSERT INTO key_dev (
-                                    \"keyDevId\", \"spEffectiveDate\", \"spToDate\", \"headline\", \"situation\", \"announcedDate\", 
-                                    \"announcedDateTimeZoneId\", \"announceddateUTC\", \"enteredDate\", \"enteredDateUTC\", 
+                                    \"keyDevId\", \"spEffectiveDate\", \"spToDate\", \"headline\", \"situation\", \"headline_ar\", \"situation_ar\", 
+                                    \"announcedDate\", \"announcedDateTimeZoneId\", \"announceddateUTC\", \"enteredDate\", \"enteredDateUTC\", 
                                     \"lastModifiedDate\", \"lastModifiedDateUTC\", \"mostImportantDateUTC\"
                                 ) VALUES (
-                                    '$keyDevId', '$spEffectiveDate', '$spToDate', '$headline', '$situation', '$announcedDate', 
-                                    $announcedDateTimeZoneId, '$announceddateUTC', '$enteredDate', '$enteredDateUTC', 
+                                    '$keyDevId', '$spEffectiveDate', '$spToDate', '$headline', '$situation', '$headline_ar', '$situation_ar', 
+                                    '$announcedDate', $announcedDateTimeZoneId, '$announceddateUTC', '$enteredDate', '$enteredDateUTC', 
                                     '$lastModifiedDate', '$lastModifiedDateUTC', '$mostImportantDateUTC'
                                 )";
+
     
                                 // Execute the insert query
                                 $this->dbFacade->query($query, $this->objDbPool);

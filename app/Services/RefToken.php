@@ -39,7 +39,7 @@ class RefToken
         $this->clientId = config('ref_config.client_id');
         $this->refreshGrantType = config('ref_config.refresh_grant_type');
         $this->url = config('ref_config.url');
-        $this->timeout = config('app_config.refinitiv_req_timeout');
+        $this->timeout = config('app_config.api_req_timeout');
 
         $this->server = $server;
         $this->objDbPool = $objDbPool;
