@@ -328,3 +328,15 @@ if (!function_exists('removeItemFromJsonFile')) {
         return writeDataToJsonFile($filteredData, $absoluteFilePath, 'w');
     }
 }
+
+
+if (!function_exists('basePath')) {    
+    /**
+     * Returns the Swoole project's base path.
+     *
+     * @return string
+     */
+    function basePath(): string {
+        return __DIR__;
+    }
+}

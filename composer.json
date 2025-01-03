@@ -26,7 +26,8 @@
         "psr-4": {
             "DB\\": "bootstrap/db/",
             "Bootstrap\\": "bootstrap/",
-            "Websocketclient\\": "websocketclient/"
+            "Websocketclient\\": "websocketclient/",
+            "App\\Core\\Traits\\": "app/Core/Traits/"
         }
     }
 }
