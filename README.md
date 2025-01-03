@@ -144,7 +144,7 @@ cd to swoole-serv folder, and then run the command below;
 ```sudo php ./websocketclient/websocketclient_usage.php```
 
 ##### To reload server workers from server-side script (after code changes):
-```php sw_service.php reload```
+```php sw_service.php reload-code```
 
 ##### To reload server workers from client-side script (after code changes):
 ```sudo php ./websocketclient/websocketclient_usage.php reload-code```
@@ -195,6 +195,11 @@ sudo phpenmod -s cli swoole
  sudo lsof -t -i:9501
 ```
 
+##### Get the Server Stats:
+
+```sh
+php sw_service.php stats
+```
 
 # Setting up Phinx (Database Migrations)
 You can setup the database and other Phinx configuration inside `config/phinx.php` file
@@ -207,7 +212,7 @@ composer run-script phinx:create MigrationFileName
 ```
 
 ## Running Migrations
-The Migrate command runs all of the available migrations, optionally up to a specific version.
+The Migrate command runs all of the available migrations, optionally up to a specific version. (Specifying environment is optional, migration will migrate on a default environment, set in phinx.php config, if -e flag is ignored)
 
 ```
 composer run-script phinx:migrate -- -e <environment>
@@ -217,7 +222,7 @@ To migrate to a specific version then use the `--target` parameter or `-t` for s
 Example:
 
 ```
-composer run-script phinx:migrate -- -e db -t 20110103081132
+composer run-script phinx:migrate -- -t 20110103081132
 ```
 
 Use `--dry-run` to print the queries to standard output without executing them
@@ -231,25 +236,25 @@ The Rollback command is used to undo previous migrations executed by Phinx. It i
 You can rollback to the previous migration by using the  `rollback`  command with no arguments.
 
 ```
-composer run-script phinx:rollback -- -e db
+composer run-script phinx:rollback
 ```
 
 To rollback all migrations to a specific version then use the `--target` parameter or `-t` for short.
 
 ```
-composer run-script phinx:rollback -- -e db -t 20120103083322
+composer run-script phinx:rollback -- -t 20120103083322
 ```
 
 Specifying 0 as the target version will revert all migrations.
 
 ```
-composer run-script phinx:rollback -- -e db -t 0
+composer run-script phinx:rollback -- -t 0
 ```
 
 Use `--dry-run` to print the queries to standard output without executing them
 
 ```
-composer run-script phinx:rollback -- -e db --dry-run
+composer run-script phinx:rollback -- --dry-run
 ```
 
 ## Database Seeding
@@ -262,11 +267,11 @@ composer run-script phinx:seed-create MyNewSeeder
 The Seed Run command runs all of the available seed classes or optionally just one.
 
 ```
-composer run-script phinx:seed-run -- -e db
+composer run-script phinx:seed-run
 ```
 
 To run only one seed class use the `--seed` parameter or `-s` for short.
 
 ```
-composer run-script phinx:seed-run -- -e db -s MyNewSeeder
+composer run-script phinx:seed-run -- -s MyNewSeeder
 ```

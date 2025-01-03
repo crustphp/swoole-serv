@@ -111,7 +111,7 @@ class ConnectionPool
                 
                 if (!$this->pool->isEmpty()) {
                     $client = $this->pool->pop();
-                    if (is_callable($client->close())) {
+                    if (method_exists($client, 'close')) {
                         $client->close();
                     }
                     else {
