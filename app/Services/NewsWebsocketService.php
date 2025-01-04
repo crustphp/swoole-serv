@@ -154,17 +154,15 @@ class NewsWebsocketService
                     'keyDevEventTypeID' => $row['keyDevEventTypeID'],
                     'keyDevToObjectRoleTypeID' => $row['keyDevToObjectRoleTypeID'],
                     'company' => [
-                        'id' => $row['id'],
-                        'name' => $row['name'],
-                        'sp_comp_name' => $row['sp_comp_name'],
-                        'en_long_name' => $row['en_long_name'],
-                        'en_short_name' => $row['en_short_name'],
-                        'ar_long_name' => $row['ar_long_name'],
-                        'ar_short_name' => $row['ar_short_name']
+                        'sp_comp_id' => $row['sp_comp_id'],
+                        'en_long_name' => $row['name'],
+                        'en_short_name' => $row['short_name'],
+                        'ar_long_name' => $row['arabic_name'],
+                        'ar_short_name' => $row['arabic_short_name']
                     ],
                     'category_type' => [
                         'keyDevEventTypeId' => $row['keyDevEventTypeID'],
-                        'keyDevCategoryId' => $row['keyDevCategoryID'],
+                        'keyDevCategoryId' => $row['keyDevCategoryId'],
                         'keyDevCategoryName' => $row['keyDevCategoryName'],
                         'keyDevEventTypeName' => $row['keyDevEventTypeName']
                     ]
