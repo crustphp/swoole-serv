@@ -7,6 +7,8 @@ use Carbon\Carbon;
 use App\Core\Services\APIConsumer;
 use Bootstrap\SwooleTableFactory;
 use Websocketclient\WebSocketClient;
+use Swoole\Coroutine\WaitGroup;
+use Throwable;
 
 
 class RefToken
@@ -216,7 +218,20 @@ class RefToken
 
         $dbQuery = "SELECT * FROM $tableName LIMIT 1";
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-        $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+        $result = null;
+
+        $waitGroup = new WaitGroup();
+        $waitGroup->add();
+        go(function () use ($waitGroup, $dbQuery, &$result) {
+            try {
+                $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+            } catch (Throwable $e) {
+                output($e);
+            }
+            $waitGroup->done();
+        });
+
+        $waitGroup->wait();
         return $result ? $result[0] : null;
     }
 
@@ -249,7 +264,13 @@ class RefToken
         $insertQuery = "INSERT INTO refinitiv_auth_tokens (access_token, refresh_token, expires_in, created_at, updated_at)
         VALUES ('$accessToken', '$refreshToken', $expiresIn, '$createdAt', '$updatedAt')";
 
-        $this->dbFacade->query($insertQuery, $this->objDbPool);
+        go(function () use ($insertQuery) {
+            try {
+                $this->dbFacade->query($insertQuery, $this->objDbPool);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
     }
 
     function fetchRefRefreshTokenFromRefAPI($refreshToken)
@@ -286,7 +307,13 @@ class RefToken
             updated_at = '$updatedAt'
         WHERE id = $tokenId";
 
-        $this->dbFacade->query($updateQuery, $this->objDbPool);
+        go(function () use ($updateQuery) {
+            try {
+                $this->dbFacade->query($updateQuery, $this->objDbPool);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
     }
 
 }

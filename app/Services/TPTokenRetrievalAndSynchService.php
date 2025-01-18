@@ -8,6 +8,8 @@ use Swoole\Timer as swTimer;
 use DB\DbFacade;
 use Swoole\Coroutine\Http\Client;
 use Swoole\Coroutine as Co;
+use Swoole\Coroutine\WaitGroup;
+use Throwable;
 
 class TPTokenRetrievalAndSynchService
 {
@@ -114,9 +116,22 @@ class TPTokenRetrievalAndSynchService
     public function getRefTokenFromDB()
     {
         $tableName = 'refinitiv_auth_tokens';
-
+        $result = null;
         $dbQuery = "SELECT * FROM $tableName LIMIT 1";
-        $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+
+        $waitGroup = new WaitGroup();
+        $waitGroup->add();
+        go(function () use ($waitGroup, $dbQuery, &$result) {
+            try {
+                $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+            } catch (Throwable $e) {
+                output($e);
+            }
+            $waitGroup->done();
+        });
+
+        $waitGroup->wait();
+
         return $result ? $result[0] : null;
     }
 
@@ -130,15 +145,28 @@ class TPTokenRetrievalAndSynchService
             updated_at = '$updatedAt'
         WHERE id = $tokenId";
 
-        $this->dbFacade->query($updateQuery, $this->objDbPool);
+        go(function () use ($updateQuery) {
+            try {
+                $this->dbFacade->query($updateQuery, $this->objDbPool);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
     }
 
     function insertIntoRefAuthTable($accessToken, $refreshToken, $expiresIn, $createdAt, $updatedAt)
     {
-        $insertQuery = "INSERT INTO refinitiv_auth_tokens (access_token, refresh_token, expires_in, created_at, updated_at)
-        VALUES ('$accessToken', '$refreshToken', $expiresIn, '$createdAt', '$updatedAt')";
 
-        $this->dbFacade->query($insertQuery, $this->objDbPool);
+        $insertQuery = "INSERT INTO refinitiv_auth_tokens (access_token, refresh_token, expires_in, created_at, updated_at)
+            VALUES ('$accessToken', '$refreshToken', $expiresIn, '$createdAt', '$updatedAt')";
+
+        go(function () use ($insertQuery) {
+            try {
+                $this->dbFacade->query($insertQuery, $this->objDbPool);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
     }
 
     /**
