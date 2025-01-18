@@ -2,7 +2,7 @@
 $swoole_config = [
     'coroutine_settings' => [
         'max_concurrency' => 100,
-        'max_coroutine' => 60000,
+        'max_coroutine' => intval($_ENV['SW_MAX_COROUTINE'] ?? 60000),
         // Can also be set using Swoole\Runtime::enableCoroutine(true, SWOOLE_HOOK_ALL);
         //'hook_flags' => SWOOLE_HOOK_ALL,
     ],
