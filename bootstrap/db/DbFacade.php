@@ -12,12 +12,18 @@ namespace DB;
 use Swoole\Runtime;
 use DB\SwoolePgConnectionPool;
 
-// use Swoole\Coroutine as Co;
+use Swoole\Coroutine as Co;
+use Swoole\Coroutine\WaitGroup;
+use Throwable;
 
 class DbFacade {
 
     public function query($db_query, $objDbPool, array $options = null, $transaction = false, $lock = false, $tableName = '')
     {
+        // Check if this function is called in Coroutine Context or not
+        if (Co::getCid() == -1) {
+            throw new \RuntimeException('Query must be excuted inside a coroutine: ' . $db_query);
+        }
         ////////////////////////////////////////////////////////////////////////////////
         //// Get DB Connection from a Connection Pool created through 'smf' package ////
         ////////////////////////////////////////////////////////////////////////////////
@@ -31,6 +37,11 @@ class DbFacade {
 
         $connectionPoolObj = $objDbPool->get_connection_pool_with_key();
         $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+
+        if (!$postgresClient) {
+            throw new \RuntimeException("Failed to get postgresClient from the Pool");
+        }
+
         $connectionTested = false;
 
         if ($transaction) {
@@ -38,7 +49,7 @@ class DbFacade {
                 $postgresClient = $this->getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool);
                 $pdo_statement = $postgresClient->query('BEGIN');
                 $connectionTested = true;
-                
+
                 if(!$pdo_statement) {
                     throw new \RuntimeException('pdo function query() failed: ' . (isset($postgresClient->errCode) ? $postgresClient->errCode : ''));
                 }
@@ -87,7 +98,7 @@ class DbFacade {
                 $postgresClient = $this->getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool);
                 $pdo_statement = $postgresClient->query($db_query);
                 // $connectionTested = true; // Not Required Here
-                
+
                 if(!$pdo_statement) {
                     if ($transaction) {
                         $postgresClient->query('ROLLBACK');
@@ -107,9 +118,9 @@ class DbFacade {
         // Return the connection to pool as soon as possible
         $objDbPool->put_dbObject_using_pool_key($postgresClient);
 
-        return $data;        
+        return $data;
     }
-    
+
     /**
      * This function replaces disconnected Postgres Client with a fresh one.
      *
@@ -126,8 +137,22 @@ class DbFacade {
         return $postgresClient;
     }
 
-    public function getClient($objDbPool) {
-        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+    public function getClient($objDbPool)
+    {
+        $postgresClient = null;
+
+        $waitGroup = new WaitGroup();
+        $waitGroup->add();
+        go(function () use ($waitGroup, $objDbPool, &$postgresClient) {
+            try {
+                $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+            } catch (Throwable $e) {
+                output($e);
+            }
+            $waitGroup->done();
+        });
+
+        $waitGroup->wait();
 
         // Test Later: If there is not connection available then wait for 200 milliseconds and try again
         // while (empty($postgresClient) || is_null($postgresClient)) {
@@ -135,6 +160,9 @@ class DbFacade {
 
         //     $postgresClient = $objDbPool->get_dbObject_using_pool_key();
         // }
+        if (!$postgresClient) {
+            throw new \RuntimeException("Failed to get postgresClient from the Pool");
+        }
 
         return $postgresClient;
     }

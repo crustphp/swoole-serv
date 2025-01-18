@@ -1,5 +1,7 @@
 <?php
 
+use Carbon\Carbon;
+
 if (!function_exists('hdump')){
     function hdump($var)
     {
@@ -24,6 +26,9 @@ if (!function_exists('output')) {
     {
         // New line at start and begining of output to make it appear seperated from the rest
         echo PHP_EOL;
+
+        // Also log the Time with data.
+        echo '[' . Carbon::now()->format('Y-m-d H:i:s') . '] --> ';
 
         if ($shouldVarDump) {
             var_dump($data);
@@ -338,5 +343,18 @@ if (!function_exists('basePath')) {
      */
     function basePath(): string {
         return __DIR__;
+    }
+}
+
+// Returns the file used to start the service (e.g sw_service)
+if (!function_exists('serviceStartedBy')) {    
+    /**
+     * Returns the file used to start the service (e.g sw_service)
+     *
+     * @return string
+     */
+    function serviceStartedBy(): string {
+        global $argv;
+        return isset($argv[0]) ? pathinfo($argv[0], PATHINFO_FILENAME) : "";
     }
 }

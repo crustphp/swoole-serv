@@ -57,7 +57,7 @@ class SwooleTableFactory
 
                     // Check if Columns has its own preference for meta data, otherwise use Table Level Meta
                     $isNullable = $cDef['is_nullable'] ?? $allColsNullable;
-
+                    
                     $isSigned = false;
                     if ($cDef['type'] == 'int' || $cDef['type'] == 'float') {
                         $isSigned = $cDef['is_signed'] ?? $allColsSigned;
@@ -126,7 +126,7 @@ class SwooleTableFactory
 
     /**
      * @deprecated This function is deprecated as if we update the size, its scope limits to only current Worker/Process instead of entire application.
-     *
+     * 
      * The function updates the size of a table by creating a new table with the
      * specified size and transferring the data from the original table to the new one.
      *

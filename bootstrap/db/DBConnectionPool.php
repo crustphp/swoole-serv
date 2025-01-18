@@ -11,6 +11,7 @@ use DB\ConnectionPoolTrait;
 
 use Swoole\Database\PDOConfig;
 use Swoole\Database\PDOPool;
+use Swoole\Coroutine;
 
 use OpenSwoole\Core\Coroutine\Client\PostgresClientFactory as oswPostgresClientFactory;
 use OpenSwoole\Core\Coroutine\Client\PostgresConfig as oswPostgresConfig;
@@ -244,6 +245,7 @@ class DBConnectionPool
         if (is_null($pool_key)) {
             $pool_key = $this->pool_key;
         }
+
         $objConnectionPool = $this->getConnectionPool($pool_key);
         $poolDriver = $this->poolDriver;
         if ($poolDriver == 'smf') {
@@ -254,6 +256,12 @@ class DBConnectionPool
             // for OpenSwoole it is of type OpenSwoole\Core\Coroutine\Pool\ClientPool
             // For Swoole get() returns new Swoole\Coroutine\PostgreSQL();
             // For OpenSwoole get() returns new OpenSwoole\Coroutine\PostgreSQL();
+
+            // Check if the code is executed inside coroutine context
+            if (Coroutine::getCid() == -1) {
+                throw new \RuntimeException(__METHOD__ . ' Should be called in the coroutine context');
+            }
+            
             return $objConnectionPool->get();
         }
     }

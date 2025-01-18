@@ -63,7 +63,7 @@ class ConnectionPool
         // If its the case for replace the connection
         if ($replace && $this->num != 0) {
             $this->put(null);
-        } 
+        }
         // Default case If pool is empty and we a space/num to create a new connection then we create it.
         else if ($this->pool->isEmpty() && $this->num < $this->size) {
             $this->make();
@@ -84,7 +84,7 @@ class ConnectionPool
         }
 
         if ($connection !== null) {
-            $this->pool->push($connection);            
+            $this->pool->push($connection);
         } else {
             /* connection broken */
             $this->num -= 1;
@@ -108,23 +108,26 @@ class ConnectionPool
                 //     co::sleep(1);
                 //     continue;
                 // }
-                
+
                 if (!$this->pool->isEmpty()) {
-                    $client = $this->pool->pop();
-                    if (method_exists($client, 'close')) {
-                        $client->close();
-                    }
-                    else {
-                        unset($client);
-                    }
+                    go(function () {
+                        $client = $this->pool->pop();
+
+                        if ($client) {
+                            if (method_exists($client, 'close')) {
+                                $client->close();
+                            } else {
+                                unset($client);
+                            }
+                        }
+                    });
                 }
-            }
-            while (!($this->pool->isEmpty() && $this->inUse == 0));
-    
+            } while (!($this->pool->isEmpty() && $this->inUse == 0));
+
             $this->pool->close();
             $this->pool = null;
             $this->num  = 0;
-        }        
+        }
     }
 
     protected function make(): void

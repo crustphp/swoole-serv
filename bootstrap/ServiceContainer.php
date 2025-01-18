@@ -236,7 +236,9 @@ class ServiceContainer
             }
 
             // Call the callback of the Process Service Class registered
-            return call_user_func([$processServiceInstance, $processInfo['callback'][1]]);
+            call_user_func([$processServiceInstance, $processInfo['callback'][1]]);
+
+            return $processServiceInstance;
         } else {
             // Execute the callback function if provided, otherwise run the default functionality
             if (!is_null($customFactoryAsCallback)) {

@@ -1,5 +1,11 @@
 [
     {
+        "name": "RefTokenProcess",
+        "redirect_stdin_and_stdout": false,
+        "pipe_type": 2,
+        "enable_coroutine": true
+    },
+    {
         "name": "NewsProcess",
         "redirect_stdin_and_stdout": false,
         "pipe_type": 2,
@@ -7,12 +13,6 @@
     },
     {
         "name": "RefProcess",
-        "redirect_stdin_and_stdout": false,
-        "pipe_type": 2,
-        "enable_coroutine": true
-    },
-    {
-        "name": "RefTokenProcess",
         "redirect_stdin_and_stdout": false,
         "pipe_type": 2,
         "enable_coroutine": true
