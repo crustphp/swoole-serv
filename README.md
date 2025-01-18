@@ -29,6 +29,12 @@ Run the following command to install swoole
 pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-json="no" enable-swoole-curl="yes" enable-cares="yes" enable-swoole-pgsql="yes" enable-debug="yes" enable-debug-log="yes" enable-trace-log="yes" enable-thread-context="yes"' swoole
 ```
 
+(Optionally) To install the specific version of Swoole, run following command:
+
+```sh
+pecl install -D 'enable-sockets="yes" enable-openssl="yes" enable-http2="yes" enable-mysqlnd="yes" enable-swoole-json="no" enable-swoole-curl="yes" enable-cares="yes" enable-swoole-pgsql="yes" enable-debug="yes" enable-debug-log="yes" enable-trace-log="yes" enable-thread-context="yes"' swoole-5.1.3
+```
+
 **Note:** If swoole is already installed (but not correctly) then remove it using following commands and run the above command again.
 
 ```
@@ -274,4 +280,41 @@ To run only one seed class use the `--seed` parameter or `-s` for short.
 
 ```
 composer run-script phinx:seed-run -- -s MyNewSeeder
+```
+
+# Monitoring Script
+### Run the monitoring script
+The monitoring script sends a ping to the WebSocket server and waits for a pong response. If, at any point, the script stops receiving the pong response within the specified timeout period, it terminates all processes running on the specified port and restarts the WebSocket server.
+
+You can run the monitoring script using the following command (make sure to execute it with sudo):
+
+```
+sudo php monitoring.php
+```
+
+By default, the script will run with the following settings:
+
+- Daemon mode: Enabled (1)
+- Host: 127.0.0.1
+- Port: 9501
+- Timeout: 15 seconds (time after which the WebSocket server will restart if no pong is received)
+- Ping Timer: 5000 milliseconds (interval for sending ping requests, equivalent to 5 seconds)
+
+To run the monitoring script with custom settings or options, use the following command:
+
+```
+sudo php monitoring.php --host=127.0.0.1 --port=9501 --timeout=15 --daemon=1 --pingtimer=5000
+```
+
+### Other useful commands related to Monitoring script
+1- Check if Monitoring Process is running:
+
+```
+pidof php-monitoring:swoole-monitoring-process
+```
+
+2- Stop / Shutdown the Monitoring Process:
+
+```
+sudo kill -9 $(pidof php-monitoring:swoole-monitoring-process)
 ```
