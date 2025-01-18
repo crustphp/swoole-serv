@@ -22,6 +22,8 @@ class MainProcess
     // Atomic counter for process IDs
     protected $processIdCounter = null;
 
+    protected $serviceStartedBy = "";
+
     public function __construct($server, $process)
     {
         $this->server = $server;
@@ -35,6 +37,9 @@ class MainProcess
             $startFrom = config('swoole_config.server_settings.worker_num') + config('swoole_config.server_settings.task_worker_num') - 1;
             $this->processIdCounter = new Atomic($startFrom);
         }
+
+        // Used for setting prefix for Process Name
+        $this->serviceStartedBy = serviceStartedBy();
     }
 
     /**
@@ -79,7 +84,7 @@ class MainProcess
             $processCallback = function (Process $process) use ($processKey, $processInfo) {
                 try {
                     // Set the name of the process
-                    $process->name($processKey);
+                    $process->name("php-{$this->serviceStartedBy}-" . $processKey);
 
                     // Since we are usign $process->start so we will not have $process->id ...
                     // So we use Swoole Atomic to get incremented value to be used as process ID
