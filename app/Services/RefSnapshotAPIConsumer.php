@@ -5,6 +5,8 @@ namespace App\Services;
 use Swoole\Coroutine\Barrier;
 use Swoole\Coroutine;
 use App\Core\Services\APIConsumer;
+use Throwable;
+use Swoole\Coroutine\Channel;
 
 class RefSnapshotAPIConsumer
 {
@@ -41,7 +43,18 @@ class RefSnapshotAPIConsumer
             AND ric ~ '^[0-9a-zA-Z\\.]+$'";
 
             // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-            $results = $this->dbFacade->query($dbQuery, $this->dbConnectionPools);
+            $channel = new Channel(1);
+            go(function () use ( $dbQuery, $channel) {
+                try {
+                    $result = $this->dbFacade->query($dbQuery, $this->dbConnectionPools);
+                    $channel->push($result);
+                } catch (Throwable $e) {
+                    output($e);
+                }
+            });
+
+            $results = $channel->pop();
+
             $companiesRics = [];
 
             if (!empty($results)) {
@@ -82,8 +95,8 @@ class RefSnapshotAPIConsumer
             $this->tooManyRequestCounter = 0;
             // Process each chunk asynchronously using coroutines
             foreach ($ricsChunks as $chunk) {
-                    $queryParams['universe'] = '/' . implode(',/', $chunk);
-                    $this->sendRequest($chunk, $queryParams, $refAccessToken, $mAIndicatorBarrier);
+                $queryParams['universe'] = '/' . implode(',/', $chunk);
+                $this->sendRequest($chunk, $queryParams, $refAccessToken, $mAIndicatorBarrier);
             }
 
             Barrier::wait($mAIndicatorBarrier);

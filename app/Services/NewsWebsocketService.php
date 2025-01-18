@@ -2,6 +2,8 @@
 
 namespace App\Services;
 use DB\DbFacade;
+use Throwable;
+use Swoole\Coroutine\Channel;
 class NewsWebsocketService
 {
     protected $dbConnectionPools;
@@ -27,33 +29,33 @@ class NewsWebsocketService
     {
         $objDbPool = $this->dbConnectionPools[$this->postgresDbKey];
         $dbFacade = new DbFacade();
-    
+
         // Base query with necessary joins
-        $baseQuery = "SELECT 
-            kd.*, 
-            kds.\"keyDevId\" AS split_keyDevId, 
-            kdote.*, 
-            c.*, 
-            kte.*, 
-            st.*, 
+        $baseQuery = "SELECT
+            kd.*,
+            kds.\"keyDevId\" AS split_keyDevId,
+            kdote.*,
+            c.*,
+            kte.*,
+            st.*,
             tz.\"announcedDateTimeZoneId\", tz.\"announcedDateTimeZoneName\"
         FROM key_dev kd
-        LEFT JOIN key_dev_split_info kds 
+        LEFT JOIN key_dev_split_info kds
             ON kd.\"keyDevId\" = kds.\"keyDevId\"
-        LEFT JOIN key_dev_to_object_to_event_type kdote 
-            ON kd.\"keyDevId\" = kdote.\"keyDevID\" 
+        LEFT JOIN key_dev_to_object_to_event_type kdote
+            ON kd.\"keyDevId\" = kdote.\"keyDevID\"
             AND kd.\"spEffectiveDate\" = kdote.\"spEffectiveDate\"
-        LEFT JOIN companies c 
+        LEFT JOIN companies c
             ON kdote.\"objectID\" = c.\"sp_comp_id\"
-        LEFT JOIN key_dev_category_type kte 
+        LEFT JOIN key_dev_category_type kte
             ON kdote.\"keyDevEventTypeID\" = kte.\"keyDevEventTypeId\"
-        LEFT JOIN key_dev_to_source_type dts 
+        LEFT JOIN key_dev_to_source_type dts
             ON kd.\"keyDevId\" = dts.\"keyDevId\"
-        LEFT JOIN source_type st 
+        LEFT JOIN source_type st
             ON dts.\"sourceTypeId\" = st.\"sourceTypeId\"
-        LEFT JOIN key_dev_time_zone tz 
+        LEFT JOIN key_dev_time_zone tz
             ON kd.\"announcedDateTimeZoneId\" = tz.\"announcedDateTimeZoneId\"";
-    
+
         $whereClauses = [];
 
         // Filters
@@ -99,9 +101,21 @@ class NewsWebsocketService
         $finalQuery .= " ORDER BY kd.\"announcedDate\" DESC, kd.\"keyDevId\" ASC";
 
         $countQuery = "SELECT COUNT(*) as total FROM ($baseQuery) as subquery";
-        $totalResult = $dbFacade->query($countQuery, $objDbPool);
+
+        $channel = new Channel(1);
+            go(function () use ( $dbFacade, $countQuery, $objDbPool, $channel) {
+                try {
+                    $result = $dbFacade->query($countQuery, $objDbPool);
+                    $channel->push($result);
+                } catch (Throwable $e) {
+                    output($e);
+                }
+            });
+
+        $totalResult = $channel->pop();
+
         $total = $totalResult[0]['total'] ?? 0;
-    
+
         // Pagination logic
         $limit = 20;
         $page = isset($this->request['page']) ? (int)$this->request['page'] : 1;
@@ -109,8 +123,18 @@ class NewsWebsocketService
         $finalQuery .= " LIMIT $limit OFFSET $offset";
 
         // Execute query
-        $newsData = $dbFacade->query($finalQuery, $objDbPool);
-    
+        $channel = new Channel(1);
+            go(function () use ( $dbFacade, $finalQuery, $objDbPool, $channel) {
+                try {
+                    $result = $dbFacade->query($finalQuery, $objDbPool);
+                    $channel->push($result);
+                } catch (Throwable $e) {
+                    output($e);
+                }
+            });
+
+        $newsData = $channel->pop();
+
         // Process and structure the data
         $news = [];
         foreach ($newsData as $row) {
@@ -136,14 +160,14 @@ class NewsWebsocketService
                     'time_zone' => []
                 ];
             }
-    
+
             // Add related data
             if (!empty($row['split_keyDevId'])) {
                 $news[$keyDevId]['split_info'][] = [
                     'keyDevId' => $row['split_keyDevId']
                 ];
             }
-    
+
             if (!empty($row['keyDevToObjectToEventTypeID'])) {
                 $news[$keyDevId]['object_to_event_type'][] = [
                     'keyDevToObjectToEventTypeID' => $row['keyDevToObjectToEventTypeID'],
@@ -168,14 +192,14 @@ class NewsWebsocketService
                     ]
                 ];
             }
-    
+
             if (!empty($row['sourceTypeId'])) {
                 $news[$keyDevId]['dev_to_source_type'][] = [
                     'sourceTypeId' => $row['sourceTypeId'],
                     'sourceTypeName' => $row['sourceTypeName']
                 ];
             }
-    
+
             if (!empty($row['announcedDateTimeZoneId'])) {
                 $news[$keyDevId]['time_zone'][] = [
                     'announcedDateTimeZoneId' => $row['announcedDateTimeZoneId'],
@@ -183,7 +207,7 @@ class NewsWebsocketService
                 ];
             }
         }
-    
+
         // Build final result
         $result = [
             'news' => [
@@ -194,9 +218,9 @@ class NewsWebsocketService
             ],
             'status' => 200
         ];
-    
+
         // Push to WebSocket
         $this->webSocketServer->push($this->frame->fd, json_encode($result));
     }
-    
+
 }

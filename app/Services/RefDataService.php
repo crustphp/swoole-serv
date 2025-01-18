@@ -9,6 +9,8 @@ use App\Services\RefSnapshotAPIConsumer;
 use DB\DbFacade;
 use Carbon\Carbon;
 use Bootstrap\SwooleTableFactory;
+use Throwable;
+use Swoole\Coroutine\Channel;
 
 class RefDataService
 {
@@ -119,10 +121,10 @@ class RefDataService
     {
         $dataExistInDB = false;
         $dataInitCase = false;
-        // Check the data exist into swoole table
-        $indicatorsJobRunsAt = SwooleTableFactory::getTableData(tableName: 'ma_indicator_job_runs_at');
+        // Aggregate query to get the count from the Refinitive table
+        $dataExistInDB = $this->getDataCountFromDB(self::REFSNAPSHOTCOMPANIES);
 
-        if (count($indicatorsJobRunsAt) > 0) {
+        if ($dataExistInDB) {
             $dataExistInDB = true;
             $companyDetailWithRefData = $this->getAllCompaniesWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES);
         } else {
@@ -158,7 +160,19 @@ class RefDataService
         FROM '.$tableName.' refTable JOIN companies c ON refTable.company_id = c.id
         INNER JOIN markets As m On c.parent_id = m.id ORDER BY refTable.updated_at DESC';
 
-        return $this->dbFacade->query($dbQuery, $this->objDbPool);
+        $channel = new Channel(1);
+        go(function () use ( $dbQuery, $channel) {
+            try {
+                $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+                $channel->push($result);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
+
+        $results = $channel->pop();
+
+        return $results;
     }
 
     public function loadSwooleTableWithRefDataFromDB($tableName, $mAIndicatorDBData)
@@ -371,7 +385,20 @@ class RefDataService
     public function fetchTableDataFromDB(string $table)
     {
         $dbQuery = "SELECT * FROM " . $table;
-        return $this->dbFacade->query($dbQuery, $this->objDbPool);
+
+        $channel = new Channel(1);
+        go(function () use ( $dbQuery, $channel) {
+            try {
+                $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+                $channel->push($result);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
+
+        $results = $channel->pop();
+
+        return $results;
     }
 
     public function broadcastIndicatorsData(array $deltaOfIndicators, mixed $mAIndicatorJobRunsAt)
@@ -414,7 +441,12 @@ class RefDataService
         var_dump('Save Refinitive snapshot data into DB table ');
         go(function () use ($indicatorsData, $tableName) {
             $dbQuery = $this->makeRefInsertQuery($tableName, $indicatorsData);
-            $this->dbFacade->query($dbQuery, $this->objDbPool, null, true, true, $tableName);
+
+            try {
+                $this->dbFacade->query($dbQuery, $this->objDbPool, null, true, true, $tableName);
+            } catch (Throwable $e) {
+                output($e);
+            }
         });
     }
 
@@ -479,8 +511,13 @@ class RefDataService
                     created_at = EXCLUDED.created_at,
                     updated_at = EXCLUDED.updated_at;
                 ";
-
-                $this->dbFacade->query($dbQuery, $this->objDbPool);
+                go(function () use ($dbQuery) {
+                    try {
+                        $this->dbFacade->query($dbQuery, $this->objDbPool);
+                    } catch (Throwable $e) {
+                        output($e);
+                    }
+                });
             }
         });
     }
@@ -542,7 +579,17 @@ class RefDataService
         AND c.ric ~ '^[0-9a-zA-Z\\.]+$'";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-        $results = $this->dbFacade->query($dbQuery, $this->objDbPool);
+        $channel = new Channel(1);
+        go(function () use ( $dbQuery, $channel) {
+            try {
+                $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+                $channel->push($result);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
+
+        $results = $channel->pop();
 
         // Process the results: create an associative array with 'ric' as the key and 'id' as the value
         $companyDetail = [];
@@ -563,7 +610,18 @@ class RefDataService
         AND c.ric ~ '^[0-9a-zA-Z\\.]+$'";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-        $results = $this->dbFacade->query($dbQuery, $this->objDbPool);
+
+        $channel = new Channel(1);
+        go(function () use ( $dbQuery, $channel) {
+            try {
+                $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+                $channel->push($result);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
+
+        $results = $channel->pop();
 
         // Process the results: create an associative array with 'ric' as the key and 'id' as the value
         $companyDetail = [];
@@ -578,7 +636,18 @@ class RefDataService
     {
         $dbQuery = "SELECT count(*)  FROM " . $tableName;
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
-        $refCountInDB = $this->dbFacade->query($dbQuery, $this->objDbPool);
+
+        $channel = new Channel(1);
+        go(function () use ( $dbQuery, $channel) {
+            try {
+                $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
+                $channel->push($result);
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
+
+        $refCountInDB = $channel->pop();
 
         return $refCountInDB ? (($refCountInDB = $refCountInDB[0]['count']) > 0 ? $refCountInDB : false) : false;
     }
