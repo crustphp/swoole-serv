@@ -29,23 +29,29 @@ class SubscriptionManager
      * @param int $fd The FD of the subscriber.
      * @param string $topic The name of the topic the FD is subscribing to.
      * @param int $worker_id The worker ID of the FD.
-     * @return bool 
+     * @return mixed 1 in-case of success, -1 if FD is already subscribed to topic and false in-case of Failure
      */
-    public function subscribe(int $fd, mixed $topic, int $worker_id): bool
+    public function subscribe(int $fd, mixed $topic, int $worker_id): mixed
     {
         $key = $this->generateKey($fd, $topic);
 
         // Check if the FD is already subscribed
-        if (!$this->subscriptionTable->exists($key)) {
-            $this->subscriptionTable->set($key, [
-                'topic' => $topic,
-                'fd' => $fd,
-                'worker_id' => $worker_id,
-            ]);
-
-            return true;
+        if ($this->subscriptionTable->exists($key)) {
+            return -1;
         }
 
+        // Subscribe the FD
+        $subscribed = $this->subscriptionTable->set($key, [
+            'topic' => $topic,
+            'fd' => $fd,
+            'worker_id' => $worker_id,
+        ]);
+
+        if ($subscribed) {
+            return 1;
+        }
+
+        // Return false in-case of failure
         return false;
     }
 
@@ -75,7 +81,7 @@ class SubscriptionManager
      */
     public function getAllSubsciptionData(): mixed
     {
-        return SwooleTableFactory::getTableData($this->swooleTableName);
+        return SwooleTableFactory::getSwooleTableData($this->swooleTableName);
     }
 
     /**
@@ -151,13 +157,17 @@ class SubscriptionManager
     {
         $subscriptionResults = [
             'subscribed' => [],
+            'already_subscribed' => [],
             'unsubscribed' => [],
             'errors' => [],
         ];
 
         // Handle subscriptions
         foreach ($subscribeTopics as $topic) {
-            if ($this->subscribe($fd, $topic, $worker_id)) {
+            $subscribed = $this->subscribe($fd, $topic, $worker_id);
+            if ($subscribed == -1) {
+                $subscriptionResults['already_subscribed'][] = $topic;
+            } else if ($subscribed) {
                 $subscriptionResults['subscribed'][] = $topic;
             } else {
                 $subscriptionResults['errors'][] = "Failed subscribed to topic: $topic";
