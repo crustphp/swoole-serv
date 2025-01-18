@@ -416,18 +416,19 @@ class sw_service_core {
             $app_type_database_driven = config('app_config.app_type_database_driven');
             $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
             $swoole_mysql_db_key = config('app_config.swoole_mysql_db_key');
-
-            if($worker_id >= $server->setting['worker_num']) {
+            $serviceStartedBy = serviceStartedBy();
+            
+            if ($worker_id >= $server->setting['worker_num']) {
                 if ($this->swoole_ext == 1) {
-                    swoole_set_process_name("php {$argv[0]} Swoole task worker");
+                    swoole_set_process_name("php-$serviceStartedBy-Swoole-task-worker-" . $worker_id);
                 } else {
-                    OpenSwoole\Util::setProcessName("php {$argv[0]} Swoole task worker");
+                    OpenSwoole\Util::setProcessName("php-$serviceStartedBy-Swoole-task-worker-" . $worker_id);
                 }
             } else {
                 if ($this->swoole_ext == 1) {
-                    swoole_set_process_name("php {$argv[0]} Swoole event worker");
+                    swoole_set_process_name("php-$serviceStartedBy-Swoole-event-worker-" . $worker_id);
                 } else {
-                    OpenSwoole\Util::setProcessName("php {$argv[0]} Swoole event worker");
+                    OpenSwoole\Util::setProcessName("php-$serviceStartedBy-Swoole-event-worker-" . $worker_id);
                 }
             }
             // require __DIR__.'/bootstrap/ServiceContainer.php';
@@ -993,13 +994,13 @@ class sw_service_core {
                                 $webSocketServer->push($frame->fd, json_encode($results));
 
                                 // -------- Start: Broadcast the newly subscribed topics ----------- //
-                                $newlySubscribedTopics = $results['subscribed'];
+                                $topicsRequested = [...$results['already_subscribed'], ...$results['subscribed']];
                                 
                                 // Get all Indicators of Ref Company Data
                                 $allRefCompanyDataTopics = array_map('strtolower', explode(',', config('ref_config.ref_fields')));
 
                                 // Get only Company's Ref Data Topics from All Topics of a FD
-                                $companyTopics = array_intersect($newlySubscribedTopics, $allRefCompanyDataTopics);
+                                $companyTopics = array_intersect($topicsRequested, $allRefCompanyDataTopics);
 
                                 if (count($companyTopics) > 0) {
                                     $dataJson = $this->getCompaniesIndicatorsTopicsData($companyTopics);
@@ -1012,6 +1013,33 @@ class sw_service_core {
                                 // -------- End: Broadcast the newly subscribed topics ----------- //
                                 unset($subscriptionManager);
 
+                                break;
+                            case 'get-companies-ref-data':
+                                // Validate the presence of 'subscribe' and 'unsubscribe' keys and ensure they are arrays
+                                $indicators = isset($frameData['indicators']) && is_array($frameData['indicators']) ? $frameData['indicators'] : null;
+
+                                if (!$indicators) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide indicators for which you want to get data', 'status_code' => 422]));
+                                    break;
+                                }
+
+                                // Get all Indicators of Ref Company Data
+                                $allRefCompanyDataTopics = array_map('strtolower', explode(',', config('ref_config.ref_fields')));
+
+                                $finalIndicators = array_intersect($indicators, $allRefCompanyDataTopics);
+
+                                if (count($indicators) != count($finalIndicators)) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide correct indicators', 'status_code' => 422]));
+                                    break;
+                                }
+
+                                // Fetch the Data of provided Companies Indicators
+                                $dataJson = $this->getCompaniesIndicatorsTopicsData($finalIndicators);
+
+                                // Push Data to FD
+                                if ($webSocketServer->isEstablished($frame->fd)) {
+                                    $webSocketServer->push($frame->fd, $dataJson);
+                                }
                                 break;
                             default:
                                 if ($webSocketServer->isEstablished($frame->fd)) {
