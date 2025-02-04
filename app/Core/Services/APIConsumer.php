@@ -77,21 +77,6 @@ class APIConsumer
             $client->get($this->endpoint);
         }
 
-        // Capture response and error details if any
-        if ($client->statusCode != 200) {
-            echo PHP_EOL;
-            echo '\n Connection Related Error Code';
-            var_dump($client->errCode);
-
-            echo PHP_EOL;
-            echo '\nConnection Related ErrorMessage';
-            var_dump($client->errMsg);
-
-            echo PHP_EOL;
-            echo '\n Response Status Code:';
-            var_dump($client->statusCode);
-        }
-
         $statusCode = $client->statusCode;
         $response = $client->body;
 
@@ -100,7 +85,11 @@ class APIConsumer
             'response' => $response,
         ];
 
-        if ($statusCode !== 200) {
+        if ($statusCode > 299) {
+            output('Connection Related Error Code: ' . $client->errCode);
+            output('Connection Related Error Message: ' . $client->errMsg);
+            output('Response Status Code: ' . $client->statusCode);
+
             $result['error'] = "Request failed with status code $statusCode";
             $result['error_code'] = $client->errCode;
             $result['error_message'] = $client->errMsg;

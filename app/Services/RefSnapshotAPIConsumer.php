@@ -5,13 +5,14 @@ namespace App\Services;
 use Swoole\Coroutine\Barrier;
 use Swoole\Coroutine;
 use App\Core\Services\APIConsumer;
+use Carbon\Carbon;
 use Throwable;
 use Swoole\Coroutine\Channel;
 
 class RefSnapshotAPIConsumer
 {
     protected $webSocketServer;
-    protected $dbConnectionPools;
+    protected $objDbPool;
     protected $chunkSize;
     protected $dbFacade;
     protected $mAIndicatorsData = [];
@@ -21,10 +22,10 @@ class RefSnapshotAPIConsumer
     protected $url;
     protected $timeout;
 
-    public function __construct($webSocketServer, $dbConnectionPools, $dbFacade, $url)
+    public function __construct($webSocketServer, $objDbPool, $dbFacade, $url)
     {
         $this->webSocketServer = $webSocketServer;
-        $this->dbConnectionPools = $dbConnectionPools;
+        $this->objDbPool = $objDbPool;
         $this->dbFacade = $dbFacade;
         $this->retry = config('app_config.api_calls_retry');
         $this->url = $url;
@@ -46,7 +47,7 @@ class RefSnapshotAPIConsumer
             $channel = new Channel(1);
             go(function () use ( $dbQuery, $channel) {
                 try {
-                    $result = $this->dbFacade->query($dbQuery, $this->dbConnectionPools);
+                    $result = $this->dbFacade->query($dbQuery, $this->objDbPool);
                     $channel->push($result);
                 } catch (Throwable $e) {
                     output($e);
@@ -68,7 +69,13 @@ class RefSnapshotAPIConsumer
         }
 
         // Fetch Refinitive access token
-        $refAccessToken = $this->getRefToken();
+        $tokenRec = $this->getRefTokenRecord();
+
+        if($tokenRec) {
+            $refAccessToken = $tokenRec['access_token'];
+        } else {
+            $refAccessToken = $tokenRec;
+        }
 
         if (!empty($companiesRics) && !empty($refAccessToken)) {
             $ricsChunks =  array_chunk($companiesRics, $this->chunkSize);
@@ -96,7 +103,7 @@ class RefSnapshotAPIConsumer
             // Process each chunk asynchronously using coroutines
             foreach ($ricsChunks as $chunk) {
                 $queryParams['universe'] = '/' . implode(',/', $chunk);
-                $this->sendRequest($chunk, $queryParams, $refAccessToken, $mAIndicatorBarrier);
+                $this->sendRequest($queryParams, $refAccessToken, $mAIndicatorBarrier);
             }
 
             Barrier::wait($mAIndicatorBarrier);
@@ -112,20 +119,42 @@ class RefSnapshotAPIConsumer
      *
      * @return string
      */
-    function getRefToken(): string
+    public function getRefTokenRecord()
     {
-        $refToken = new RefToken($this->webSocketServer, $this->dbFacade, $this->dbConnectionPools);
-        $token = $refToken->produceActiveToken();
-        unset($refToken);
+        $dbQuery = "SELECT * FROM refinitiv_auth_token_sw LIMIT 1";
 
-        $refAccessToken = '';
+        $channel = new Channel(1);
 
-        if ($token) {
-            $refAccessToken = $token['access_token'];
-        }
+        go(function () use ($dbQuery, $channel) {
+            try {
+                $try = 0;
+                do {
+                    $tokenRec = $this->dbFacade->query($dbQuery, $this->objDbPool);
+                    $tokenRec =  $tokenRec ? ($tokenRec[0] ?? false) : false;
+                    if ($tokenRec) {
+                        if (!(Carbon::now()->timestamp - Carbon::parse($tokenRec['updated_at'])->timestamp >= ($tokenRec['expires_in'] - 60))) {
+                            $channel->push($tokenRec);
+                            break;
+                        }
+                    }
 
-        return $refAccessToken;
+                    Coroutine::sleep(1);
+                    $try++;
+                } while ($try < 5);
+
+                if ($try == 5) {
+                    $channel->push(0);
+                }
+            } catch (Throwable $e) {
+                output($e);
+            }
+        });
+
+        $result = $channel->pop();
+
+        return $result == 0 ? false : $result;
     }
+
 
     /**
      * Get the most active from Refinitiv
@@ -144,38 +173,81 @@ class RefSnapshotAPIConsumer
         return $apiConsumer->request();
     }
 
-    public function sendRequest($chunk, $queryParams, $accessToken, $mAIndicatorBarrier)
+    public function sendRequest($queryParams, $accessToken, $mAIndicatorBarrier)
     {
-        go(function () use ($chunk, $queryParams, $accessToken, $mAIndicatorBarrier) {
-            // Fetch the data for this chunk
-            $responseData = $this->getIndicatorsData($accessToken, $queryParams);
-            $statusCode = $responseData['status_code'];
-            $response = $responseData['response'];
+        go(function () use ($queryParams, $accessToken, $mAIndicatorBarrier) {
+             $overAllRepCounter = 0;
+            do {
 
-            if ($statusCode === 401) { // Check for status code 401 (Unauthorized)
-                if ($this->authCounter <  $this->retry) {
-                    $this->authCounter++;
-                    var_dump('Unauthorized: Invalid token or session has expired.');
-                    $token = $this->getRefToken();
-                    $this->sendRequest($chunk, $queryParams, $token, $mAIndicatorBarrier);
-                } else {
-                    var_dump('Unauthorized: Retry limit reached.');
+                do { // Check for status code 401 (Unauthorized)
+                    // Fetch the data for this chunk
+                    $responseData = $this->getIndicatorsData($accessToken, $queryParams);
+                    $statusCode = $responseData['status_code'];
+                    $response = $responseData['response'];
+
+                    if ($statusCode == 401) {
+                        var_dump('Swoole-serv: Unauthorized: Invalid token or session has expired.');
+                        Coroutine::sleep(0.7);
+                        $token = $this->getRefTokenRecord();
+                        if($token) {
+                            $accessToken = $token['access_token'];
+                        } else {
+                            $accessToken = $token;
+                        }
+                        $this->authCounter++;
+                    } else {
+                        break;
+                    }
+                } while ($this->authCounter <  $this->retry);
+
+                if ($this->authCounter >=  $this->retry) {
+                    $this->authCounter = 0;
+                    var_dump('Swoole-serv: Unauthorized: Retry limit reached.');
                 }
-            } else if ($statusCode === 429) { // Check for status code 429 (Too Many Requests)
-                if ($this->tooManyRequestCounter <  $this->retry) {
-                    $this->tooManyRequestCounter++;
-                    var_dump('Too Many Requests: Rate limit exceeded.');
-                    Coroutine::sleep($this->tooManyRequestCounter);
-                    $this->sendRequest($chunk, $queryParams, $accessToken, $mAIndicatorBarrier);
-                } else {
-                    var_dump('Too many requests: Retry limit reached.');
+
+                if ($statusCode === 429) { // Check for status code 429 (Too Many Requests)
+
+                    do {
+                        $this->tooManyRequestCounter++;
+                        $responseData = $this->getIndicatorsData($accessToken, $queryParams);
+                        $statusCode = $responseData['status_code'];
+                        $response = $responseData['response'];
+
+                        if ($statusCode == 429) {
+                            var_dump('Swoole-serv: Too Many Requests: failed.');
+                            Coroutine::sleep($this->tooManyRequestCounter + 1);
+                            $this->tooManyRequestCounter++;
+                        } else {
+                            break;
+                        }
+
+                    } while($this->tooManyRequestCounter <  $this->retry);
+
+                    if ($this->tooManyRequestCounter >=  $this->retry) {
+                        $this->tooManyRequestCounter = 0;
+                        var_dump('Swoole-serv: Too many requests: Retry limit reached.');
+                    }
                 }
-            } else if ($statusCode === 200) { // Return
-                $res = json_decode($response, true);
-                $this->mAIndicatorsData = array_merge($this->mAIndicatorsData, $res);
-            } else {
-                var_dump('Invalid repsonse from Refinitive Snapshot API', $response);
-            }
+
+                if ($statusCode === 200) { // Return
+                    $res = json_decode($response, true);
+                    $this->mAIndicatorsData = array_merge($this->mAIndicatorsData, $res);
+                } else {
+                    var_dump('Swoole-serv: Invalid repsonse from Refinitive Snapshot API', $response);
+                }
+
+
+                if ($statusCode > 299) {
+                    Coroutine::sleep(1);
+                    $overAllRepCounter++;
+                    if($overAllRepCounter == 2) {
+                        var_dump('Swoole-serv: Overall retries limit exceeded');
+                    }
+                } else {
+                    break;
+                }
+                // $statusCode > 299
+            } while($overAllRepCounter < 2 && $statusCode > 299);
         });
     }
 

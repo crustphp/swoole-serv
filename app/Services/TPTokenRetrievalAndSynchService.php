@@ -3,8 +3,6 @@
 namespace App\Services;
 
 use Carbon\Carbon;
-use DB\DBConnectionPool;
-use Swoole\Timer as swTimer;
 use DB\DbFacade;
 use Swoole\Coroutine\Http\Client;
 use Swoole\Coroutine as Co;
@@ -14,40 +12,17 @@ use Throwable;
 class TPTokenRetrievalAndSynchService
 {
     protected $server;
-    protected $postgresDbKey;
     protected $process;
     protected $refProductionTokenEndpointKey;
-    protected $dbConnectionPools;
-    protected $worker_id;
     protected $objDbPool;
     protected $dbFacade;
 
-    public function __construct($server, $process, $postgresDbKey = null)
+    public function __construct($server, $process, $objDbPool)
     {
         $this->refProductionTokenEndpointKey = config('ref_config.ref_production_token_endpoint_key');
         $this->server = $server;
-        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-        $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
         $this->process = $process;
-        $this->worker_id = $this->process->id;
-
-        $app_type_database_driven = config('app_config.app_type_database_driven');
-        if ($app_type_database_driven) {
-            $poolKey = makePoolKey($this->worker_id, 'postgres');
-            try {
-                // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
-                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey, 'postgres', 'swoole', true);
-                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key]->create();
-            } catch (\Throwable $e) {
-                echo $e->getMessage() . PHP_EOL;
-                echo $e->getFile() . PHP_EOL;
-                echo $e->getLine() . PHP_EOL;
-                echo $e->getCode() . PHP_EOL;
-                var_dump($e->getTrace());
-            }
-        }
-
-        $this->objDbPool = $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key];
+        $this->objDbPool = $objDbPool;
         $this->dbFacade = new DbFacade();
     }
 
@@ -62,13 +37,23 @@ class TPTokenRetrievalAndSynchService
         if (config('app_config.env') == 'local' || config('app_config.env') == 'staging') {
             $this->getTokenFrmProductionSever(config('app_config.production_ip'));
         } else {
-//            Co::sleep(2);
-            swTimer::tick(config('app_config.api_token_time_span'), function ($timerId) {
-                $refToken = new RefToken($this->server, $this->dbFacade, $this->objDbPool);
-                $refToken->produceActiveToken();
+            try {
+                $refToken = new RefToken($this->server);
+                while (true) {
+                  $token = $refToken->produceActiveToken();
+                  if($token) {
+                      usleep(200000);
+                  } else {
+                    sleep(3);
+                  }
+                }
+            } catch (Throwable $e) {
+                output($e);
+            } finally {
                 unset($refToken);
-//                swTimer::clear($timerId);
-            });
+            }
+
+            output('Exitting the TPTokenRetrievalAndSynchService Process.');
         }
     }
 
@@ -115,9 +100,8 @@ class TPTokenRetrievalAndSynchService
 
     public function getRefTokenFromDB()
     {
-        $tableName = 'refinitiv_auth_tokens';
         $result = null;
-        $dbQuery = "SELECT * FROM $tableName LIMIT 1";
+        $dbQuery = "SELECT * FROM refinitiv_auth_token_sw LIMIT 1";
 
         $waitGroup = new WaitGroup();
         $waitGroup->add();
@@ -137,7 +121,7 @@ class TPTokenRetrievalAndSynchService
 
     function updateIntoRefAuthTable($accessToken, $refreshToken, $expiresIn, $createdAt, $updatedAt, $tokenId)
     {
-        $updateQuery = "UPDATE refinitiv_auth_tokens
+        $updateQuery = "UPDATE refinitiv_auth_token_sw
         SET access_token = '$accessToken',
             refresh_token = '$refreshToken',
             expires_in = $expiresIn,
@@ -157,7 +141,7 @@ class TPTokenRetrievalAndSynchService
     function insertIntoRefAuthTable($accessToken, $refreshToken, $expiresIn, $createdAt, $updatedAt)
     {
 
-        $insertQuery = "INSERT INTO refinitiv_auth_tokens (access_token, refresh_token, expires_in, created_at, updated_at)
+        $insertQuery = "INSERT INTO refinitiv_auth_token_sw (access_token, refresh_token, expires_in, created_at, updated_at)
             VALUES ('$accessToken', '$refreshToken', $expiresIn, '$createdAt', '$updatedAt')";
 
         go(function () use ($insertQuery) {
@@ -169,43 +153,4 @@ class TPTokenRetrievalAndSynchService
         });
     }
 
-    /**
-     * __destruct
-     *
-     * @return void
-     */
-    public function __destruct() {
-        $app_type_database_driven = config('app_config.app_type_database_driven');
-        $worker_id = $this->worker_id;
-
-        if ($app_type_database_driven) {
-            if (isset($this->dbConnectionPools[$worker_id])) {
-                $worker_dbConnectionPools = $this->dbConnectionPools[$worker_id];
-                $mysqlPoolKey = makePoolKey($worker_id, 'mysql');
-                $pgPoolKey = makePoolKey($worker_id, 'postgres');
-                foreach ($worker_dbConnectionPools as $dbKey => $dbConnectionPool) {
-                    if ($dbConnectionPool->pool_exist($pgPoolKey)) {
-                        output("Closing Connection Pool: " . $pgPoolKey);
-                        // Through ConnectionPoolTrait, as used in DBConnectionPool Class
-                        $dbConnectionPool->closeConnectionPool($pgPoolKey);
-                    }
-
-                    if ($dbConnectionPool->pool_exist($mysqlPoolKey)) {
-                        output("Closing Connection Pool: " . $mysqlPoolKey);
-                        // Through ConnectionPoolTrait, as used in DBConnectionPool Class
-                        $dbConnectionPool->closeConnectionPool($mysqlPoolKey);
-                    }
-                    unset($dbConnectionPool);
-                }
-
-                unset($this->dbConnectionPools);
-            }
-        }
-
-        unset($this->objDbPool);
-
-        // Uncomment following if needed to revoke memory immediately.
-        // $this->dbConnectionPools = null;
-        // $this->objDbPool = null;
-    }
 }

@@ -12,40 +12,18 @@ use Throwable;
 class NewsService
 {
     protected $server;
-    protected $dbConnectionPools;
-    protected $postgresDbKey;
     protected $process;
     protected $worker_id;
     protected $objDbPool;
     protected $dbFacade;
     protected $localPath = 'storage/';
 
-    public function __construct($server, $process, $postgresDbKey = null)
+    public function __construct($server, $process, $objDbPool)
     {
         $this->server = $server;
-        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-        $this->postgresDbKey = $postgresDbKey ?? $swoole_pg_db_key;
         $this->process = $process;
-        $this->worker_id = $this->process->id;
-
-        $app_type_database_driven = config('app_config.app_type_database_driven');
-        $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
-        if ($app_type_database_driven) {
-            $poolKey = makePoolKey($this->worker_id, 'postgres');
-            try {
-                // initialize an object for 'DB Connections Pool'; global only within scope of a Worker Process
-                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key] = new DBConnectionPool($poolKey, 'postgres', 'swoole', true);
-                $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key]->create();
-            } catch (\Throwable $e) {
-                echo $e->getMessage() . PHP_EOL;
-                echo $e->getFile() . PHP_EOL;
-                echo $e->getLine() . PHP_EOL;
-                echo $e->getCode() . PHP_EOL;
-                var_dump($e->getTrace());
-            }
-        }
-
-        $this->objDbPool = $this->dbConnectionPools[$this->worker_id][$swoole_pg_db_key];
+        $this->worker_id = $process->id;
+        $this->objDbPool = $objDbPool;
         $this->dbFacade = new DbFacade();
     }
 
