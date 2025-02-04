@@ -1,24 +1,23 @@
 <?php
 
 return [
-    'url' => $_ENV['REFINITIVE_URL'] ?? 'https://api.refinitiv.com/auth/oauth2/v1/token',
-    'username' => $_ENV['REFINITIVE_USERNAME'] ?? 'GE-A-10171559-3-15155',
-    'password' => $_ENV['REFINITIVE_PASSWORD'] ?? 'MuaIbrahim@MarketApp1010777789',
-    'grant_type' => $_ENV['REFINITIVE_GRANT_TYPE'] ?? 'password',
-    'scope' => $_ENV['REFINITIVE_SCOPE'] ?? 'trapi',
-    'take_exclusive_sign_on_control' => $_ENV['REFINITIVE_TAKE_EXCLUSIVE_SIGN_ON_CONTROL'] ?? 'true',
-    'client_id' => $_ENV['REFINITIVE_CLIENT_ID'] ?? '07f4cbaa345f49149f5afb74f3b497daa53dd4d8',
-    'refresh_grant_type' => $_ENV['REFINITIVE_REFRESH_GRANT_TYPE'] ?? 'refresh_token',
+    'username' => $_ENV['SW_REF_USERNAME'],
+    'password' => $_ENV['SW_REF_PASSWORD'],
+    'client_id' => $_ENV['SW_REF_CLIENT_ID'],
+    'url' => $_ENV['SW_REF_TOKEN_URL'],
+    'scope' => $_ENV['SW_REF_SCOPE'],
+    'take_exclusive_sign_on_control' => $_ENV['SW_REF_TAKE_EXCLUSIVE_SIGN_ON_CONTROL'],
+    'grant_type' => $_ENV['SW_REF_GRANT_TYPE'],
+    'refresh_grant_type' => $_ENV['SW_REF_REFRESH_GRANT_TYPE'],
+    'search_light_url' => $_ENV['SW_REF_SEARCH_LIGHT_URL'],
+    'historical_pricing_intraday_url' =>  $_ENV['SW_REF_HISTORICAL_PRICING_INTRADAY_URL'],
+    'historical_pricing_interday_url' =>  $_ENV['SW_REF_HISTORICAL_PRICING_INTERDAY_URL'],
+    'pricing_snapshots_url' => $_ENV['SW_REF_PRICING_SNAPSHOT_URL'],
 
-    'search_light_url' => $_ENV['SEARCH_LIGHT_URL'] ?? 'https://api.refinitiv.com/discovery/searchlight/v1/',
-    'historical_pricing_intraday_url' =>  $_ENV['HISTORICAL_PRICING_INTRADAY_URL'] ?? 'https://api.refinitiv.com/data/historical-pricing/v1/views/intraday-summaries/',
-    'historical_pricing_interday_url' =>  $_ENV['HISTORICAL_PRICING_INTERDAY_URL'] ?? 'https://api.refinitiv.com/data/historical-pricing/v1/views/interday-summaries/',
-    'pricing_snapshots_url' => $_ENV['PRICING_SNAPSHOTS_URL'] ?? 'https://api.refinitiv.com/data/pricing/snapshots/v1/',
+    'time_to_refresh_token' => $_ENV['SW_REF_TIME_TO_REFRESH_TOKEN'],
 
-    'time_to_refresh_token' => $_ENV['TIME_TO_REFRESH_TOKEN'] ?? 10,
-
-    'ref_pricing_snapshot_url' => $_ENV['SW_REF_PRICING_SNAPSHOT_URL'] ?? 'https://api.refinitiv.com/data/pricing/snapshots/v1/',
-    'ref_production_token_endpoint_key' => $_ENV['SW_REF_PRODUCTION_TOKEN_ENDPOINT_KEY'] ?? 'auqSGJ89Kp3DGJ*!%4',
+    'ref_pricing_snapshot_url' => $_ENV['SW_REF_PRICING_SNAPSHOT_URL'],
+    'ref_production_token_endpoint_key' => $_ENV['SW_REF_PRODUCTION_TOKEN_ENDPOINT_KEY'],
     'ref_fields' => $_ENV['SW_REF_FIELDS'],
     'ref_chunk_size' => $_ENV['SW_REF_CHUNK_SIZE'],
 ];
