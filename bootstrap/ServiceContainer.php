@@ -2,8 +2,6 @@
 
 namespace Bootstrap;
 
-use App\Core\Services\PdoService;
-
 // use Swoole\Runtime;
 
 /**

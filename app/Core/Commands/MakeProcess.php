@@ -3,7 +3,6 @@
 namespace App\Core\Commands;
 
 use App\Core\Commands\BaseCommand;
-use App\Core\Services\PdoService;
 use Crust\StubConverter\StubGenerator;
 
 class MakeProcess extends BaseCommand
