@@ -10,11 +10,8 @@ declare(strict_types=1);
 //use Swoole\Database\PDOPool;
 namespace DB;
 use Swoole\Runtime;
-use DB\SwoolePgConnectionPool;
 
 use Swoole\Coroutine as Co;
-use Swoole\Coroutine\WaitGroup;
-use Throwable;
 
 class DbFacade {
 
@@ -35,8 +32,11 @@ class DbFacade {
         //     $postgresClient = $objDbPool->get_dbObject_using_pool_key();
         // }
 
+        // This will return the connection pool contained specifically by the object of DBConnectionPool class
         $connectionPoolObj = $objDbPool->get_connection_pool_with_key();
-        $postgresClient = $objDbPool->get_dbObject_using_pool_key();
+
+        // This function will return a single connection (object) from connection pool
+        $postgresClient = $objDbPool->get_dbConnectionObj_using_pool_key();
 
         if (!$postgresClient) {
             throw new \RuntimeException("Failed to get postgresClient from the Pool");
@@ -139,51 +139,50 @@ class DbFacade {
 
     public function getClient($objDbPool)
     {
-        $postgresClient = null;
+        // This function will return a single connection (object) from connection pool
+        $postgresClient = $objDbPool->get_dbConnectionObj_using_pool_key();
 
-        $waitGroup = new WaitGroup();
-        $waitGroup->add();
-        go(function () use ($waitGroup, $objDbPool, &$postgresClient) {
-            try {
-                $postgresClient = $objDbPool->get_dbObject_using_pool_key();
-            } catch (Throwable $e) {
-                output($e);
-            }
-            $waitGroup->done();
-        });
-
-        $waitGroup->wait();
-
-        // Test Later: If there is not connection available then wait for 200 milliseconds and try again
-        // while (empty($postgresClient) || is_null($postgresClient)) {
-        //     Co::sleep(0.2);
-
-        //     $postgresClient = $objDbPool->get_dbObject_using_pool_key();
-        // }
         if (!$postgresClient) {
-            throw new \RuntimeException("Failed to get postgresClient from the Pool");
+            output("Failed to get postgresClient from the Pool");
+            // throw new \RuntimeException("Failed to get postgresClient from the Pool");
+            return null;
         }
 
         return $postgresClient;
     }
 
-    public function beginTransaction($postgresClient) {
+    public function beginTransaction($postgresClient)
+    {
         $postgresClient->query('BEGIN');
     }
 
-    public function lockTable( $postgresClient, $tableName) {
-        $lockQuery = "LOCK TABLE" . $tableName . " IN ACCESS EXCLUSIVE MODE"; // Preventing all modifications
+    public function lockTable($postgresClient, $tableName)
+    {
+        $lockQuery = "LOCK TABLE " . $tableName . " IN ACCESS EXCLUSIVE MODE"; // Preventing all modifications
         $postgresClient->query($lockQuery);
     }
 
-    public function commitTransaction($postgresClient)
+    public function queryInsideTransaction($query, $postgresClient)
     {
-        $postgresClient->query('COMMIT');
+        $pdo_statement = $postgresClient->query($query);
+        $data = $pdo_statement->fetchAll();
+        return $data;
     }
 
-    public function rollBackTransaction ($postgresClient) {
-        $postgresClient->query('ROLLBACK');
+    public function commitTransaction($postgresClient, $objDbPool)
+    {
+        $postgresClient->query('COMMIT');
+        // Return the connection to pool as soon as possible
+        $objDbPool->put_dbObject_using_pool_key($postgresClient);
     }
+
+    public function rollBackTransaction($postgresClient, $objDbPool)
+    {
+        $postgresClient->query('ROLLBACK');
+        // Return the connection to pool as soon as possible
+        $objDbPool->put_dbObject_using_pool_key($postgresClient);
+    }
+
 }
 
 
