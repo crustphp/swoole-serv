@@ -84,7 +84,7 @@ class ConnectionPool
         }
 
         if ($connection !== null) {
-            $this->pool->push($connection);
+                $this->pool->push($connection);
         } else {
             /* connection broken */
             $this->num -= 1;
@@ -97,8 +97,12 @@ class ConnectionPool
         }
     }
 
-    public function close(): void
+    public function close($key = ""): bool
     {
+        output(__METHOD__  . ' --> Key = ' . $key);
+        
+        $closed = false;
+
         $this->num = $this->size;
 
         if ($this->pool) {
@@ -109,25 +113,32 @@ class ConnectionPool
                 //     continue;
                 // }
 
-                if (!$this->pool->isEmpty()) {
-                    go(function () {
-                        $client = $this->pool->pop();
+                if ($this->pool instanceof \Swoole\Coroutine\Channel) {
 
-                        if ($client) {
-                            if (method_exists($client, 'close')) {
-                                $client->close();
-                            } else {
-                                unset($client);
+                    if (!$this->pool->isEmpty()) {
+                        go(function () {
+                            if (isset($this->pool) && !$this->pool->isEmpty()) {
+                                $client = $this->pool->pop();
+
+                                if ($client) {
+                                    if (method_exists($client, 'close')) {
+                                        $client->close();
+                                    } else {
+                                        unset($client);
+                                    }
+                                }
                             }
-                        }
-                    });
+                        });
+                    }
                 }
-            } while (!($this->pool->isEmpty() && $this->inUse == 0));
+            } while (isset($this->pool) && !($this->pool->isEmpty() && $this->inUse == 0));
 
-            $this->pool->close();
+            $closed = $this->pool->close();
             $this->pool = null;
-            $this->num  = 0;
+            $this->num  = 0;            
         }
+
+        return $closed;
     }
 
     protected function make(): void
@@ -292,6 +303,8 @@ class ConnectionPool
      */
     public function __destruct()
     {
-        $this->close();
+        if (isset($this->pool)) {
+            $this->close();
+        }
     }
 }

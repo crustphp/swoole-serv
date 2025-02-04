@@ -53,12 +53,11 @@ class MainProcess
         Timer::tick(10000, function () {});
 
         // Following SIGCHLD is catched when child processes of this Main Process are killed
-        Process::signal(SIGCHLD, static function ($sig) {
-            while ($ret = Process::wait(true)) {
-                /* clean up then event loop will exit */
-                Timer::clearAll();
-            }
-        });
+        // Process::signal(SIGCHLD, static function ($sig) {
+        //     while ($ret = Process::wait(false)) {
+        //         /* clean up then event loop will exit */
+        //     }
+        // });
 
         // Get the service container instance
         $serviceContainer = ServiceContainer::get_instance();
@@ -101,11 +100,12 @@ class MainProcess
                     $processBaseClass = $serviceContainer($processKey, null, $this->server, $process);
 
                     // Catch the Signal to revoke resources before terminating the processes
-                    Process::signal(SIGTERM, function ($signo) use ($processBaseClass) {
+                    Process::signal(SIGTERM, function ($signo) use ($processBaseClass) {                        
                         // Clear Timers
                         Timer::clearAll();
 
-                        // Unset Process Base Class
+                        // Destruct and Unset Process Base Class
+                        $processBaseClass->revokeProcessResources();
                         unset($processBaseClass);
                     });
 

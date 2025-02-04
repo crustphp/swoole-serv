@@ -299,9 +299,6 @@ class sw_service_core {
                 shell_exec('cd '.__DIR__.' && rm -f server.pid 2>&1 1> /dev/null&');
             }
 
-            // Kill the custom user Processes
-            $this->killCustomProcesses(true);
-
             // Remove the Main Process PID File (As this process is shutdown by Server itself so we need to remove file manually)
             $mainProcessPidDFile = __DIR__ . '/process_pids/MainProcess.pid';
 
@@ -319,6 +316,9 @@ class sw_service_core {
             // foreach ($server->connections as $conn) {
             //     $server->push($conn, json_encode(['message' => 'Server is shutting down.', 'status_code' => ResponseStatusCode::SERVICE_RESTART->value]));
             // }
+
+            // Kill the custom user Processes
+            $this->killCustomProcesses(true);
         };
 
         $this->server->on('start', $my_onStart);

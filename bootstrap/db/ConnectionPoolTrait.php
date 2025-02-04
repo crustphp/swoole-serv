@@ -40,8 +40,12 @@ trait ConnectionPoolTrait
      */
     public function closeConnectionPool(int|string $key)
     {
-        $bool = self::$pools[$key]->close();
-        unset(self::$pools[$key]);
+        $bool = false;
+        if (isset(self::$pools[$key])) {
+            $bool = self::$pools[$key]->close($key);
+            unset(self::$pools[$key]);
+        }
+
         return $bool;
     }
 

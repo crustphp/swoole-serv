@@ -19,4 +19,39 @@ class {{class}} {
     {
         // Add your code here
     }
+
+    /**
+     * __destruct
+     *
+     * @return void
+     */
+    public function __destruct()
+    {
+        // Mandatory: Revoke your Database connection pool resources if using Database Connection Pool
+
+        // $app_type_database_driven = config('app_config.app_type_database_driven');
+
+        // if ($app_type_database_driven) {
+        //     if (isset($this->[Your DB Connection Pools])) {
+        //         foreach ($this->[Your DB Connection Pools] as $key => $dbConnectionPool) {
+        //             echo PHP_EOL . "Closing Connection Pool: $key" . PHP_EOL;
+        //             $dbConnectionPool->closeConnectionPool($key);
+        //             unset($dbConnectionPool);
+        //         }
+
+        //         unset($this->[Your DB Connection Pools]);
+        //     }
+        // }
+    }
+    
+    /**
+     * Revoke the process resources
+     *
+     * @return void
+     */
+    public function revokeProcessResources() {
+        if (method_exists($this, '__destruct')) {
+            $this->__destruct();
+        }
+    }
 }

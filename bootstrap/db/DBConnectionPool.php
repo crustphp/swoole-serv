@@ -54,7 +54,7 @@ class DBConnectionPool
 
         // Set the Default Pool Size
         $this->workerId = getIdFromDbPoolKey($pool_key, $dbEngine);
-        
+
         $this->totalEventWorkers = config('swoole_config.server_settings.worker_num');
         if (is_null($this->totalEventWorkers)) {
             throw new \RuntimeException('Error: Please add number of Event Worker in Swoole Config inside server_settings as worker_num');
@@ -67,7 +67,7 @@ class DBConnectionPool
         else {
             $this->poolSize = config('db_config.custom_processes_db_connection_pool_size');
         }
-        
+
     }
 
     function __destruct() {
@@ -75,7 +75,7 @@ class DBConnectionPool
             $this->closeConnectionPool($this->pool_key);
         }
     }
-    
+
     /**
      * create
      *
@@ -216,7 +216,7 @@ class DBConnectionPool
     public function add_pool_with_key($obj_conn_pool, $poolKey = null) {
         $this->addConnectionPool($poolKey ?? $this->pool_key, $obj_conn_pool);
     }
-    
+
     /**
      * Returns the Connection Pool object by given key
      *
@@ -241,7 +241,12 @@ class DBConnectionPool
         }
     }
 
-    public function get_dbObject_using_pool_key($pool_key=null) {
+    /*
+    * This function will return a single connection (object) from connection pool
+    * @param  string $pool_key
+    * @return mixed
+    */
+    public function get_dbConnectionObj_using_pool_key($pool_key=null) {
         if (is_null($pool_key)) {
             $pool_key = $this->pool_key;
         }
@@ -261,11 +266,11 @@ class DBConnectionPool
             if (Coroutine::getCid() == -1) {
                 throw new \RuntimeException(__METHOD__ . ' Should be called in the coroutine context');
             }
-            
+
             return $objConnectionPool->get();
         }
     }
-    
+
     /**
      * This function returns replaced database Client object
      *
@@ -289,7 +294,7 @@ class DBConnectionPool
             // for OpenSwoole it is of type OpenSwoole\Core\Coroutine\Pool\ClientPool
             // For Swoole get() returns new Swoole\Coroutine\PostgreSQL();
             // For OpenSwoole get() returns new OpenSwoole\Coroutine\PostgreSQL();
-            return $objConnectionPool->get(replace: true);
+            return $objConnectionPool->get(timeout: -1, replace: true);
         }
         else if($poolDriver=='openSwoole') {
             return $objConnectionPool->get();
@@ -317,7 +322,7 @@ class DBConnectionPool
     {
         return isset(static::$pools[$key]);
     }
-    
+
     /**
      * Set the database connections pool size
      *
