@@ -21,9 +21,11 @@ return [
     'env' => $_ENV['APP_ENV'] ?? 'local',
     'staging_ip' => $_ENV['SW_STAGING_IP'],
     'production_ip' => $_ENV['SW_PRODUCTION_IP'],
-    'privileged_fd_secret' => $_ENV['SW_PRIVILEGED_FD_SECRET'],
+    'privileged_fd_secret' => $_ENV['SW_PRIVILEGED_FD_SECRET'] ?? 'YpGN0qwO80',
+
     'chatgpt_api_key' => $_ENV['SW_CHATGPT_API_KEY'],
-    'most_active_data_fetching_timespan' => intval($_ENV['SW_MOST_ACTIVE_DATA_FETCHING_TIMESPAN'] ?? 300000),
+
+    'most_active_data_fetching_timespan' => intval($_ENV['SW_MOST_ACTIVE_DATA_FETCHING_TIMESPAN'] ?? 3),
     'api_req_timeout' => intval($_ENV['SW_API_REQ_TIMEOUT'] ?? 5),
     'api_calls_retry' => intval($_ENV['SW_API_CALLS_RETRY'] ?? 3),
     'api_token_time_span' => $_ENV['SW_API_AUTH_TOKEN_TIME_SPAN'] ?? '60000',

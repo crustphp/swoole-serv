@@ -17,7 +17,7 @@ return [
     'time_to_refresh_token' => $_ENV['SW_REF_TIME_TO_REFRESH_TOKEN'],
 
     'ref_pricing_snapshot_url' => $_ENV['SW_REF_PRICING_SNAPSHOT_URL'],
-    'ref_production_token_endpoint_key' => $_ENV['SW_REF_PRODUCTION_TOKEN_ENDPOINT_KEY'],
+    'privileged_fd_key_for_ref_token' => $_ENV['SW_PRIVILEGED_FD_KEY_FOR_REF_TOKEN'],
     'ref_fields' => $_ENV['SW_REF_FIELDS'],
     'ref_chunk_size' => $_ENV['SW_REF_CHUNK_SIZE'],
 ];

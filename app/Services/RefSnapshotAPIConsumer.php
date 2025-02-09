@@ -21,8 +21,10 @@ class RefSnapshotAPIConsumer
     protected $retry;
     protected $url;
     protected $timeout;
+    protected $refTokenLock;
 
-    public function __construct($webSocketServer, $objDbPool, $dbFacade, $url)
+
+    public function __construct($webSocketServer, $objDbPool, $dbFacade, $url, $refTokenLock)
     {
         $this->webSocketServer = $webSocketServer;
         $this->objDbPool = $objDbPool;
@@ -31,6 +33,7 @@ class RefSnapshotAPIConsumer
         $this->url = $url;
         $this->timeout = config('app_config.api_req_timeout');
         $this->chunkSize = config('ref_config.ref_chunk_size');
+        $this->refTokenLock = $refTokenLock;
     }
 
     public function handle($companies = null, $fields)
@@ -69,7 +72,7 @@ class RefSnapshotAPIConsumer
         }
 
         // Fetch Refinitive access token
-        $tokenRec = $this->getRefTokenRecord();
+        $tokenRec = getActiveRefToken($this->webSocketServer, $this->refTokenLock);
 
         if($tokenRec) {
             $refAccessToken = $tokenRec['access_token'];
@@ -115,48 +118,6 @@ class RefSnapshotAPIConsumer
     }
 
     /**
-     * Get the refinitiv access token from staging
-     *
-     * @return string
-     */
-    public function getRefTokenRecord()
-    {
-        $dbQuery = "SELECT * FROM refinitiv_auth_token_sw LIMIT 1";
-
-        $channel = new Channel(1);
-
-        go(function () use ($dbQuery, $channel) {
-            try {
-                $try = 0;
-                do {
-                    $tokenRec = $this->dbFacade->query($dbQuery, $this->objDbPool);
-                    $tokenRec =  $tokenRec ? ($tokenRec[0] ?? false) : false;
-                    if ($tokenRec) {
-                        if (!(Carbon::now()->timestamp - Carbon::parse($tokenRec['updated_at'])->timestamp >= ($tokenRec['expires_in'] - 60))) {
-                            $channel->push($tokenRec);
-                            break;
-                        }
-                    }
-
-                    Coroutine::sleep(1);
-                    $try++;
-                } while ($try < 5);
-
-                if ($try == 5) {
-                    $channel->push(0);
-                }
-            } catch (Throwable $e) {
-                output($e);
-            }
-        });
-
-        $result = $channel->pop();
-
-        return $result == 0 ? false : $result;
-    }
-
-
-    /**
      * Get the most active from Refinitiv
      *
      * @param  string $token
@@ -176,6 +137,7 @@ class RefSnapshotAPIConsumer
     public function sendRequest($queryParams, $accessToken, $mAIndicatorBarrier)
     {
         go(function () use ($queryParams, $accessToken, $mAIndicatorBarrier) {
+
              $overAllRepCounter = 0;
             do {
 
@@ -188,7 +150,7 @@ class RefSnapshotAPIConsumer
                     if ($statusCode == 401) {
                         var_dump('Swoole-serv: Unauthorized: Invalid token or session has expired.');
                         Coroutine::sleep(0.7);
-                        $token = $this->getRefTokenRecord();
+                        $token = getActiveRefToken($this->webSocketServer, $this->refTokenLock);
                         if($token) {
                             $accessToken = $token['access_token'];
                         } else {

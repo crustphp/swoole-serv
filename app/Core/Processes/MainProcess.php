@@ -7,6 +7,7 @@ use Swoole\Atomic;
 use Swoole\Process;
 use Bootstrap\ServiceContainer;
 use App\Core\Traits\CustomProcessesTrait;
+use Swoole\Lock;
 
 class MainProcess
 {
@@ -24,6 +25,9 @@ class MainProcess
 
     protected $serviceStartedBy = "";
 
+    // Lock
+    protected $lock = null;
+
     public function __construct($server, $process)
     {
         $this->server = $server;
@@ -40,6 +44,9 @@ class MainProcess
 
         // Used for setting prefix for Process Name
         $this->serviceStartedBy = serviceStartedBy();
+
+        // Lock
+        $this->lock = new Lock(SWOOLE_MUTEX);
     }
 
     /**
@@ -72,7 +79,7 @@ class MainProcess
 
         // Close the custom user Processes if they are already running as they are not terminated when
         // the main process exits abnormally as per docs: https://wiki.swoole.com/en/#/process/process?id=usage-example
-        $this->killProcessesByPidFolder(['MainProcess'], true);
+        // $this->killProcessesByPidFolder(['MainProcess'], true);
 
         // Setup and Start registered custom user processes
         foreach ($this->customProcessesMetaData as $processKey => $processInfo) {
@@ -82,6 +89,9 @@ class MainProcess
             // Process Creation Callback
             $processCallback = function (Process $process) use ($processKey, $processInfo) {
                 try {
+                    // To keep the process alive
+                    \Swoole\Timer::tick(120000, function () {});
+
                     // Set the name of the process
                     $process->name("php-{$this->serviceStartedBy}-" . $processKey);
 
@@ -97,18 +107,23 @@ class MainProcess
                     // Get the ServiceContainerInstance with global process parameters
                     $serviceContainer = ServiceContainer::get_instance($this->server, $process);
                     // Here we pass the server and process as constructor params to avoid error of these values replaced by latest process
-                    $processBaseClass = $serviceContainer($processKey, null, $this->server, $process);
+                    $processBaseClass = $serviceContainer($processKey, null, $this->server, $process, $this->lock);
 
                     // Catch the Signal to revoke resources before terminating the processes
-                    Process::signal(SIGTERM, function ($signo) use ($processBaseClass) {                        
+                    Process::signal(SIGTERM, function ($signo) use ($processBaseClass, $pidFile) {
                         // Clear Timers
                         Timer::clearAll();
 
                         // Destruct and Unset Process Base Class
                         $processBaseClass->revokeProcessResources();
                         unset($processBaseClass);
-                    });
 
+                        // Unlink the Process PID File
+                        unlink($pidFile);
+
+                        // Force Kill the Server
+                        exec('kill -9 '. getmypid());
+                    });
                     // Following Code is not needed/commented when we use $process->start();
                     // Throw the exception if no Swoole\Timer is used in.
                     // There should be a Timer is to prevent the user process from continuously exiting and restarting as per documentation

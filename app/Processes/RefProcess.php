@@ -16,10 +16,14 @@ class RefProcess {
     protected $objDbPool;
     protected $dbFacade;
 
-    public function __construct($server, $process)
+    protected $lock = null;
+
+
+    public function __construct($server, $process, $lock = null)
     {
         $this->server = $server;
         $this->process = $process;
+        $this->lock = $lock;
 
         // Create the DB Connection Pool
         $this->worker_id = $process->id;
@@ -49,7 +53,7 @@ class RefProcess {
     public function handle()
     {
         // Use/call your services Here
-        $refDataService = new RefDataService(server: $this->server, process: $this->process, objDbPool: $this->objDbPool);
+        $refDataService = new RefDataService(server: $this->server, process: $this->process, objDbPool: $this->objDbPool, refTokenLock: $this->lock);
         $refDataService->handle();
     }
 
@@ -77,7 +81,7 @@ class RefProcess {
 
         unset($this->objDbPool);
     }
-    
+
     /**
      * Revoke the process resources
      *

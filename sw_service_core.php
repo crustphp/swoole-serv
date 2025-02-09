@@ -417,7 +417,7 @@ class sw_service_core {
             $swoole_pg_db_key = config('app_config.swoole_pg_db_key');
             $swoole_mysql_db_key = config('app_config.swoole_mysql_db_key');
             $serviceStartedBy = serviceStartedBy();
-            
+
             if ($worker_id >= $server->setting['worker_num']) {
                 if ($this->swoole_ext == 1) {
                     swoole_set_process_name("php-$serviceStartedBy-Swoole-task-worker-" . $worker_id);
@@ -658,12 +658,10 @@ class sw_service_core {
                 $websocketserver->privilegedFds[$request->fd] = $request->fd;
             }
 
-            if (isset($request->header) && isset($request->header["refinitive-token-production-endpoint-key"]) && !empty($request->header["refinitive-token-production-endpoint-key"])) {
+            if (isset($request->header) && isset($request->header["privileged-fd-key-for-ref-token"]) && !empty($request->header["privileged-fd-key-for-ref-token"])) {
               if (config('app_config.env') != 'local' && config('app_config.env') != 'staging') {
-
-                $worker_id = $websocketserver->worker_id;
                 // Sending Refinitive Token to Envirenement FDS (local, stage)
-                $pushToken = new PushToken($websocketserver, $request, $this->dbConnectionPools[$worker_id][config('app_config.swoole_pg_db_key')]);
+                $pushToken = new PushToken($websocketserver, $request);
                 $pushToken->handle();
                 unset($pushToken);
               }
@@ -995,7 +993,7 @@ class sw_service_core {
 
                                 // -------- Start: Broadcast the newly subscribed topics ----------- //
                                 $topicsRequested = [...$results['already_subscribed'], ...$results['subscribed']];
-                                
+
                                 // Get all Indicators of Ref Company Data
                                 $allRefCompanyDataTopics = array_map('strtolower', explode(',', config('ref_config.ref_fields')));
 
@@ -1185,8 +1183,6 @@ class sw_service_core {
                     Process::kill($pid, SIGTERM);
                 }
 
-                // Delete the PID File
-                unlink($processPidFile);
             }
         }
     }

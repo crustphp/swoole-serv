@@ -2,37 +2,37 @@
 
 namespace App\Services;
 
-use Swoole\Coroutine\Channel;
 use Swoole\Coroutine;
 use Bootstrap\SwooleTableFactory;
 use Carbon\Carbon;
-use DB\DbFacade;
-use Throwable;
 
 class PushToken
 {
     protected $websocketserver;
-    protected $objDbPool;
-    protected $dbFacade;
     protected $request;
 
-    public function __construct($websocketserver, $request, $objDbPool)
+    public function __construct($websocketserver, $request)
     {
         $this->websocketserver = $websocketserver;
         $this->request = $request;
-        $this->objDbPool = $objDbPool;
-        $this->dbFacade  = new DbFacade();
     }
 
     public function handle()
     {
-        if ($this->request->header["refinitive-token-production-endpoint-key"] == config('ref_config.ref_production_token_endpoint_key')) {
+        if ($this->request->header["privileged-fd-key-for-ref-token"] == config('ref_config.privileged_fd_key_for_ref_token')) {
 
             $worker_id = $this->websocketserver->worker_id;
             $tokenFdsTable = SwooleTableFactory::getTable('token_fds');
             $tokenFdsTable->set($this->request->fd, ['fd' => $this->request->fd, 'worker_id' => $worker_id]);
 
-            $tokenRec = $this->getRefTokenRecord();
+            $refTokenTable =  \Bootstrap\SwooleTableFactory::getTable('ref_token_sw', true);
+            $tokenRec = $refTokenTable->get('1');
+
+            // Token is empty or expired
+            while (empty($tokenRec) ||  Carbon::now()->timestamp - Carbon::parse($tokenRec['updated_at'])->timestamp >= ($tokenRec['expires_in'] - 60)) {
+                $tokenRec = $refTokenTable->get('1');
+                Coroutine::sleep(0.5);
+            }
 
             if ($tokenRec) {
                 $result = json_encode($tokenRec);
@@ -53,48 +53,11 @@ class PushToken
         }
     }
 
-    public function getRefTokenRecord()
-    {
-        $dbQuery = "SELECT * FROM refinitiv_auth_token_sw LIMIT 1";
-
-        $channel = new Channel(1);
-
-        go(function () use ($dbQuery, $channel) {
-            try {
-                $try = 0;
-                do {
-                    $tokenRec = $this->dbFacade->query($dbQuery, $this->objDbPool);
-                    $tokenRec =  $tokenRec ? ($tokenRec[0] ?? false) : false;
-                    if ($tokenRec) {
-                        if (!(Carbon::now()->timestamp - Carbon::parse($tokenRec['updated_at'])->timestamp >= ($tokenRec['expires_in'] - 60))) {
-                            $channel->push($tokenRec);
-                            break;
-                        }
-                    }
-
-                    Coroutine::sleep(1);
-                    $try++;
-                } while ($try < 10);
-
-                if ($try == 10) {
-                    $channel->push(0);
-                }
-            } catch (Throwable $e) {
-                output($e);
-            }
-        });
-
-        $result = $channel->pop();
-
-        return $result == 0 ? false : $result;
-    }
-
     /**
      * __destruct
      *
      * @return void
      */
     public function __destruct() {
-        unset($this->dbFacade);
     }
 }

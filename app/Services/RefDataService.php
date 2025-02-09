@@ -2,15 +2,17 @@
 
 namespace App\Services;
 
-use DB\DBConnectionPool;
+// use DB\DBConnectionPool;
 
-use Swoole\Timer as swTimer;
+// use Swoole\Timer as swTimer;
 use App\Services\RefSnapshotAPIConsumer;
 use DB\DbFacade;
 use Carbon\Carbon;
 use Bootstrap\SwooleTableFactory;
 use Throwable;
 use Swoole\Coroutine\Channel;
+use Swoole\Coroutine as Co;
+
 
 class RefDataService
 {
@@ -21,7 +23,8 @@ class RefDataService
     protected $dbFacade;
     protected $fields;
     protected $refTimeSpan;
-    protected $refSeconds;
+
+    protected $refTokenLock;
 
     const ERRORLOG = 'error_logs';
     const ALLCHANGEDRECORDS = 'all_changed_records';
@@ -30,20 +33,42 @@ class RefDataService
     const ISREFDATA = 'is_ref_data';
     const ALLCHANGEDINDICATORS = 'all_changed_indicators';
 
-    public function __construct($server, $process, $objDbPool)
+    public function __construct($server, $process, $objDbPool, $refTokenLock = null)
     {
         $GLOBALS['process_id'] = $process->id;
         $this->server = $server;
         $this->process = $process;
         $this->worker_id = $process->id;
-        
+
         $this->objDbPool = $objDbPool;
         $this->dbFacade = new DbFacade();
-        
+
         $this->fields = config('ref_config.ref_fields');
         $this->refTimeSpan = config('app_config.most_active_data_fetching_timespan');
-        $this->refSeconds =  $this->refTimeSpan  / 1000;
+        $this->refTokenLock = $refTokenLock;
     }
+
+    // public function getActiveRefToken() {
+
+    //     $refTokenTable =  SwooleTableFactory::getTable('ref_token_sw', true);
+    //     $token = $refTokenTable->get('1');
+
+    //     $refToken = new RefToken($this->server);
+
+    //     while (empty($token) ||  Carbon::now()->timestamp - Carbon::parse($token['updated_at'])->timestamp >= ($token['expires_in'] - 60)) {
+    //         // Token is empty or expired
+    //         if ($this->refTokenLock->trylock()) {
+    //             output('Updating the token inside the lock');
+    //             $token = $refTokenTable->get('1');
+    //             $token = $refToken->produceActiveToken();
+    //             $this->refTokenLock->unlock();
+    //         }
+    //     }
+
+    //     return $token;
+    // }
+
+
 
     /**
      * Method to handle background process
@@ -52,48 +77,51 @@ class RefDataService
      */
     public function handle()
     {
-        $companyDetail = null;
-        $dataExistInDB = false;
-        $dataInitCase = true;
+        go(function () {
 
-        // Aggregate query to get the count from the Refinitive table
-        $dataExistInDB = $this->getDataCountFromDB(self::REFSNAPSHOTCOMPANIES);
+            $companyDetail = null;
+            $dataExistInDB = false;
+            $dataInitCase = true;
 
-        if ($dataExistInDB) { // Case: The websocket service not running for the first time in its entirety
-            // Get only companies which has Ref Data from DB.
-            $companyDetailWithRefData = $this->fetchOnlyRefDataCompaniesWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES);
+            // Aggregate query to get the count from the Refinitive table
+            $dataExistInDB = $this->getDataCountFromDB(self::REFSNAPSHOTCOMPANIES);
 
-            // If the data is fresh, initialize from the database
-            if ($this->isFreshRefData($companyDetailWithRefData)) {
-                $this->loadSwooleTableWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES, $companyDetailWithRefData);
-                var_dump("Data is loaded into the swoole");
-            } else {
-                var_dump("There is older data than $this->refSeconds seconds");
-                // Get all companies with Ref Data from the database for calculating change or delta, excluding those with a caret symbol ('^') in their RIC.
-                $companyDetailWithRefData = $this->getAllCompaniesWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES);
+            if ($dataExistInDB) { // Case: The websocket service not running for the first time in its entirety
+                // Get only companies which has Ref Data from DB.
+                $companyDetailWithRefData = $this->fetchOnlyRefDataCompaniesWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES);
 
-                // Fetch data from Refinitive, calculate changes, broadcasting, update in swoole table, and store/update in DB.
-                $isProcessedRefIndicatorData = $this->processRefData($companyDetailWithRefData, self::REFSNAPSHOTCOMPANIES, $dataExistInDB, $dataInitCase);
+                // If the data is fresh, initialize from the database
+                if ($this->isFreshRefData($companyDetailWithRefData)) {
+                    $this->loadSwooleTableWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES, $companyDetailWithRefData);
+                    output("Data is loaded into the swoole");
+                } else {
+                    output("There is older data than $this->refTimeSpan seconds");
+                    // Get all companies with Ref Data from the database for calculating change or delta, excluding those with a caret symbol ('^') in their RIC.
+                    $companyDetailWithRefData = $this->getAllCompaniesWithRefDataFromDB(self::REFSNAPSHOTCOMPANIES);
+
+                    // Fetch data from Refinitive, calculate changes, broadcasting, update in swoole table, and store/update in DB.
+                    $isProcessedRefIndicatorData = $this->processRefData($companyDetailWithRefData, self::REFSNAPSHOTCOMPANIES, $dataExistInDB, $dataInitCase);
+
+                    if (!$isProcessedRefIndicatorData) {
+                        output('Refinitive API is not returning data at this time');
+                    }
+                }
+            } else { // Case: The websocket service is running for the first time in its entirety
+                output("There is no Refinitive Company data in DB");
+                $companyDetail = $this->getCompaniesFromDB();
+
+                // Fetch data from Refinitive, update in swoole table, and store/update in DB.
+                $isProcessedRefIndicatorData = $this->processRefData($companyDetail, self::REFSNAPSHOTCOMPANIES, $dataExistInDB, $dataInitCase);
 
                 if (!$isProcessedRefIndicatorData) {
-                    var_dump('Refinitive API is not returning data at this time');
+                    output('Refinitive API is not returning data at this time');
                 }
             }
-        } else { // Case: The websocket service is running for the first time in its entirety
-            var_dump("There is no Refinitive Company data in DB");
-            $companyDetail = $this->getCompaniesFromDB();
 
-            // Fetch data from Refinitive, update in swoole table, and store/update in DB.
-            $isProcessedRefIndicatorData = $this->processRefData($companyDetail, self::REFSNAPSHOTCOMPANIES, $dataExistInDB, $dataInitCase);
-
-            if (!$isProcessedRefIndicatorData) {
-                var_dump('Refinitive API is not returning data at this time');
+            while (true) {
+                $this->initRef();
+                Co::sleep($this->refTimeSpan);
             }
-        }
-
-        // Schedule of Ref Data Fetching
-        swTimer::tick($this->refTimeSpan, function () {
-            $this->initRef();
         });
     }
 
@@ -125,7 +153,7 @@ class RefDataService
         // Parse the latest_update timestamp
         $latestUpdate = Carbon::parse($indicatorDataFromDB[0]['updated_at']);
         // Check if the latest update is more than 5 minutes old
-        if ($latestUpdate->diffInMilliseconds(Carbon::now()) < $this->refTimeSpan) {
+        if ($latestUpdate->diffInSeconds(Carbon::now()) < $this->refTimeSpan) {
             $isFreshDBData = true;
         }
 
@@ -157,7 +185,7 @@ class RefDataService
 
     public function loadSwooleTableWithRefDataFromDB($tableName, $mAIndicatorDBData)
     {
-        var_dump("Record is within the last $this->refSeconds seconds. Data prepared.");
+        var_dump("Record is within the last $this->refTimeSpan seconds. Data prepared.");
         $companyInfo = "";
         $table = SwooleTableFactory::getTable($tableName);
         foreach ($mAIndicatorDBData as $mAIndicatorDBRec) {
@@ -220,7 +248,7 @@ class RefDataService
 
     public function fetchRefData(mixed $companyDetail)
     {
-        $service = new RefSnapshotAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('ref_config.ref_pricing_snapshot_url'));
+        $service = new RefSnapshotAPIConsumer($this->server, $this->objDbPool, $this->dbFacade, config('ref_config.ref_pricing_snapshot_url'), $this->refTokenLock);
         $responses = $service->handle($companyDetail, $this->fields);
         unset($service);
 

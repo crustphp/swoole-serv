@@ -46,9 +46,6 @@ trait CustomProcessesTrait
             if (Process::kill($pid, 0)) {
                 Process::kill($pid, $killSignal);
             }
-
-            // Delete the PID File
-            unlink($processPidFile);
         }
 
         // Kill the (Custom) MainProcess
@@ -56,8 +53,6 @@ trait CustomProcessesTrait
             if (Process::kill($mainProcessData['pid'], 0)) {
                 Process::kill($mainProcessData['pid'], $killSignal);
             }
-
-            unlink($mainProcessData['pidFile']);
         }
     }
 

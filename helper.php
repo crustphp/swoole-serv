@@ -16,10 +16,10 @@ if (!function_exists('output')) {
      * You can also pass the instance of Exception / Throwable to log the exception
      *
      * @param mixed $data  The data to be printed or logged.
-     * @param mixed $server  Optional The Swoole server instance 
+     * @param mixed $server  Optional The Swoole server instance
      * @param bool $shouldExit  If true, exit the script after output.
      * @param bool $shouldVarDump  If true, use var_dump
-     * 
+     *
      * @return void
      */
     function output(mixed $data, mixed $server = null, bool $shouldExit = false, bool $shouldVarDump = false): void
@@ -93,7 +93,7 @@ if (!function_exists('forceShutdown')) {
      * Force Shutdown the Server
      *
      * @param int $port  The port of the server
-     * 
+     *
      * @return void
      */
     function forceShutdown(int $port = 9501): void
@@ -127,9 +127,9 @@ if (!function_exists('getIdFromDbPoolKey')) {
      *
      * @param  string $poolKey The database connection pool key.
      * @param  string $dbEngine The database engine ('postgres' or 'mysql').
-     * 
+     *
      * @return int The extracted ID as an integer.
-     * 
+     *
      * @throws \RuntimeException If the $poolKey or $dbEngine is invalid.
      */
     function getIdFromDbPoolKey($poolKey, $dbEngine): int
@@ -201,7 +201,7 @@ if (!function_exists('getAllDirectories')) {
      *
      * @param string $dir The base directory to start scanning from.
      * @param array $skipDirs An array of directory names to skip during scanning.
-     * 
+     *
      * @return mixed A list of final directories
      */
     function getAllDirectories($dir, $skipDirs = []): mixed
@@ -267,7 +267,7 @@ if (!function_exists('writeDataToJsonFile')) {
      * @param array $data The data array to write to the JSON file.
      * @param string $absoluteFilePath The absolute path to the JSON file.
      * @param string $mode The mode of writing: 'a' (append) or 'w' (overwrite). By default it will append the data
-     * 
+     *
      * @return bool Returns true if the data has been written successfully, false otherwise.
      */
     function writeDataToJsonFile(array $data, string $absoluteFilePath, string $mode = 'a'): bool
@@ -308,7 +308,7 @@ if (!function_exists('removeItemFromJsonFile')) {
      * @param string $key The key to match for removing the entry.
      * @param mixed $value The value to match for removing the entry.
      * @param string $absoluteFilePath The absolute path to the JSON file.
-     * 
+     *
      * @return bool Returns True if the entry was removed, False otherwise.
      */
     function removeItemFromJsonFile(string $key, $value, string $absoluteFilePath): bool
@@ -335,7 +335,7 @@ if (!function_exists('removeItemFromJsonFile')) {
 }
 
 
-if (!function_exists('basePath')) {    
+if (!function_exists('basePath')) {
     /**
      * Returns the Swoole project's base path.
      *
@@ -347,7 +347,7 @@ if (!function_exists('basePath')) {
 }
 
 // Returns the file used to start the service (e.g sw_service)
-if (!function_exists('serviceStartedBy')) {    
+if (!function_exists('serviceStartedBy')) {
     /**
      * Returns the file used to start the service (e.g sw_service)
      *
@@ -356,5 +356,31 @@ if (!function_exists('serviceStartedBy')) {
     function serviceStartedBy(): string {
         global $argv;
         return isset($argv[0]) ? pathinfo($argv[0], PATHINFO_FILENAME) : "";
+    }
+}
+
+if (!function_exists('getActiveRefToken')) {
+    function getActiveRefToken($server, $refTokenLock)
+    {
+        $refTokenTable =  \Bootstrap\SwooleTableFactory::getTable('ref_token_sw', true);
+        $token = $refTokenTable->get('1');
+
+        $refTokenObj = new \App\Services\RefToken($server);
+        $gotLock = true;
+        // Token is empty or expired
+        while (empty($token) ||  Carbon::now()->timestamp - Carbon::parse($token['updated_at'])->timestamp >= ($token['expires_in'] - 60)) {
+            if ((config('app_config.env') != 'local' && config('app_config.env') != 'staging') && $gotLock && $refTokenLock->trylock()) {
+                output('Updating the token inside the lock');
+                $token = $refTokenObj->produceNewToken($token);
+                $refTokenLock->unlock();
+                break;
+            } else {
+                $gotLock = false;
+                // The process which fails to obtain trylock will get the token from 'swoole table' to check if the token has been updated by some other process
+                $token = $refTokenTable->get('1');
+            }
+        }
+        unset($refTokenObj);
+        return $token;
     }
 }
