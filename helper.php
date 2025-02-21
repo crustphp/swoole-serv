@@ -384,3 +384,19 @@ if (!function_exists('getActiveRefToken')) {
         return $token;
     }
 }
+
+// Get the job_run_at value from the Swoole Table by providing Job Name
+if (!function_exists('getJobRunAt')) {    
+    /**
+     * Get the job_run_at value from the Swoole Table by providing Job Name
+     *
+     * @param  string $jobName the name of the Job
+     * @return mixed
+     */
+    function getJobRunAt(string $jobName): mixed
+    {
+        $jobRunsAtTable = \Bootstrap\SwooleTableFactory::getTable('jobs_runs_at', true);
+        $jobRunsAtData = $jobRunsAtTable->get($jobName);
+        return isset($jobRunsAtData['job_run_at']) ? $jobRunsAtData['job_run_at'] : null;
+    }
+}
