@@ -29,4 +29,5 @@ return [
     'api_req_timeout' => intval($_ENV['SW_API_REQ_TIMEOUT'] ?? 5),
     'api_calls_retry' => intval($_ENV['SW_API_CALLS_RETRY'] ?? 3),
     'api_token_time_span' => $_ENV['SW_API_AUTH_TOKEN_TIME_SPAN'] ?? '60000',
+    'float_empty_value' =>  intval($_ENV['SW_FLOAT_EMPTY_VALUE'] ?? -9223372036854776000),
 ];
