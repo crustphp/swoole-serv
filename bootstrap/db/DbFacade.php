@@ -42,6 +42,11 @@ class DbFacade {
             throw new \RuntimeException("Failed to get postgresClient from the Pool");
         }
 
+        // Apply Defer to Return the connection to pool
+        Co::defer(function() use($objDbPool, $postgresClient) {
+            $objDbPool->put_dbObject_using_pool_key($postgresClient);
+        });
+
         $connectionTested = false;
 
         if ($transaction) {
@@ -115,8 +120,8 @@ class DbFacade {
             $postgresClient->query('COMMIT');
         }
 
-        // Return the connection to pool as soon as possible
-        $objDbPool->put_dbObject_using_pool_key($postgresClient);
+        // Commented Below as we are doing it in defer -- Return the connection to pool as soon as possible
+        // $objDbPool->put_dbObject_using_pool_key($postgresClient);
 
         return $data;
     }

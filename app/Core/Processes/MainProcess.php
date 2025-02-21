@@ -122,7 +122,10 @@ class MainProcess
                         unlink($pidFile);
 
                         // Force Kill the Server
-                        exec('kill -9 '. getmypid());
+                        $pid = getmypid();
+                        if (Process::kill($pid, 0)) {
+                            Process::kill($pid, SIGKILL);
+                        }
                     });
                     // Following Code is not needed/commented when we use $process->start();
                     // Throw the exception if no Swoole\Timer is used in.
