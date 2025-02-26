@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f4a4c8e7e8252a3d806f819c2f50d2c4",
+    "content-hash": "deaeaa96bcd82e5fde715faaf3e8f2bd",
     "packages": [
         {
             "name": "cakephp/chronos",
@@ -480,6 +480,58 @@
                 "source": "https://github.com/crustphp/Swoole-RelationalDB/tree/1.4.0"
             },
             "time": "2024-12-20T13:31:42+00:00"
+        },
+        {
+            "name": "crustphp/swoolecontext",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/crustphp/swoole-context.git",
+                "reference": "b3af2722b8853cee1dda9bedc475227b1a125547"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/crustphp/swoole-context/zipball/b3af2722b8853cee1dda9bedc475227b1a125547",
+                "reference": "b3af2722b8853cee1dda9bedc475227b1a125547",
+                "shasum": ""
+            },
+            "require": {
+                "ext-swoole": ">=4.3.0",
+                "php": ">=7.1.0"
+            },
+            "require-dev": {
+                "easyswoole/swoole-ide-helper": "^1.3"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Crust\\SwooleContext\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "Apache-2.0"
+            ],
+            "authors": [
+                {
+                    "name": "Fakhar Anwar",
+                    "email": "fakhar.anwar@gmail.com"
+                },
+                {
+                    "name": "Mohsin Ali",
+                    "email": "mohsin.ali8541@gmail.com"
+                },
+                {
+                    "name": "Shoaib Arshad",
+                    "email": "shoaibarshad6578303@gmail.com"
+                }
+            ],
+            "description": "A simple coroutine context manager based on swoole context feature for swoole framework",
+            "support": {
+                "issues": "https://github.com/crustphp/swoole-context/issues",
+                "source": "https://github.com/crustphp/swoole-context/tree/1.0.0"
+            },
+            "time": "2025-02-24T13:23:32+00:00"
         },
         {
             "name": "dragonmantank/cron-expression",
@@ -3189,50 +3241,6 @@
                 "source": "https://github.com/webmozarts/assert/tree/1.11.0"
             },
             "time": "2022-06-03T18:03:27+00:00"
-        },
-        {
-            "name": "yylh/swcontext",
-            "version": "0.0.2",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/alwaysLinger/swcontext.git",
-                "reference": "5e9787df8c09210f3fca196491fa53840232cf18"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/alwaysLinger/swcontext/zipball/5e9787df8c09210f3fca196491fa53840232cf18",
-                "reference": "5e9787df8c09210f3fca196491fa53840232cf18",
-                "shasum": ""
-            },
-            "require": {
-                "ext-swoole": ">=4.3.0",
-                "php": ">=7.1.0"
-            },
-            "require-dev": {
-                "easyswoole/swoole-ide-helper": "^1.3"
-            },
-            "type": "library",
-            "autoload": {
-                "psr-4": {
-                    "Al\\Swow\\": "src/"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "Apache-2.0"
-            ],
-            "authors": [
-                {
-                    "name": "alwayslinger",
-                    "email": "alwayslinger@163.com"
-                }
-            ],
-            "description": "A simple coroutine context manager based on swoole context feature for swoole framework",
-            "support": {
-                "issues": "https://github.com/alwaysLinger/swcontext/issues",
-                "source": "https://github.com/alwaysLinger/swcontext/tree/0.0.2"
-            },
-            "time": "2020-11-13T01:04:19+00:00"
         }
     ],
     "packages-dev": [
@@ -3271,10 +3279,10 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": [],
     "prefer-stable": false,
     "prefer-lowest": false,
-    "platform": {},
-    "platform-dev": {},
+    "platform": [],
+    "platform-dev": [],
     "plugin-api-version": "2.6.0"
 }
