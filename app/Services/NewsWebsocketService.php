@@ -32,16 +32,22 @@ class NewsWebsocketService
 
         // Base query with necessary joins
         $baseQuery = "SELECT
-            kd.*,
-            kds.\"keyDevId\" AS split_keyDevId,
-            kdote.*,
-            c.*,
-            kte.*,
-            st.*,
-            tz.\"announcedDateTimeZoneId\", tz.\"announcedDateTimeZoneName\"
+            kd.\"keyDevId\",
+            kd.\"headline\",
+            kd.\"situation\",
+            kd.\"announcedDate\",
+            kdote.\"keyDevToObjectToEventTypeID\",
+            kdote.\"objectID\",
+            kdote.\"keyDevEventTypeID\",
+            kdote.\"keyDevToObjectRoleTypeID\",
+            c.\"sp_comp_id\",
+            c.\"name\",
+            c.\"short_name\",
+            kte.\"keyDevCategoryName\",
+            st.\"sourceTypeId\",
+            st.\"sourceTypeName\",
+            COUNT(*) OVER () AS total
         FROM key_dev kd
-        LEFT JOIN key_dev_split_info kds
-            ON kd.\"keyDevId\" = kds.\"keyDevId\"
         LEFT JOIN key_dev_to_object_to_event_type kdote
             ON kd.\"keyDevId\" = kdote.\"keyDevID\"
             AND kd.\"spEffectiveDate\" = kdote.\"spEffectiveDate\"
@@ -52,44 +58,46 @@ class NewsWebsocketService
         LEFT JOIN key_dev_to_source_type dts
             ON kd.\"keyDevId\" = dts.\"keyDevId\"
         LEFT JOIN source_type st
-            ON dts.\"sourceTypeId\" = st.\"sourceTypeId\"
-        LEFT JOIN key_dev_time_zone tz
-            ON kd.\"announcedDateTimeZoneId\" = tz.\"announcedDateTimeZoneId\"";
+            ON dts.\"sourceTypeId\" = st.\"sourceTypeId\"";
 
         $whereClauses = [];
 
-        // Filters
-        if (isset($this->request['filter']) && $this->request['filter'] === 'KSA') {
-            $whereClauses[] = "c.country = 'KSA'";
+        // Country
+        if (isset($this->request['country'])) {
+            $country = str_replace("'", "''", $this->request['country']); // escape single quotes
+            $whereClauses[] = "c.country = '$country'";
         }
 
         if (isset($this->request['keyword'])) {
-            $keyword = '%' . $this->request['keyword'] . '%';
-            $keyword = str_replace("'", "''", $keyword); // Escape single quotes
-            $whereClauses[] = "(kd.headline LIKE '$keyword' OR kd.situation LIKE '$keyword')";
+            $keyword = str_replace("'", "''", $this->request['keyword']); // Escape single quotes
+            $keyword = '%' . $keyword . '%';
+            $whereClauses[] = "(kd.headline ILIKE '$keyword' OR kd.situation ILIKE '$keyword')";
+        }
+
+        if (isset($this->request['days']) && is_numeric($this->request['days'])) {
+            $days = (int) $this->request['days'];
+            $whereClauses[] = "kd.\"announcedDate\" >= NOW() - INTERVAL '$days days'";
         }
 
         if (isset($this->request['start_date']) && isset($this->request['end_date'])) {
-            $startDate = $this->request['start_date'] . ' 00:00:00';
-            $endDate = $this->request['end_date'] . ' 23:59:59';
+            $startDate = str_replace("'", "''", $this->request['start_date']) . ' 00:00:00';
+            $endDate = str_replace("'", "''", $this->request['end_date']) . ' 23:59:59';
             $whereClauses[] = "kd.\"announcedDate\" BETWEEN '$startDate' AND '$endDate'";
         }
 
         if (isset($this->request['company'])) {
-            $companyId = $this->request['company'];
-            $whereClauses[] = "c.id = '$companyId'";
+            $company = str_replace("'", "''", $this->request['company']);
+            $whereClauses[] = "(CAST(c.id AS TEXT) ILIKE '%$company%' OR c.name ILIKE '%$company%')";
         }
 
         if (isset($this->request['category'])) {
-            $category = $this->request['category'];
-            $category = str_replace("'", "''", $category); // Escape single quotes
-            $whereClauses[] = "kte.\"keyDevCategoryName\" = '$category'";
+            $category = str_replace("'", "''", $this->request['category']); // Escape single quotes
+            $whereClauses[] = "kte.\"keyDevCategoryName\" ILIKE '$category'";
         }
 
         if (isset($this->request['source'])) {
-            $source = $this->request['source'];
-            $source = str_replace("'", "''", $source); // Escape single quotes
-            $whereClauses[] = "st.\"sourceTypeName\" = '$source'";
+            $source = str_replace("'", "''", $this->request['source']); // Escape single quotes
+            $whereClauses[] = "st.\"sourceTypeName\" ILIKE '$source'";
         }
 
         // Combine query
@@ -99,22 +107,6 @@ class NewsWebsocketService
         }
 
         $finalQuery .= " ORDER BY kd.\"announcedDate\" DESC, kd.\"keyDevId\" ASC";
-
-        $countQuery = "SELECT COUNT(*) as total FROM ($baseQuery) as subquery";
-
-        $channel = new Channel(1);
-            go(function () use ( $dbFacade, $countQuery, $objDbPool, $channel) {
-                try {
-                    $result = $dbFacade->query($countQuery, $objDbPool);
-                    $channel->push($result);
-                } catch (Throwable $e) {
-                    output($e);
-                }
-            });
-
-        $totalResult = $channel->pop();
-
-        $total = $totalResult[0]['total'] ?? 0;
 
         // Pagination logic
         $limit = 20;
@@ -142,70 +134,36 @@ class NewsWebsocketService
             if (!isset($news[$keyDevId])) {
                 $news[$keyDevId] = [
                     'keyDevId' => $row['keyDevId'],
-                    'spEffectiveDate' => $row['spEffectiveDate'],
-                    'spToDate' => $row['spToDate'],
                     'headline' => $row['headline'],
-                    'situation' => $row['situation'],
                     'announcedDate' => $row['announcedDate'],
-                    'announcedDateTimeZoneId' => $row['announcedDateTimeZoneId'],
-                    'announceddateUTC' => $row['announceddateUTC'],
-                    'enteredDate' => $row['enteredDate'],
-                    'enteredDateUTC' => $row['enteredDateUTC'],
-                    'lastModifiedDate' => $row['lastModifiedDate'],
-                    'lastModifiedDateUTC' => $row['lastModifiedDateUTC'],
-                    'mostImportantDateUTC' => $row['mostImportantDateUTC'],
-                    'split_info' => [],
-                    'object_to_event_type' => [],
-                    'dev_to_source_type' => [],
-                    'time_zone' => []
-                ];
-            }
-
-            // Add related data
-            if (!empty($row['split_keyDevId'])) {
-                $news[$keyDevId]['split_info'][] = [
-                    'keyDevId' => $row['split_keyDevId']
-                ];
-            }
-
-            if (!empty($row['keyDevToObjectToEventTypeID'])) {
-                $news[$keyDevId]['object_to_event_type'][] = [
-                    'keyDevToObjectToEventTypeID' => $row['keyDevToObjectToEventTypeID'],
-                    'spEffectiveDate' => $row['spEffectiveDate'],
-                    'spToDate' => $row['spToDate'],
-                    'keyDevID' => $row['keyDevID'],
-                    'objectID' => $row['objectID'],
-                    'keyDevEventTypeID' => $row['keyDevEventTypeID'],
-                    'keyDevToObjectRoleTypeID' => $row['keyDevToObjectRoleTypeID'],
+                    'object_to_event_type' => [
+                        'keyDevToObjectToEventTypeID' => $row['keyDevToObjectToEventTypeID'],
+                        'objectID' => $row['objectID'],
+                        'keyDevEventTypeID' => $row['keyDevEventTypeID'],
+                        'keyDevToObjectRoleTypeID' => $row['keyDevToObjectRoleTypeID'],
+                    ],
                     'company' => [
                         'sp_comp_id' => $row['sp_comp_id'],
                         'en_long_name' => $row['name'],
                         'en_short_name' => $row['short_name'],
-                        'ar_long_name' => $row['arabic_name'],
-                        'ar_short_name' => $row['arabic_short_name']
+                        //'ar_long_name' => $row['arabic_name'],
+                        //'ar_short_name' => $row['arabic_short_name']
                     ],
-                    'category_type' => [
-                        'keyDevEventTypeId' => $row['keyDevEventTypeID'],
-                        'keyDevCategoryId' => $row['keyDevCategoryId'],
-                        'keyDevCategoryName' => $row['keyDevCategoryName'],
-                        'keyDevEventTypeName' => $row['keyDevEventTypeName']
-                    ]
+                    'dev_to_source_type' => [
+                        'sourceTypeId' => $row['sourceTypeId'],
+                        'sourceTypeName' => $row['sourceTypeName']
+                    ],
                 ];
             }
 
-            if (!empty($row['sourceTypeId'])) {
-                $news[$keyDevId]['dev_to_source_type'][] = [
-                    'sourceTypeId' => $row['sourceTypeId'],
-                    'sourceTypeName' => $row['sourceTypeName']
-                ];
-            }
+        }
 
-            if (!empty($row['announcedDateTimeZoneId'])) {
-                $news[$keyDevId]['time_zone'][] = [
-                    'announcedDateTimeZoneId' => $row['announcedDateTimeZoneId'],
-                    'announcedDateTimeZoneName' => $row['announcedDateTimeZoneName']
-                ];
-            }
+        $totalRecords = $newsData[0]['total'] ?? 0;
+        $totalPages = (int) ceil($totalRecords / $limit);
+
+        // Force at least 1 page if no records
+        if ($totalPages < 1) {
+            $totalPages = 1;
         }
 
         // Build final result
@@ -214,7 +172,8 @@ class NewsWebsocketService
                 'current_page' => $page,
                 'data' => array_values($news),
                 'per_page' => $limit,
-                'total' => $total
+                'total_pages' => $totalPages,
+                'total' => $totalRecords,
             ],
             'status' => 200
         ];
