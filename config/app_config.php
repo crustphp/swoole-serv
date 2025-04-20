@@ -30,4 +30,11 @@ return [
     'api_calls_retry' => intval($_ENV['SW_API_CALLS_RETRY'] ?? 3),
     'api_token_time_span' => $_ENV['SW_API_AUTH_TOKEN_TIME_SPAN'] ?? '60000',
     'float_empty_value' =>  intval($_ENV['SW_FLOAT_EMPTY_VALUE'] ?? -9223372036854776000),
+
+    'redis_host' => $_ENV['SW_REDIS_HOST'] ?? '127.0.0.1',
+    'redis_password' => $_ENV['SW_REDIS_PASSWORD'],
+    'redis_port' => $_ENV['SW_REDIS_PORT'] ?? 6379,
+    'max_sftp_downloads' => $_ENV['MAX_SFTP_DOWNLOADS'] ?? 2,
+    'laravel_app_url' => $_ENV['SW_LARAVEL_APP_URL'],
+    'ref_daywise_fetching_timespan' =>  intval($_ENV['SW_REF_DAYWISE_DATA_FETCHING_TIMESPAN'] ?? 43200),
 ];
