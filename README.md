@@ -207,6 +207,121 @@ sudo phpenmod -s cli swoole
 php sw_service.php stats
 ```
 
+# Other useful dependencies / services installation
+## SSH2 Installation
+### Step 1 - Check if SSH2 is already installed
+If you run the following terminal command on your system or server instance and it does not show any **ssh2-related** entries in the output array (as shown in the example output), it means the SSH2 extension is not installed. In that case, you should install the SSH2 extension to enable related functionality.
+
+Command to check if SSH2 is installed:
+```
+php -r "print_r(stream_get_wrappers());"
+```
+
+If you see the ssh2 entries (as shown in below output), it means ssh2 is already installed. Otherwise follow the steps to install it:
+```
+Array
+(
+    [0] => https
+    [1] => ftps
+    [2] => compress.zlib
+    [3] => php
+    [4] => file
+    [5] => glob
+    [6] => data
+    [7] => http
+    [8] => ftp
+    [9] => phar
+    [10] => ssh2.shell
+    [11] => ssh2.exec
+    [12] => ssh2.tunnel
+    [13] => ssh2.scp
+    [14] => ssh2.sftp
+    [15] => zip
+)
+```
+
+Further Confirm:
+```
+php -i | grep ssh2 
+php -m | grep ssh2
+```
+
+### Step 2 - Install OpenSSH Server
+To start using **SSH2** on your system, you first need to install and enable the OpenSSH Server. Follow the steps below:
+
+#### 1. Check if SSH is already running:
+```
+sudo systemctl status ssh
+```
+This command checks the current status of the SSH service. If it's not found or not running, continue with the next steps.
+
+#### 2. Update your system packages:
+```
+sudo apt update && sudo apt upgrade
+```
+This updates the list of available packages and installs any available upgrades. It's a good idea to run this before installing new software.
+
+#### 3. Install the OpenSSH Server package:
+```
+sudo apt install openssh-server
+```
+This installs the SSH server on your system, allowing it to accept SSH connections.
+
+#### 4. Enable and start the SSH service immediately:
+```
+sudo systemctl enable --now ssh
+```
+This command ensures that the SSH service starts automatically on boot and also starts it right now.
+
+#### 5. Verify that SSH is now active:
+```
+sudo systemctl status ssh
+```
+You should now see that the SSH service is active and running.
+
+### Step 3 - Installing the PHP SSH2 Extension (for PHP 7 or 8)
+Once OpenSSH is successfully installed and running on your system, the next step is to install the SSH2 extension for PHP. This extension allows PHP to connect to remote servers over SSH.
+
+#### 1. Install required build tools and libraries:
+```
+sudo apt-get -y install gcc make autoconf libc-dev pkg-config
+
+sudo apt-get -y install libssh2-1-dev
+```
+
+#### 2. Install the SSH2 extension using PECL:
+```
+yes '' | sudo pecl install ssh2-beta
+```
+
+#### 3. Register SSH2 extension in PHP .ini file:
+```
+sudo bash -c "echo extension=ssh2.so > /etc/php/8.3/mods-available/ssh2.ini"
+```
+#### 4. Enable the SSH2 extension for the CLI version of PHP:
+```
+sudo phpenmod -v 8.3 -s cli ssh2
+```
+This activates the extension **specifically for PHP 8.3** in the CLI (Command Line Interface) environment. Adjust the PHP version if you're using a different one.
+
+### Step 4 - Verify Installation
+
+To make sure the extension was installed and enabled successfully, run:
+
+```
+sudo php -m | grep ssh2
+```
+If the extension is installed correctly, you’ll see ssh2 in the output.
+
+### Step 5 - Restart PHP-FPM
+
+Finally, restart PHP-FPM so it can load the new extension:
+```
+sudo systemctl restart php8.3-fpm
+```
+
+Replace 8.3 with your PHP version if needed.
+
 # Setting up Phinx (Database Migrations)
 You can setup the database and other Phinx configuration inside `config/phinx.php` file
 
@@ -318,3 +433,49 @@ pidof php-monitoring:swoole-monitoring-process
 ```
 sudo kill -9 $(pidof php-monitoring:swoole-monitoring-process)
 ```
+
+
+# Custom Process Creation Guide
+
+This guide explains how to create custom processes that run alongside configured Worker and Task Worker processes. Below, you'll find detailed instructions and options for creating these processes.
+
+## Creating a New Process
+
+To create a new custom process, use the following command:
+
+```
+php prompt make:process ProcessName
+```
+
+This command will:
+- Create a new process.
+- Register it with default process options.
+
+### Available Swoole Process Options
+
+You can customize the process using the following options provided by Swoole. For more details, refer to the [Swoole Process documentation](https://wiki.swoole.com/en/#/process/process?id=__construct).
+
+- **`redirect_stdin_and_stdout`**
+- **`pipe_type`**
+- **`enable_coroutine`**
+
+Example usage:
+
+```
+php prompt make:process ProcessName --redirect_stdin_and_stdout=1 --pipe_type=2 --enable_coroutine=1
+```
+
+## Additional Boilerplate Options / Configurations
+
+In addition to Swoole options / configurations, you can use the following options provided by the boilerplate:
+
+### Enable / Disable Processes
+You can enable or disable custom user processes using the following command.
+
+Command:
+
+```
+php prompt configure:process ProcessName --enable=1
+```
+
+**Note:** The process will be enabled or disabled only in the environment where the command is executed. For example, if you run this command in the staging environment, it will enable or disable the process only in staging and will not affect the local or other environments.

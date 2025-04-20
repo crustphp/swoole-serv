@@ -21,6 +21,7 @@ class CommandExecutor
     {
         $this->commands = [
             'make:process' => 'App\Core\Commands\MakeProcess',
+            'configure:process' => 'App\Core\Commands\ConfigureProcess',
         ];
     }
 

@@ -28,6 +28,9 @@ class MainProcess
     // Lock
     protected $lock = null;
 
+    // Enabled Processes
+    protected $enabledProcesses = null;
+
     public function __construct($server, $process)
     {
         $this->server = $server;
@@ -47,6 +50,10 @@ class MainProcess
 
         // Lock
         $this->lock = new Lock(SWOOLE_MUTEX);
+
+        // Get the Processes Enabled for this Environment.
+        $processEnvConfigurations = readJsonFile(__DIR__ . '/EnvironmentConfigurations.json');
+        $this->enabledProcesses = $processEnvConfigurations['enabled_processes'] ?? [];
     }
 
     /**
@@ -85,6 +92,12 @@ class MainProcess
         foreach ($this->customProcessesMetaData as $processKey => $processInfo) {
             // Process Options
             $processOptions = $processInfo['process_options'] ?? [];
+
+            // If the process is not meant to run on current environment then skip it.
+            if (!in_array($processKey, $this->enabledProcesses)) {
+                output('Excluding Process --> ' . $processKey);
+                continue;
+            }
 
             // Process Creation Callback
             $processCallback = function (Process $process) use ($processKey, $processInfo) {

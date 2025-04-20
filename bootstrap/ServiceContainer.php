@@ -355,7 +355,7 @@ class ServiceContainer
                         'redirect_stdin_and_stdout' => $processData['redirect_stdin_and_stdout'],
                         'pipe_type' => $processData['pipe_type'],
                         'enable_coroutine' => $processData['enable_coroutine'],
-                    ]
+                    ],
                 ];
             }
 
