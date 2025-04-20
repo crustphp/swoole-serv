@@ -57,7 +57,7 @@ class SwooleTableFactory
 
                     // Check if Columns has its own preference for meta data, otherwise use Table Level Meta
                     $isNullable = $cDef['is_nullable'] ?? $allColsNullable;
-                    
+
                     $isSigned = false;
                     if ($cDef['type'] == 'int' || $cDef['type'] == 'float') {
                         $isSigned = $cDef['is_signed'] ?? $allColsSigned;
@@ -126,7 +126,7 @@ class SwooleTableFactory
 
     /**
      * @deprecated This function is deprecated as if we update the size, its scope limits to only current Worker/Process instead of entire application.
-     * 
+     *
      * The function updates the size of a table by creating a new table with the
      * specified size and transferring the data from the original table to the new one.
      *
@@ -393,13 +393,16 @@ class SwooleTableFactory
      * @param  array $selectColumns List of columns to retrieve. If empty, all columns are returned.
      * @param  array $encodeValues Optional: Array of columns and target encoding if you want to encode the column values
      * @param  bool $returnJson Optional: If true, the returned response will be JSON string
+     * @param  array $jsonEncodeColumns Optional: Array of columns you want to json_encode while retrieving
+     * @param  array $jsonDecodeColumns Optional: Array of columns you want to json_decode while retrieving
+     * @param  bool $retainOriginalKeys Optional: If true, data rows will be returned with their original keys (instead of the default array indexes), used when storing them in the Swoole table.
      * @return mixed
      */
-    public static function getSwooleTableData(string $tableName, ?array $selectColumns = null, ?array $encodeValues = null, $returnJson = false): mixed
+    public static function getSwooleTableData(string $tableName, ?array $selectColumns = null, ?array $encodeValues = null, $returnJson = false, ?array $jsonEncodeColumns = [], ?array $jsonDecodeColumns = [], bool $retainOriginalKeys = false): mixed
     {
         try {
             $table = self::getTable($tableName);
-            return $table->getSwooleTableData($selectColumns, $encodeValues, $returnJson);
+            return $table->getSwooleTableData($selectColumns, $encodeValues, $returnJson, $jsonEncodeColumns, $jsonDecodeColumns, $retainOriginalKeys);
         } catch (\Throwable $e) {
             output('Failed to get data from Swoole Table: ' . $tableName);
             output($e);

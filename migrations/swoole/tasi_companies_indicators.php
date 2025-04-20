@@ -6,7 +6,7 @@ return [
     'is_nullable' => false, // Meta columns: `null` is added to all columns unless you set a value explicitly.
     'is_signed' => false, // Meta columns: `null` is added to int/float type columns unless you set a value explicitly.
     'columns' => [
-        // Indicators
+        // Refinitiv Indicators
         ['name' => 'cf_high', 'type' => 'float'], // float
         ['name' => 'cf_last', 'type' => 'float'], // float
         ['name' => 'cf_low', 'type' => 'float'], // float
@@ -28,6 +28,17 @@ return [
         ['name' => 'ask', 'type' => 'float'], // float
         ['name' => 'asksize', 'type' => 'float'], // float
         ['name' => 'bidsize', 'type' => 'float'], // float
+
+        // SP Indicators
+        ['name' => 'iq_volume', 'type' => 'float'], // float
+        ['name' => 'iq_float', 'type' => 'float'], // float
+        ['name' => 'sp_turnover', 'type' => 'float'], // float
+
+        // Refinitiv Day-Wise Indicators
+        ['name' => 'uplimit', 'type' => 'float'], // float
+        ['name' => 'lolimit', 'type' => 'float'], // float
+        ['name' => 'life_high', 'type' => 'float'], // float
+        ['name' => 'life_low', 'type' => 'float'], // float
 
         // Fetching Timestamp
         ['name' => 'created_at', 'type' => 'string', 'size' => 128], // Doubling Size for the timestamp

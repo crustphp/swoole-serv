@@ -369,7 +369,7 @@ if (!function_exists('getActiveRefToken')) {
         $gotLock = true;
         // Token is empty or expired
         while (empty($token) ||  Carbon::now()->timestamp - Carbon::parse($token['updated_at'])->timestamp >= ($token['expires_in'] - 60)) {
-            if ((config('app_config.env') != 'local' && config('app_config.env') != 'staging') && $gotLock && $refTokenLock->trylock()) {
+            if ((config('app_config.env') != 'local' && config('app_config.env') != 'staging' && config('app_config.env') != 'pre-production') && $gotLock && $refTokenLock->trylock()) {
                 output('Updating the token inside the lock');
                 $token = $refTokenObj->produceNewToken($token);
                 $refTokenLock->unlock();
@@ -386,7 +386,7 @@ if (!function_exists('getActiveRefToken')) {
 }
 
 // Get the job_run_at value from the Swoole Table by providing Job Name
-if (!function_exists('getJobRunAt')) {    
+if (!function_exists('getJobRunAt')) {
     /**
      * Get the job_run_at value from the Swoole Table by providing Job Name
      *
@@ -400,3 +400,53 @@ if (!function_exists('getJobRunAt')) {
         return isset($jobRunsAtData['job_run_at']) ? $jobRunsAtData['job_run_at'] : null;
     }
 }
+
+// Formats a floating-point number to a specified number of decimal places.
+if (!function_exists('formatNumber')) {
+    /**
+     * Formats a floating-point number to a specified number of decimal places.
+     *
+     * This function rounds the given number to the desired precision while
+     * maintaining its float type.
+     *
+     * @param float $number The floating-point number to be formatted.
+     * @param int $precision The number of decimal places to round to (default: 16).
+     * @return float The rounded number with the specified precision.
+     */
+    function formatNumber(float $number, int $precision = 13): float
+    {
+        return round($number, $precision);
+    }
+}
+
+if (!function_exists('executeDbFacadeQueryWithChannel')) {
+    /**
+     * Execute a database query using Swoole Coroutine with channel synchronization.
+     *
+     * @param string $dbQuery The SQL query to be executed.
+     * @param object $objDbPool The database connection pool object.
+     * @param object $dbFacade The database facade object responsible for executing queries.
+     *
+     * @return mixed The result of the database query or null if an exception occurs.
+     */
+    function executeDbFacadeQueryWithChannel(string $dbQuery, object $objDbPool, object $dbFacade): mixed
+    {
+        $channel = new Swoole\Coroutine\Channel(1);
+
+        go(function () use ($dbQuery, $channel, $objDbPool, $dbFacade) {
+            try {
+                // Execute the database query and push the result to the channel.
+                $result = $dbFacade->query($dbQuery, $objDbPool);
+                $channel->push($result);
+            } catch (Throwable $e) {
+                // Log the exception or handle the error as needed.
+                output($e);
+            }
+        });
+
+        // Retrieve and return the result from the channel.
+        return $channel->pop();
+    }
+}
+
+
