@@ -15,9 +15,9 @@
         "peppeocchi/php-cron-scheduler": "^4.0",
         "nesbot/carbon": "^3.8",
         "robmorgan/phinx": "^0.16.5",
-        "crustphp/relational-db": "^1.4",
         "crustphp/php-stub-to-code-generator": "^1.0",
-        "crustphp/swoolecontext": "^1.0"
+        "crustphp/swoolecontext": "^1.0",
+        "crustphp/relational-db": "^1.6"
     },
     "require-dev": {
         "swoole/ide-helper": "~5.0.0"
