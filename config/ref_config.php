@@ -20,4 +20,9 @@ return [
     'privileged_fd_key_for_ref_token' => $_ENV['SW_PRIVILEGED_FD_KEY_FOR_REF_TOKEN'],
     'ref_fields' => $_ENV['SW_REF_FIELDS'],
     'ref_chunk_size' => $_ENV['SW_REF_CHUNK_SIZE'],
+    'ref_market_overview' => $_ENV['SW_REF_MARKET_OVERVIEW'],
+    'ref_market_common_attributes' => $_ENV['SW_REF_MARKET_COMMON_ATTRIBUTES'],
+    'ref_sector_common_attributes' => $_ENV['SW_REF_SECTOR_COMMON_ATTRIBUTES'],
+    'ref_daywise_fields' => $_ENV['SW_REF_DAYWISE_FIELDS'],
+    'ref_token_sync_retry_interval' => intval($_ENV['SW_REF_TOKEN_SYNC_RETRY_INTERVAL'] ?? 5),
 ];
