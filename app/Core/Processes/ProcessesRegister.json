@@ -1,6 +1,6 @@
 [
     {
-        "name": "RefTokenProcess",
+        "name": "TPTokenSynchProcess",
         "redirect_stdin_and_stdout": false,
         "pipe_type": 2,
         "enable_coroutine": true
@@ -12,7 +12,19 @@
         "enable_coroutine": true
     },
     {
-        "name": "RefProcess",
+        "name": "RefDataProcess",
+        "redirect_stdin_and_stdout": false,
+        "pipe_type": 2,
+        "enable_coroutine": true
+    },
+    {
+        "name": "RefMarketDataProcess",
+        "redirect_stdin_and_stdout": false,
+        "pipe_type": 2,
+        "enable_coroutine": true
+    },
+    {
+        "name": "RefSectorDataProcess",
         "redirect_stdin_and_stdout": false,
         "pipe_type": 2,
         "enable_coroutine": true

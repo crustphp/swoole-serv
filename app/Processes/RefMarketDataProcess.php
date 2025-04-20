@@ -3,9 +3,9 @@
 namespace App\Processes;
 
 use DB\DBConnectionPool;
-use App\Services\RefDataService;
+use App\Services\RefMarketDataService;
 
-class RefProcess {
+class RefMarketDataProcess {
 
 	protected $server;
     protected $process;
@@ -53,7 +53,7 @@ class RefProcess {
     public function handle()
     {
         // Use/call your services Here
-        $refDataService = new RefDataService(server: $this->server, process: $this->process, objDbPool: $this->objDbPool, refTokenLock: $this->lock);
+        $refDataService = new RefMarketDataService(server: $this->server, process: $this->process, objDbPool: $this->objDbPool, refTokenLock: $this->lock);
         $refDataService->handle();
     }
 

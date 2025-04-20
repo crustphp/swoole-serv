@@ -3,9 +3,8 @@
 namespace App\Processes;
 
 use App\Services\TPTokenSynchService;
-use DB\DBConnectionPool;
 
-class RefTokenProcess {
+class TPTokenSynchProcess {
 
 	protected $server;
     protected $process;
