@@ -61,3 +61,6 @@ yarn-error.log*
 /docs/.temp
 
 public/hot
+
+# Custom Processes Environment specific configurations file
+/app/Core/Processes/EnvironmentConfigurations.json
