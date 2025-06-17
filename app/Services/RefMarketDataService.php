@@ -8,6 +8,8 @@ use App\Constants\LogMessages;
 use Carbon\Carbon;
 use Bootstrap\SwooleTableFactory;
 use Swoole\Coroutine as Co;
+use Swoole\Atomic;
+use Swoole\Coroutine\Channel;
 
 
 class RefMarketDataService
@@ -20,11 +22,24 @@ class RefMarketDataService
     protected $fields;
     protected $refTimeSpan;
 
+    protected $historicalFields;
+    protected $refHistoricalTimeSpan;
+
     protected $refTokenLock;
     protected $floatEmptyValue;
 
+    protected $counter;
+
+    protected $historicalDataFetchingStartTime;
+    protected $historicalDataFetchingEndTime;
+    protected $historicalDataFlashStartTime;
+    protected $historicalDataFlashEndTime;
+    protected $historicalPreviousDayDataStartTime;
+    protected $historicalPreviousDayDataEndTime;
+
     const ALL_CHANGED_RECORDS = 'all_changed_records';
     const REF_SNAPSHOT_MARKET_TABLE_NAME = 'markets_indicators';
+    const REF_HISTORICAL_MARKET_TABLE_NAME = 'markets_historical_indicators';
     const IS_REF_DATA = 'is_ref_data';
     const ALL_CHANGED_INDICATORS = 'all_changed_indicators';
     const JOB_RUN_AT = 'jobs_runs_at';
@@ -43,6 +58,17 @@ class RefMarketDataService
         $this->refTimeSpan = config('app_config.most_active_data_fetching_timespan');
         $this->refTokenLock = $refTokenLock;
         $this->floatEmptyValue = config('app_config.float_empty_value');
+
+        $this->counter = new Atomic(0);
+
+        $this->historicalFields = config('ref_config.ref_historical_fields');
+        $this->refHistoricalTimeSpan = config('ref_config.ref_historical_data_fetching_timespan');
+        $this->historicalDataFetchingStartTime =  config('ref_config.ref_historical_data_fetching_starttime');
+        $this->historicalDataFetchingEndTime =  config('ref_config.ref_historical_data_fetching_endtime');
+        $this->historicalDataFlashStartTime =  config('ref_config.ref_historical_data_flash_starttime');
+        $this->historicalDataFlashEndTime =  config('ref_config.ref_historical_data_flash_endtime');
+        $this->historicalPreviousDayDataStartTime =  config('ref_config.ref_historical_previous_day_data_starttime');
+        $this->historicalPreviousDayDataEndTime =  config('ref_config.ref_historical_previous_day_data_endtime');
     }
 
     /**
@@ -52,6 +78,7 @@ class RefMarketDataService
      */
     public function handle(): void
     {
+        // Refinitiv Snapshot API Data
         go(function () {
             $marketsDetail = null;
             $dataExistInDB = false;
@@ -109,8 +136,126 @@ class RefMarketDataService
             }
 
             while (true) {
+                // Log the Coroutine Stats on Each Iteration
+                if (config('app_config.env') == 'local' || config('app_config.env') == 'staging' || config('app_config.env') == 'pre-production') {
+                    output(data: Co::stats(), processName: $this->process->title);
+                }
+
                 $this->initRef();
                 Co::sleep($this->refTimeSpan);
+            }
+        });
+
+        // Refinitiv Historical API Data
+        go(function () {
+            $dataExistInDB = true;
+            $dataInitCase = true;
+
+            // Get Markets from Database
+            $marketsDetail = $this->getMarketsFromDB();
+
+            $table = self::REF_HISTORICAL_MARKET_TABLE_NAME;
+            $historicalData = SwooleTableFactory::getSwooleTableData(tableName: $table);
+            // Check if data exists in the table
+            if (!empty($historicalData)) {
+                output(sprintf(LogMessages::REF_HISTORICAL_TRUNCATE_SWOOLE_TABLE_INIT_CASE, 'market'));
+                // Truncate the swoole table in case of reloading event workers and task workers due to some reason
+                if (!truncateSwooleTable($table)) {
+                    // Truncate Swoole table retry
+                    if (!truncateSwooleTable($table)) {
+                        output("Truncate Swoole table $table retry limit reached");
+                    }
+                }
+            }
+
+            // Current datetime
+            $now = Carbon::now();
+            $count = "360";
+
+            // Weekend's Days (Friday and Saturday) or Holiday
+            if ($this->isHolidayOrWeekend($now)) {
+                $start = $this->adjustStartDateForNonWorkingDays($now->copy()->startOfDay());
+
+                output(sprintf(LogMessages::REF_HISTORICAL_DATA_ON_LAST_WORKING_DAY, 'market'));
+
+                // First time, fetch data from Refinitiv, store in swoole table, and store in DB.
+                $isProcessedRefMarketData = $this->processRefHistoricalData($marketsDetail, self::REF_HISTORICAL_MARKET_TABLE_NAME, self::REFINITIV_UNIVERSE, $dataInitCase, $dataExistInDB, $count, $start);
+
+                if (!$isProcessedRefMarketData) {
+                    output(sprintf(LogMessages::REFINITIV_HISTORICAL_NO_DATA, 'data', 'market'));
+                }
+            } else {
+                // Do not fetch data between 09:30 am to 10:14 am, that time we keep tables empty
+                if (!($now->between($this->historicalDataFlashStartTime, $this->historicalDataFlashEndTime))) {
+                    // If the time is between 12:00 AM and 9:29 AM, return the previous date because today's data is not available during this time.
+                    if ($now->between($this->historicalPreviousDayDataStartTime, $this->historicalPreviousDayDataEndTime)) {
+                        $start = $now->copy()
+                        ->startOfDay()
+                        ->subDay(1);
+
+                        $start = $this->adjustStartDateForNonWorkingDays($start);
+
+                        output(sprintf(LogMessages::REF_HISTORICAL_DATA_OF_PREVIOUS_DAY, 'market', $this->historicalPreviousDayDataStartTime, $this->historicalPreviousDayDataEndTime));
+                    } else {
+                        $start = $now->copy()
+                        ->startOfDay();
+
+                        $start = $this->adjustStartDateForNonWorkingDays($start);
+
+                        output(sprintf(LogMessages::REF_HISTORICAL_DATA_OF_TODAY, 'market'));
+                    }
+
+                    // First time, fetch data from Refinitiv, store in swoole table, and store in DB.
+                    $isProcessedRefMarketData = $this->processRefHistoricalData($marketsDetail, self::REF_HISTORICAL_MARKET_TABLE_NAME, self::REFINITIV_UNIVERSE, $dataInitCase, $dataExistInDB, $count, $start);
+
+                    if (!$isProcessedRefMarketData) {
+                        output(sprintf(LogMessages::REFINITIV_HISTORICAL_NO_DATA, 'data', 'market'));
+                    }
+                }
+            }
+
+            while (true) {
+                // Current datetime
+                $now = Carbon::now();
+
+                // Truncate the data from database table, Swoole table and not Friday/Saturday
+                if ($now->between($this->historicalDataFlashStartTime, $this->historicalDataFlashEndTime) && !$this->isHolidayOrWeekend($now)) {
+                    $historicalData = SwooleTableFactory::getSwooleTableData(tableName: $table);
+
+                    // Check if data exists in the table
+                    if (!empty($historicalData)) {
+                        output(sprintf(LogMessages::REF_HISTORICAL_TRUNCATE_TABLES, 'market'));
+
+                        // Truncate Swoole table
+                        if (!truncateSwooleTable($table)) {
+                            // Truncate Swoole table retry
+                            if (!truncateSwooleTable($table)) {
+                                output("Truncate Swoole table $table retry limit reached");
+                            }
+                        }
+
+                        // Truncate Database table
+                        $dbQuery = "TRUNCATE TABLE $table RESTART IDENTITY;";
+                        executeDbFacadeQueryWithChannel($dbQuery, $this->objDbPool, $this->dbFacade);
+
+                        // Reset the counter
+                        $this->counter->set(0);
+                    }
+                }
+
+                $table = self::REF_HISTORICAL_MARKET_TABLE_NAME;
+                $historicalData = SwooleTableFactory::getSwooleTableData(tableName: $table);
+
+                // Historical Data Fetching Between 10:15 am to 03:30 pm OR there is not table flash time, and swoole table has not data
+                if ($now->between($this->historicalDataFetchingStartTime, $this->historicalDataFetchingEndTime) || (!$now->between($this->historicalDataFlashStartTime, $this->historicalDataFlashEndTime) && empty($historicalData))) {
+                    // Time is between 10:00 AM and 3:30 PM
+                    Co::sleep($this->refHistoricalTimeSpan);
+                    output(sprintf(LogMessages::REF_HISTORICAL_PROCESS_INITIATE_FETCH_DATA, 'market'));
+                    $this->initRefHistorical();
+                } else {
+                    output(sprintf(LogMessages::REF_HISTORICAL_DATA_NOT_FETCHING_MARKET_CLOSED, 'market'));
+                    Co::sleep($this->refHistoricalTimeSpan);
+                }
             }
         });
     }
@@ -146,6 +291,80 @@ class RefMarketDataService
             if (!$isProcessedRefMarketsData) {
                 output(sprintf(LogMessages::REFINITIV_NO_MARKET_DATA, $dataExistInDB ? 'delta' : 'data'));
             }
+        });
+    }
+
+    /**
+     * Initialize Reference Historical Market Data
+     *
+     * Checks for existing market data in the database, retrieves or initializes it,
+     * processes changes, broadcasts updates, and stores the results.
+     *
+     * @return void
+     */
+    public function initRefHistorical(): void
+    {
+        $dataExistInDB = false;
+        $dataInitCase = false;
+
+        go(function () use ($dataExistInDB, $dataInitCase) {
+            // Aggregate query to get the count from the Database table
+            $dataExistInDB = $this->getDataCountFromDB(self::REF_HISTORICAL_MARKET_TABLE_NAME);
+
+            // Fetch Markets Data from Database table
+            $marketsDetailWithRefData = $this->getMarketsFromDB();
+
+            $count = "360";
+            $now = Carbon::now();
+
+            if ($dataExistInDB) {
+                $dataExistInDB = true;
+
+                if(!$this->isHolidayOrWeekend($now)) {
+                    $isProcessedRefMarketsData = $this->processRefHistoricalData($marketsDetailWithRefData, self::REF_HISTORICAL_MARKET_TABLE_NAME, self::REFINITIV_UNIVERSE, $dataInitCase, $dataExistInDB);
+
+                    if (!$isProcessedRefMarketsData) {
+                        output(sprintf(LogMessages::REFINITIV_HISTORICAL_NO_DATA, $dataExistInDB ? 'delta' : 'data', 'market'));
+                    }
+                } else {
+                    output(sprintf(LogMessages::DATA_NOT_FETCHING_MARKET_CLOSED_DAYS, 'market'));
+                }
+            } else {
+                $dataInitCase = true;
+
+                // Weekend's Days (Friday and Saturday) or Holiday
+                if ($this->isHolidayOrWeekend($now)) {
+                    $start = $this->adjustStartDateForNonWorkingDays($now->copy()->startOfDay());
+
+                    output(sprintf(LogMessages::REF_HISTORICAL_DATA_ON_LAST_WORKING_DAY, 'market'));
+                } else {
+                    // If the time is between 12:00 AM and 9:29 AM, return the previous date because today's data is not available during this time.
+                    if ($now->between($this->historicalPreviousDayDataStartTime, $this->historicalPreviousDayDataEndTime)) {
+                        $start = $now->copy()
+                            ->startOfDay()
+                            ->subDay(1);
+
+                        $start = $this->adjustStartDateForNonWorkingDays($start);
+
+                        output(sprintf(LogMessages::REF_HISTORICAL_DATA_OF_PREVIOUS_DAY, 'market', $this->historicalPreviousDayDataStartTime, $this->historicalPreviousDayDataEndTime));
+                    } else {
+                        $start = $now->copy()
+                        ->startOfDay();
+
+                        $start = $this->adjustStartDateForNonWorkingDays($start);
+
+                        output(sprintf(LogMessages::REF_HISTORICAL_DATA_OF_TODAY, 'market'));
+                    }
+                }
+
+                // Fetch data from Refinitiv, calculate changes, broadcasting, update in swoole table, and store/update in DB.
+                $isProcessedRefMarketsData = $this->processRefHistoricalData($marketsDetailWithRefData, self::REF_HISTORICAL_MARKET_TABLE_NAME, self::REFINITIV_UNIVERSE, $dataInitCase, $dataExistInDB, $count, $start);
+
+                if (!$isProcessedRefMarketsData) {
+                    output(sprintf(LogMessages::REFINITIV_HISTORICAL_NO_DATA, $dataExistInDB ? 'delta' : 'data', 'market'));
+                }
+            }
+
         });
     }
 
@@ -257,6 +476,58 @@ class RefMarketDataService
     }
 
     /**
+     * Process Reference Historical Data
+     *
+     * Fetches, processes, and stores market data.
+     * Updates existing records or initializes new data based on DB state.
+     *
+     * @param mixed       $marketDetail      Market details to process.
+     * @param string      $dbTableName       Database table name.
+     * @param string      $columnName        Column for identification.
+     * @param bool|null   $dataInitCase      Whether it's a fresh initialization.
+     * @param bool|null   $dataExistInDB     Whether data exists in the DB.
+     * @param string      $count             Count value, defaults to '1'.
+     * @param string|null $start             Optional start parameter (e.g., timestamp).
+     * @param string      $marketTableName   Market table name (default: 'markets').
+     * @param string      $indicatorPrefix   Prefix for indicators (default: 'market_historical').
+     *
+     * @return bool                          True if successful, false otherwise.
+     */
+    public function processRefHistoricalData(mixed $marketDetail, string $dbTableName, string $columnName, ?bool $dataInitCase = null, ?bool $dataExistInDB = null, string $count = '1', string|null $start = null, string $marketTableName = 'markets', $indicatorPrefix = 'market_historical'): bool
+    {
+        $isProcessedRefIndicatorsData = false;
+        // Fetch data from Refinitive
+        $responses = $this->fetchRefHistoricalData($marketDetail, $columnName, $marketTableName, $count, $start);
+
+        $refIndicatorsData = $this->handleRefHistoricalResponses($responses, $marketDetail, $indicatorPrefix);
+
+        // Initialize fresh data from Refinitiv for indicators
+        if (!empty($refIndicatorsData[self::ALL_CHANGED_INDICATORS]) > 0) {
+            output(sprintf(LogMessages::REF_HISTORICAL_INITIALIZE, 'market'));
+
+            // Get the job_run_at value from the Swoole Table
+            $jobRunsAtData = getJobRunAt($dbTableName);
+            // Broadcasting changed data
+            $this->broadcastIndicatorsData($refIndicatorsData[self::ALL_CHANGED_INDICATORS], $jobRunsAtData);
+
+            $processedRecords = $refIndicatorsData[self::ALL_CHANGED_RECORDS];
+            output(sprintf(LogMessages::REF_HISTORICAL_TOTAL_RECORDS, count($processedRecords), 'market'));
+            // Save into swoole table
+            $this->saveIntoSwooleTable($processedRecords, $dbTableName, 'id');
+            // Save job run at into swoole table
+            $this->saveIntoSwooleTable([['job_name' => $dbTableName, 'job_run_at' => $processedRecords[0]['updated_at']]], self::JOB_RUN_AT, 'job_name');
+            // Save into DB Table
+            $this->saveRefHistoricalDataIntoDBTable($processedRecords, $dbTableName, ($dataInitCase == true && $dataExistInDB == true) ? true : false);
+
+            $isProcessedRefIndicatorsData = true;
+        } else {
+            output(sprintf(LogMessages::REFINITIV_HISTORICAL_NO_DATA, 'delta', 'market'));
+        }
+
+        return $isProcessedRefIndicatorsData;
+    }
+
+    /**
      * Save Data into Swoole Table
      *
      * Stores indicator data into the specified Swoole table using a unique key.
@@ -362,6 +633,46 @@ class RefMarketDataService
         return $responses;
     }
 
+     /**
+     * Fetch Market Historical Data from Refinitiv
+     *
+     * Retrieves market data from the Refinitiv API for specified markets.
+     *
+     * @param  mixed  $marketDetail  Market details to fetch data for.
+     * @param  string $columnName    Column name for identification.
+     * @param  string $tableName     Database table name.
+     * @return mixed                 API response data.
+     */
+    public function fetchRefHistoricalData(
+        mixed $marketDetail,
+        string $columnName,
+        string $tableName,
+        string $count,
+        string|null $start = null,
+        string $interval = 'PT1M',
+        string $sessions = 'normal',
+        array $adjustments = ['exchangeCorrection', 'manualCorrection', 'CCH', 'CRE', 'RTS', 'RPO']
+    ): mixed {
+        $service = new RefHistoricalAPIConsumer($this->server, config('ref_config.historical_pricing_intraday_url'), $this->refTokenLock);
+
+        $queryParams = [
+            "fields" => $this->historicalFields,
+            "count" => $count,
+            "interval" => $interval,
+            "sessions" => $sessions,
+            "adjustments" => $adjustments
+        ];
+
+        if($start) {
+            $queryParams['start'] =  $start;
+        }
+
+        $responses = $service->handle($marketDetail, $queryParams, $columnName, $tableName);
+        unset($service);
+
+        return $responses;
+    }
+
     /**
      * Process Refinitiv Snapshot Responses
      *
@@ -405,15 +716,117 @@ class RefMarketDataService
     }
 
     /**
+     * Process Refinitiv Intraday Historical Responses
+     *
+     * Handles and processes Intraday Historical responses from Refinitiv, extracting relevant market indicator data.
+     *
+     * @param  mixed $responses        The raw response data from Refinitiv API.
+     * @param  mixed $marketDetail     Market details mapped by 'refinitiv_universe'.
+     * @param  mixed $indicatorPrefix  Prefix with market indicator broadcasting title.
+     * @return array                   An array of processed market indicator data.
+     */
+    public function handleRefHistoricalResponses(mixed $responses, mixed $marketDetail, string $indicatorPrefix): array
+    {
+        $date = Carbon::now()->format('Y-m-d H:i:s');
+        $indicatorPrefix = 'market_historical';
+        $indicatorPrefix .= '_';
+
+
+        $refHistoricalIndicatorData = [
+            self::ALL_CHANGED_INDICATORS => [],
+            self::ALL_CHANGED_RECORDS => [],
+            self::IS_REF_DATA => false,
+        ];
+
+        $isChangedData = false;
+        $allChangedIndicators = [];
+        $indicator = [];
+
+        $fields = explode(',', strtolower($this->historicalFields));
+        $headerIndexMap = [];
+
+        foreach ($responses as $index => $res) {
+            $market = isset($res['universe']["ric"]) ? $marketDetail[str_replace('.', '',$res['universe']["ric"])] : null;
+
+            if (!isset($res['data'])) {
+                output(sprintf(LogMessages::REFINITIV_HISTORICAL_MISSING_INDICATORS, 'market', json_encode($res)));
+                continue;
+            }
+
+            if (empty($res['data'])) {
+                output(sprintf(LogMessages::REFINITIV_HISTORICAL_API_NOT_SENDING_DATA, 'market'));
+                continue;
+            }
+
+            // Build index map once for this response
+            if($index == 0) {
+                foreach ($res['headers'] as $i => $header) {
+                    $headerName = strtolower($header['name']);
+                    if (in_array($headerName, $fields)) {
+                        $headerIndexMap[$headerName] = $i;
+                    }
+                }
+            }
+
+            $marketData = [];
+            $isChangedData = false;
+
+            // Reverse data order (e.g., newest to oldest → oldest to newest)
+            $res['data'] = array_reverse($res['data']);
+
+            foreach ($res['data'] as $data) {
+                // Datetime from first index
+                $marketData['refinitiv_datetime'] = $data[0];
+
+                // Remove datetime from first index
+                unset($data[0]);
+
+                // Dynamically process the fields
+                foreach ($headerIndexMap as $colIndex => $field) {
+
+                    $value = $data[$field] ?? $this->floatEmptyValue;
+
+                    $marketData[$colIndex] = $value;
+                    $indicator[$colIndex] = $value;
+
+                    $refHistoricalIndicatorData[self::IS_REF_DATA] = true;
+                    $allChangedIndicators[strtolower($market[self::REFINITIV_UNIVERSE]) . '_' . $indicatorPrefix . $colIndex][] = $this->appendDetails($indicator, $market, $date, false, $marketData['refinitiv_datetime']);
+
+                    $isChangedData = true;
+                    $refHistoricalIndicatorData[self::IS_REF_DATA] = true;
+
+                    $indicator = []; // Reset the indicator array
+                }
+
+                if ($isChangedData) {
+                    $marketData['id'] = $this->counter->add();
+
+                    $marketData = $this->appendDetails($marketData, $market, $date);
+                    // All changed Records (Rows)
+                    $refHistoricalIndicatorData[self::ALL_CHANGED_RECORDS][] = $marketData;
+                }
+            }
+        }
+
+        if (count($allChangedIndicators) > 0) {
+            // All changed Indicators (Columns)
+            $refHistoricalIndicatorData[self::ALL_CHANGED_INDICATORS] = $allChangedIndicators;
+        }
+
+        return $refHistoricalIndicatorData;
+    }
+
+    /**
      * Append market details to data.
      *
      * @param array  $data            Market indicators.
      * @param array  $market          Market details (id, name, universe).
      * @param string $date            Current timestamp ('Y-m-d H:i:s').
      * @param bool   $toJson          Convert market info to JSON (default: true).
-     * @return array                   Merged data with market and timestamp.
+     * @param string $refinitivDateTime Rifinitiv timestemp.
+     * @return array                  Merged data with market and timestamp.
      */
-    public function appendDetails(array $data, array $market, string $date, bool $convertMarketInfoToJson = true): array
+    public function appendDetails(array $data, array $market, string $date, bool $convertMarketInfoToJson = true, string|null $refinitivDateTime = null ): array
     {
         $marketInfo = [
             self::REFINITIV_UNIVERSE => $market[self::REFINITIV_UNIVERSE],
@@ -425,13 +838,19 @@ class RefMarketDataService
             $marketInfo = json_encode($marketInfo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         }
 
-        return array_merge($data, [
+        $marketCommonAttributes = [
             self::REFINITIV_UNIVERSE => $market[self::REFINITIV_UNIVERSE],
             'market_id' => $market['id'],
-            'created_at' => isset($market['created_at']) ? $market['created_at'] : $date,
+            'created_at' => $date,
             'updated_at' => $date,
-            'market_info' => $marketInfo
-        ]);
+            'market_info' => $marketInfo,
+        ];
+
+        if($refinitivDateTime) {
+            $marketCommonAttributes['refinitiv_datetime'] = $refinitivDateTime;
+        }
+
+        return array_merge($data, $marketCommonAttributes);
     }
 
     /**
@@ -446,7 +865,29 @@ class RefMarketDataService
         output(sprintf(LogMessages::SAVE_REF_MARKET_SNAPSHOT, $tableName));
         go(function () use ($indicatorsData, $tableName) {
             $dbQuery = $this->makeRefInsertQuery($tableName, $indicatorsData);
+            executeDbFacadeQueryWithChannel($dbQuery, $this->objDbPool, $this->dbFacade);
+        });
+    }
 
+    /**
+     * Save Refinitiv historical data.
+     *
+     * @param array  $indicatorsData  Market indicator data.
+     * @param string $tableName       Target database table.
+     * @param bool   $truncate        Truncate the table.
+     * @return void
+     */
+    public function saveRefHistoricalDataIntoDBTable(array $indicatorsData, string $tableName, ?bool $truncate = null): void
+    {
+        output(sprintf(LogMessages::SAVE_REF_MARKET_SNAPSHOT, $tableName));
+        go(function () use ($indicatorsData, $tableName, $truncate) {
+            $dbQuery = "";
+            // Truncate the table
+            if($truncate) {
+                $dbQuery = "TRUNCATE TABLE $tableName RESTART IDENTITY;";
+            }
+
+            $dbQuery .= $this->makeRefInsertQuery($tableName, $indicatorsData);
             executeDbFacadeQueryWithChannel($dbQuery, $this->objDbPool, $this->dbFacade);
         });
     }
@@ -499,6 +940,25 @@ class RefMarketDataService
                 yrhigh, yrlow, yr_pctch, cf_close, bid, ask, asksize, bidsize, created_at, updated_at)
                 VALUES " . implode(", ", $values);
                 break;
+            case self::REF_HISTORICAL_MARKET_TABLE_NAME == $tableName:
+                foreach ($indicatorsData as $indicator) {
+                    // Collect each set of values into the array
+                    $values[] = "(
+                            " . $indicator['market_id'] . ",
+                            " . ($indicator['high_1'] ?? $this->floatEmptyValue) . ",
+                            " . ($indicator['low_1'] ?? $this->floatEmptyValue) . ",
+                            " . ($indicator['num_moves'] ?? $this->floatEmptyValue) . ",
+                            " . ($indicator['open_prc'] ?? $this->floatEmptyValue) . ",
+                            " . ($indicator['trdprc_1'] ?? $this->floatEmptyValue) . ",
+                            " . ($indicator['acvol_uns'] ?? $this->floatEmptyValue) . ",
+                            '" . $indicator['refinitiv_datetime'] . "',
+                            '" . $indicator['created_at'] . "',
+                            '" . $indicator['updated_at'] . "'
+                        )";
+                }
+                $dbQuery = "INSERT INTO " . $tableName . " (market_id, high_1, low_1, num_moves, open_prc, trdprc_1, acvol_uns, refinitiv_datetime, created_at, updated_at)
+                    VALUES " . implode(", ", $values);
+                break;
             default:
                 break;
         }
@@ -534,6 +994,9 @@ class RefMarketDataService
         $indicator = [];
         $fields = explode(',', $this->fields);
 
+        // To count how many markets data received from Refinitiv
+        $marketCounter = 0;
+
         foreach ($responses as $res) {
             $market = isset($res['Key']["Name"]) ? $marketDetail[str_replace('/.', '', $res['Key']["Name"])] : null;
 
@@ -542,6 +1005,8 @@ class RefMarketDataService
                 output(sprintf(LogMessages::REFINITIV_MISSING_INDICATORS, json_encode($res)));
                 continue;
             }
+
+            $marketCounter++;
 
             $d = [];
             $isChangedData = false;
@@ -583,6 +1048,8 @@ class RefMarketDataService
             // All changed Indicators (Columns)
             $refSnapshotIndicatorData[self::ALL_CHANGED_INDICATORS] = $allChangedIndicators;
         }
+
+        output($marketCounter. ' markets data received from Refinitiv.');
 
         return $refSnapshotIndicatorData;
     }
@@ -792,5 +1259,39 @@ class RefMarketDataService
                 executeDbFacadeQueryWithChannel($dbQuery, $this->objDbPool, $this->dbFacade);
             }
         });
+    }
+
+    /**
+     * Adjusts the start date backward by non-working days (weekends and holidays).
+     *
+     * @param string $start Start date in ISO 8601 format.
+     * @return string Adjusted start date in ISO 8601 format.
+     */
+    public function adjustStartDateForNonWorkingDays(string $start): string
+    {
+        $milliseconds = extractMilliseconds($start);
+        $start = getLastWorkingMarketDateTime($start, $this->objDbPool, $this->dbFacade);
+        $start = Carbon::parse($start)->setTimezone('UTC');
+        return  $start->format("Y-m-d\TH:i:s") . '.' . $milliseconds . 'Z';
+    }
+
+    /**
+     * Checks if a given date is a holiday or weekend (Friday/Saturday).
+     *
+     * @param string $currentDate Date string (e.g., '2025-06-03'). Defaults to now if empty.
+     * @return bool True if holiday or weekend; otherwise, false.
+     */
+    public function isHolidayOrWeekend(string $currentDate): bool
+    {
+        $originalDateTime = $currentDate ? Carbon::parse($currentDate) : Carbon::now();
+
+        $dbQuery = "SELECT from_date, to_date FROM holidays WHERE DATE '$currentDate' BETWEEN from_date AND to_date;";
+        $holidayResult = executeDbFacadeQueryWithChannel($dbQuery, $this->objDbPool, $this->dbFacade);
+
+        if (count($holidayResult) == 0 && !($originalDateTime->isFriday() || $originalDateTime->isSaturday())) {
+            return false;
+        }
+
+        return true;
     }
 }

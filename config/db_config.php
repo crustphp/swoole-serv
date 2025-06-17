@@ -24,4 +24,5 @@ return [
     // Connection Pool Size:
     'event_workers_db_connection_pool_size' => intval($_ENV['SW_EVENT_WORKERS_DB_CONNECTION_POOL_SIZE'] ?? 3),
     'custom_processes_db_connection_pool_size' => intval($_ENV['SW_CUSTOM_PROCESSES_DB_CONNECTION_POOL_SIZE'] ?? 3),
+    'news_process_db_connection_pool_size' => intval($_ENV['SW_NEWS_PROCESS_DB_CONNECTION_POOL_SIZE'] ?? 12),
 ];

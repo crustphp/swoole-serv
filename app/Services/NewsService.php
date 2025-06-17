@@ -76,6 +76,11 @@ class NewsService
             try {
                 $mainIterationCounter = 1;
                 while(true) {
+                    // Log the Coroutine Stats on Each Iteration
+                    if (config('app_config.env') == 'local' || config('app_config.env') == 'staging' || config('app_config.env') == 'pre-production') {
+                        output(data: Co::stats(), processName: $this->process->title);
+                    }
+
                     // Download and Process the Files
                     $this->downloadAndProcessFiles();
                     
@@ -89,6 +94,7 @@ class NewsService
                     Co::sleep(600); // 10 Minutes
                     // Co::sleep(150); // 2.5 Minutes
                 }
+                output('Issue : Getting out of main loop of News Process');
             }
             catch(Throwable $e) {
                 output('Closing News Process');
@@ -234,7 +240,8 @@ class NewsService
     protected function downloadAndProcessFiles()
     {
         try {
-            $folders = ['KeyDevelopmentsPlusSpan','KeyDevelopmentsRefSpan'];
+            // Dictionary Data should be processed first
+            $folders = ['KeyDevelopmentsRefSpan','KeyDevelopmentsPlusSpan'];
             // $folders = ['KeyDevelopmentsPlusSpan'];
 
             // Using wait-group so each next iteration only starts when current iteration is completed
@@ -367,17 +374,25 @@ class NewsService
                 $fileName = pathinfo($file, PATHINFO_FILENAME);
 
                 try {
+                    
                     // Call all existing parsing functions asynchronously
                     if($folder == 'KeyDevelopmentsPlusSpan'){
-                        go(function () use($fileName){ $this->processKeyDev($fileName); });
-                        go(function () use($fileName){ $this->processKeyDevSplitInfo($fileName); });
-                        go(function () use($fileName){ $this->processKeyDevToObjectToEventType($fileName); });
+                        $barrier = Barrier::make();
+                        go(function () use($fileName, $barrier){ $this->processKeyDev($fileName); });
+                        go(function () use($fileName , $barrier){ $this->processKeyDevSplitInfo($fileName); });
+                        go(function () use($fileName , $barrier){ $this->processKeyDevToObjectToEventType($fileName); });
+                        Barrier::wait($barrier);
+                        unset($barrier);
+                        go(function () use($fileName){ $this->postProcessKeyDev($fileName); });
                     }elseif($folder == 'KeyDevelopmentsRefSpan'){
-                        go(function () use($fileName){ $this->processKeyDevTimeZone($fileName); });
-                        go(function () use($fileName){ $this->processSourceType($fileName); });
-                        go(function () use($fileName){ $this->processKeyDevCategoryType($fileName); });
-                        go(function () use($fileName){ $this->processKeyDevObjectRoleType($fileName); });
-                        go(function () use($fileName){ $this->processKeyDevToSourceType($fileName); });
+                        $barrier = Barrier::make();
+                        go(function () use($fileName, $barrier){ $this->processKeyDevTimeZone($fileName); });
+                        go(function () use($fileName, $barrier){ $this->processSourceType($fileName); });
+                        go(function () use($fileName, $barrier){ $this->processKeyDevCategoryType($fileName); });
+                        go(function () use($fileName, $barrier){ $this->processKeyDevObjectRoleType($fileName); });
+                        go(function () use($fileName, $barrier){ $this->processKeyDevToSourceType($fileName); });
+                        Barrier::wait($barrier);
+                        unset($barrier);
                     }
 
                     output("Parsing completed for: $file");
@@ -401,7 +416,6 @@ class NewsService
             }
         });
     }
-
 
     // Helper function to clean directories in Swoole (replaces Laravel's File::cleanDirectory)
     protected function cleanDirectory($directoryPath)
@@ -429,8 +443,6 @@ class NewsService
                             return !is_null($value) && $value !== '';
                         });
 
-                        $translateService = new TranslateService();
-
                         foreach ($rows as $row) {
                             $columns = explode("'~'", $row);
 
@@ -439,9 +451,9 @@ class NewsService
                             $spEffectiveDate = date('Y-m-d H:i:s', strtotime(trim($columns[2], "'")));
                             $spToDate = date('Y-m-d H:i:s', strtotime(trim($columns[3], "'")));
                             $headline = str_replace("'", "''", trim($columns[4], "'"));
-                            $headline_ar = str_replace("'", "''", $translateService->translateToArabic($headline));
+                            $headline_ar = null;
                             $situation = str_replace("'", "''", trim($columns[5], "'"));
-                            $situation_ar = str_replace("'", "''", $translateService->translateToArabic($situation));
+                            $situation_ar = null;
                             $announcedDate = date('Y-m-d H:i:s', strtotime(trim($columns[6], "'")));
                             $announcedDateTimeZoneId = is_numeric(trim($columns[7], "'")) ? trim($columns[7], "'") : 'NULL';
                             $announceddateUTC = date('Y-m-d H:i:s', strtotime(trim($columns[8], "'")));
@@ -471,24 +483,6 @@ class NewsService
 
                             if (!$exists) {
 
-                                $data = [
-                                    'topic' => 'news',
-                                    'message_data' => [
-                                        'keyDevId' => $keyDevId,
-                                        'headline' => $headline,
-                                        'announcedDate' => $announcedDate,
-                                    ],
-                                ];
-                                
-                                // Broadcast latest news
-                                go(function() use($data){
-                    
-                                    for ($worker_id = 0; $worker_id < $this->server->setting['worker_num']; $worker_id++) {
-                                        $this->server->sendMessage($data, $worker_id);
-                                    }
-                                    
-                                });
-
                                 // Construct the insert query with all columns included
                                 $query = "INSERT INTO key_dev (
                                     \"keyDevId\", \"spEffectiveDate\", \"spToDate\", \"headline\", \"situation\", \"headline_ar\", \"situation_ar\",
@@ -498,7 +492,22 @@ class NewsService
                                     '$keyDevId', '$spEffectiveDate', '$spToDate', '$headline', '$situation', '$headline_ar', '$situation_ar',
                                     '$announcedDate', $announcedDateTimeZoneId, '$announceddateUTC', '$enteredDate', '$enteredDateUTC',
                                     '$lastModifiedDate', '$lastModifiedDateUTC', '$mostImportantDateUTC'
-                                )";
+                                )
+                                ON CONFLICT (\"keyDevId\") DO UPDATE SET
+                                    \"spEffectiveDate\" = EXCLUDED.\"spEffectiveDate\",
+                                    \"spToDate\" = EXCLUDED.\"spToDate\",
+                                    \"headline\" = EXCLUDED.\"headline\",
+                                    \"situation\" = EXCLUDED.\"situation\",
+                                    \"headline_ar\" = EXCLUDED.\"headline_ar\",
+                                    \"situation_ar\" = EXCLUDED.\"situation_ar\",
+                                    \"announcedDate\" = EXCLUDED.\"announcedDate\",
+                                    \"announcedDateTimeZoneId\" = EXCLUDED.\"announcedDateTimeZoneId\",
+                                    \"announceddateUTC\" = EXCLUDED.\"announceddateUTC\",
+                                    \"enteredDate\" = EXCLUDED.\"enteredDate\",
+                                    \"enteredDateUTC\" = EXCLUDED.\"enteredDateUTC\",
+                                    \"lastModifiedDate\" = EXCLUDED.\"lastModifiedDate\",
+                                    \"lastModifiedDateUTC\" = EXCLUDED.\"lastModifiedDateUTC\",
+                                    \"mostImportantDateUTC\" = EXCLUDED.\"mostImportantDateUTC\";";
                               
                                 // Execute the insert query
                                 go(function () use ($query) {
@@ -571,7 +580,11 @@ class NewsService
                                     \"keyDevId\", \"spEffectiveDate\", \"spToDate\", \"factor\"
                                 ) VALUES (
                                     '$keyDevId', '$spEffectiveDate', '$spToDate', '$factor'
-                                )";
+                                )
+                                ON CONFLICT (\"keyDevId\") DO UPDATE SET
+                                    \"spEffectiveDate\" = EXCLUDED.\"spEffectiveDate\",
+                                    \"spToDate\" = EXCLUDED.\"spToDate\",
+                                    \"factor\" = EXCLUDED.\"factor\";";
 
                                 go(function () use ($query) {
                                     try {
@@ -600,73 +613,112 @@ class NewsService
     protected function processKeyDevToObjectToEventType($fileName): void
     {
         try {
-                $keyDevToObjectToEventTypePath = $this->localPath . 'KeyDevelopmentsPlusSpan';
+            $path = $this->localPath . 'KeyDevelopmentsPlusSpan';
+            $filePath = $path . '/' . $fileName . '/KeyDevToObjectToEventType.txt';
 
-                $keyDevToObjectToEventTypeFilePath = $keyDevToObjectToEventTypePath .'/'.$fileName. '/KeyDevToObjectToEventType.txt';
+            if (file_exists($filePath)) {
+                $content = file_get_contents($filePath);
 
-                if (file_exists($keyDevToObjectToEventTypeFilePath)) {
-                    $content = file_get_contents($keyDevToObjectToEventTypeFilePath);
+                if (!empty($content)) {
+                    $rows = explode('#@#@#', $content);
+                    $rows = array_filter($rows, fn($value) => !is_null($value) && $value !== '');
 
-                    if (!empty($content)) {
-                        $rows = explode('#@#@#', $content);
-                        $rows = array_filter($rows, function ($value) {
-                            return !is_null($value) && $value !== '';
+                    foreach ($rows as $row) {
+                        $columns = explode("'~'", $row);
+
+                        $keyDevToObjectToEventTypeID = str_replace("'", "''", trim($columns[1], "'"));
+                        $spEffectiveDate = date('Y-m-d H:i:s', strtotime(trim($columns[2], "'")));
+                        $spToDate = date('Y-m-d H:i:s', strtotime(trim($columns[3], "'")));
+                        $keyDevID = str_replace("'", "''", trim($columns[4], "'"));
+                        $objectID = 'IQ' . str_replace("'", "''", trim($columns[5], "'"));
+                        $keyDevEventTypeID = str_replace("'", "''", trim($columns[6], "'"));
+                        $keyDevToObjectRoleTypeID = str_replace("'", "''", trim($columns[7], "'"));
+
+                        $checkQuery = "SELECT COUNT(*) AS count FROM key_dev_to_object_to_event_type WHERE \"keyDevToObjectToEventTypeID\" = '$keyDevToObjectToEventTypeID' AND \"spEffectiveDate\" = '$spEffectiveDate'";
+                        $channel = new Channel(1);
+
+                        go(function () use ($checkQuery, $channel) {
+                            try {
+                                $result = $this->dbFacade->query($checkQuery, $this->objDbPool);
+                                $channel->push($result);
+                            } catch (Throwable $e) {
+                                output($e);
+                                $channel->push([]);
+                            }
                         });
 
-                        foreach ($rows as $row) {
-                            $columns = explode("'~'", $row);
+                        $exists = $channel->pop();
 
-                            // Prepare each value, handling single quotes for PostgreSQL compatibility
-                            $keyDevToObjectToEventTypeID = str_replace("'", "''", trim($columns[1], "'"));
-                            $spEffectiveDate = date('Y-m-d H:i:s', strtotime(trim($columns[2], "'")));
-                            $spToDate = date('Y-m-d H:i:s', strtotime(trim($columns[3], "'")));
-                            $keyDevID = str_replace("'", "''", trim($columns[4], "'"));
-                            $objectID = 'IQ' . str_replace("'", "''", trim($columns[5], "'"));
-                            $keyDevEventTypeID = str_replace("'", "''", trim($columns[6], "'"));
-                            $keyDevToObjectRoleTypeID = str_replace("'", "''", trim($columns[7], "'"));
+                        if (!$exists || (isset($exists[0]['count']) && $exists[0]['count'] == 0)) {
+                            $companyQuery = "SELECT 1 FROM companies WHERE sp_comp_id = '$objectID' LIMIT 1";
+                            $companyChannel = new Channel(1);
 
-                            // Check if the combination of keyDevToObjectToEventTypeID and spEffectiveDate already exists
-                            $checkQuery = "SELECT COUNT(*) AS count FROM key_dev_to_object_to_event_type WHERE \"keyDevToObjectToEventTypeID\" = '$keyDevToObjectToEventTypeID' AND \"spEffectiveDate\" = '$spEffectiveDate'";
-
-                            $channel = new Channel(1);
-                            go(function () use ($checkQuery, $channel) {
+                            go(function () use ($companyQuery, $companyChannel) {
                                 try {
-                                    $result = $this->dbFacade->query($checkQuery, $this->objDbPool);
-                                    $channel->push($result);
+                                    $result = $this->dbFacade->query($companyQuery, $this->objDbPool);
+                                    $companyChannel->push($result);
                                 } catch (Throwable $e) {
                                     output($e);
+                                    $companyChannel->push([]);
                                 }
                             });
 
-                            $exists = $channel->pop();
+                            $companyExists = $companyChannel->pop();
 
-                            if (!$exists || (isset($exists[0]['count']) && $exists[0]['count'] == 0)) {
-                                // Construct the insert query with all columns included
-                                $query = "INSERT INTO key_dev_to_object_to_event_type (
+                            if (!empty($companyExists)) {
+                                $insertQuery = "INSERT INTO key_dev_to_object_to_event_type (
                                     \"keyDevToObjectToEventTypeID\", \"spEffectiveDate\", \"spToDate\", \"keyDevID\", \"objectID\", \"keyDevEventTypeID\", \"keyDevToObjectRoleTypeID\"
                                 ) VALUES (
                                     '$keyDevToObjectToEventTypeID', '$spEffectiveDate', '$spToDate', '$keyDevID', '$objectID', '$keyDevEventTypeID', '$keyDevToObjectRoleTypeID'
-                                )";
+                                )
+                                ON CONFLICT (\"keyDevToObjectToEventTypeID\") DO UPDATE SET
+                                    \"spEffectiveDate\" = EXCLUDED.\"spEffectiveDate\",
+                                    \"spToDate\" = EXCLUDED.\"spToDate\",
+                                    \"keyDevID\" = EXCLUDED.\"keyDevID\",
+                                    \"objectID\" = EXCLUDED.\"objectID\",
+                                    \"keyDevEventTypeID\" = EXCLUDED.\"keyDevEventTypeID\",
+                                    \"keyDevToObjectRoleTypeID\" = EXCLUDED.\"keyDevToObjectRoleTypeID\";";
 
-                                go(function () use ($query) {
+                                go(function () use ($insertQuery) {
                                     try {
-                                        // Execute the insert query
-                                        $this->dbFacade->query($query, $this->objDbPool);
-                                        //echo "Inserted row into key_dev_to_object_to_event_type with keyDevToObjectToEventTypeID: $keyDevToObjectToEventTypeID and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
+                                        $this->dbFacade->query($insertQuery, $this->objDbPool);
                                     } catch (Throwable $e) {
-                                        // Output the query and error message only if there's an exception
-                                        echo "Error executing query: $query" . PHP_EOL;
-                                        echo 'Error: ' . $e->getMessage() . PHP_EOL;
                                         output($e);
                                     }
                                 });
                             } else {
-                                //echo "Skipping row with duplicate keyDevToObjectToEventTypeID: $keyDevToObjectToEventTypeID and spEffectiveDate: $spEffectiveDate" . PHP_EOL;
+                                // If company doesn't exist, try deleting the keyDevID from key_dev
+                                $deleteQuery = "DELETE FROM key_dev WHERE \"keyDevId\" = '$keyDevID' RETURNING \"keyDevId\"";
+                                $deleteChannel = new Channel(1);
+
+                                go(function () use ($deleteQuery, $deleteChannel) {
+                                    try {
+                                        $deleted = $this->dbFacade->query($deleteQuery, $this->objDbPool);
+                                        $deleteChannel->push($deleted);
+                                    } catch (Throwable $e) {
+                                        output($e);
+                                        $deleteChannel->push([]);
+                                    }
+                                });
+
+                                $deletedKeyDev = $deleteChannel->pop();
+
+                                // If nothing was deleted, insert keyDevID into foreign_companies_key_dev
+                                if (empty($deletedKeyDev)) {
+                                    $insertForeign = "INSERT INTO foreign_companies_key_dev (\"keyDevID\") VALUES ('$keyDevID') ON CONFLICT DO NOTHING";
+                                    go(function () use ($insertForeign) {
+                                        try {
+                                            $this->dbFacade->query($insertForeign, $this->objDbPool);
+                                        } catch (Throwable $e) {
+                                            output($e);
+                                        }
+                                    });
+                                }
                             }
                         }
                     }
                 }
-
+            }
         } catch (\Exception $e) {
             echo 'Error processing KeyDevToObjectToEventType data: ' . $e->getMessage() . PHP_EOL;
         }
@@ -951,7 +1003,8 @@ class NewsService
                                     \"keyDevId\", \"sourceTypeId\"
                                 ) VALUES (
                                     $keyDevId, $sourceTypeId
-                                )";
+                                )
+                                ON CONFLICT (\"keyDevId\", \"sourceTypeId\") DO NOTHING";
 
                                 go(function () use ($query) {
                                     try {
@@ -974,6 +1027,228 @@ class NewsService
 
         } catch (\Exception $e) {
             echo 'Error processing KeyDevToSourceType data: ' . $e->getMessage() . PHP_EOL;
+        }
+    }
+
+    protected function postProcessKeyDev($fileName): void
+    {
+        try {
+
+            $keyDevelopmentsPlusSpanPath = $this->localPath . 'KeyDevelopmentsPlusSpan';
+            $keyDevFilePath = $keyDevelopmentsPlusSpanPath . '/' . $fileName . '/KeyDev.txt';
+
+            if (file_exists($keyDevFilePath)) {
+                $content = file_get_contents($keyDevFilePath);
+
+                if (!empty($content)) {
+                    $rows = explode('#@#@#', $content);
+                    $rows = array_filter($rows, fn($value) => !is_null($value) && $value !== '');
+
+                    $dbFacade = $this->dbFacade;
+                    $dbPool = $this->objDbPool;
+                    $translateService = new TranslateService();
+
+                    foreach ($rows as $row) {
+                        $columns = explode("'~'", $row);
+                        $keyDevId = str_replace("'", "''", trim($columns[1], "'"));
+
+                        $query = "
+                            SELECT 
+                                kd.\"keyDevId\",
+                                kd.\"headline\",
+                                kd.\"headline_ar\",
+                                kd.\"situation\",
+                                kd.\"situation_ar\",
+                                kd.\"spEffectiveDate\",
+                                kd.\"announcedDate\",
+                                kd.\"enteredDate\",
+                                kd.\"lastModifiedDate\",
+
+                                c.\"id\" AS company_id,
+                                c.\"name\",
+                                c.\"short_name\",
+                                c.\"arabic_name\",
+                                c.\"arabic_short_name\",
+                                c.\"sp_comp_id\",
+                                c.\"symbol\",
+                                c.\"isin_code\",
+                                c.\"ric\",
+                                c.\"logo\",
+                                c.\"parent_id\" AS market_id,
+
+                                m.\"name\" AS market_name,
+
+                                st.\"sourceTypeId\",
+                                st.\"sourceTypeName\",
+
+                                kte.\"keyDevEventTypeName\"
+                                
+                            FROM key_dev kd
+                            INNER JOIN key_dev_to_object_to_event_type kdote
+                                ON kd.\"keyDevId\" = kdote.\"keyDevID\"
+                                AND kd.\"spEffectiveDate\" = kdote.\"spEffectiveDate\"
+                            INNER JOIN companies c
+                                ON kdote.\"objectID\" = c.\"sp_comp_id\"
+                            INNER JOIN markets m
+                                ON c.\"parent_id\" = m.\"id\"
+                            LEFT JOIN key_dev_to_source_type dts
+                                ON kd.\"keyDevId\" = dts.\"keyDevId\"
+                            LEFT JOIN source_type st
+                                ON dts.\"sourceTypeId\" = st.\"sourceTypeId\"
+                            LEFT JOIN key_dev_category_type kte
+                                    ON kdote.\"keyDevEventTypeID\" = kte.\"keyDevEventTypeId\"
+                            WHERE kd.\"keyDevId\" = $keyDevId
+                            LIMIT 1;
+                        ";
+
+                        $channel = new Channel(1);
+
+                        go(function () use ($query, $channel, $dbFacade, $dbPool) {
+                            try {
+                                $result = $dbFacade->query($query, $dbPool);
+                                $channel->push($result);
+                            } catch (Throwable $e) {
+                                output($e);
+                                $channel->push([]);
+                            }
+                        });
+
+                        $result = $channel->pop();
+                        $row = (is_array($result) && isset($result[0])) ? $result[0] : null;
+
+                        $headline_ar = null;
+                        $situation_ar = null;
+
+                        if ($row) {
+
+                            if (config('app_config.news_translation') === true) {
+
+                                $headline_ar = str_replace("'", "''", $translateService->translateToArabic($row['headline']));
+                                $situation_ar = str_replace("'", "''", $translateService->translateToArabic($row['situation']));
+
+                                $update = "UPDATE key_dev SET \"headline_ar\" = '$headline_ar', \"situation_ar\" = '$situation_ar' WHERE \"keyDevId\" = '$keyDevId'";
+
+                                go(function () use ($update, $dbFacade, $dbPool) {
+                                    try {
+                                        $dbFacade->query($update, $dbPool);
+                                    } catch (Throwable $e) {
+                                        output($e);
+                                    }
+                                });
+
+                            }
+
+                            $data = [
+                                'topic' => 'news',
+                                'message_data' => [
+                                    'news' => [
+                                        'keyDevId' => $row['keyDevId'],
+                                        'headline' => $row['headline'],
+                                        'headline_ar' => $headline_ar,
+                                        'situation' => $row['situation'],
+                                        'situation_ar' => $situation_ar,
+                                        'spEffectiveDate' => $row['spEffectiveDate'],
+                                        'object_to_event_type' => [
+                                            'keyDevEventTypeName' => $row['keyDevEventTypeName'],
+                                        ],
+                                        'company' => [
+                                            'company_id' => $row['company_id'],
+                                            'en_long_name' => $row['name'],
+                                            'en_short_name' => $row['short_name'],
+                                            'ar_long_name' => $row['arabic_name'],
+                                            'ar_short_name' => $row['arabic_short_name'],
+                                            'sp_comp_id' => $row['sp_comp_id'],
+                                            'symbol' => $row['symbol'],
+                                            'isin_code' => $row['isin_code'],
+                                            'ric' => $row['ric'],
+                                            'logo' => config('app_config.laravel_app_url').'storage/'.$row['logo'],
+                                            'market_id' => $row['market_id'],
+                                            'market_name' => $row['market_name'],
+                                        ],
+                                        'dev_to_source_type' => [
+                                            'sourceTypeName' => $row['sourceTypeName'],
+                                        ],    
+                                    ]
+                                ],
+                            ];
+
+                            // Broadcast latest news
+                            go(function() use($data){
+
+                                for ($worker_id = 0; $worker_id < $this->server->setting['worker_num']; $worker_id++) {
+                                    $this->server->sendMessage($data, $worker_id);
+                                }
+
+                            });
+                            
+                        }else{
+                            output("No data found in postProcessKeyDev for keyDevId: $keyDevId");
+                        }
+                    }
+                }
+            }
+
+        } catch (\Exception $e) {
+            echo 'Error processing postProcessKeyDev: ' . $e->getMessage() . PHP_EOL;
+        }
+
+        // Temporary fixup for missing translations
+        if (config('app_config.news_translation') === true) {
+
+            $dbFacade = $this->dbFacade;
+            $dbPool = $this->objDbPool;
+            $translateService = new TranslateService();
+
+            try {
+
+                $query = "
+                    SELECT kd.\"keyDevId\", kd.\"headline\", kd.\"situation\"
+                    FROM key_dev kd
+                    INNER JOIN key_dev_to_object_to_event_type kdote
+                        ON kd.\"keyDevId\" = kdote.\"keyDevID\"
+                    INNER JOIN companies c
+                        ON kdote.\"objectID\" = c.\"sp_comp_id\"
+                    WHERE (kd.\"headline_ar\" IS NULL OR kd.\"headline_ar\" = '')
+                    OR (kd.\"situation_ar\" IS NULL OR kd.\"situation_ar\" = '')
+                ";
+
+                $channel = new Channel(1);
+
+                go(function () use ($query, $channel, $dbFacade, $dbPool) {
+                    try {
+                        $result = $dbFacade->query($query, $dbPool);
+                        $channel->push($result);
+                    } catch (Throwable $e) {
+                        output($e);
+                        $channel->push([]);
+                    }
+                });
+
+                $rows = $channel->pop();
+
+                if ($rows) {
+                    foreach ($rows as $row) {
+
+                        $headline_ar = str_replace("'", "''", $translateService->translateToArabic($row['headline']));
+                        $situation_ar = str_replace("'", "''", $translateService->translateToArabic($row['situation']));
+
+                        $update = "UPDATE key_dev SET \"headline_ar\" = '$headline_ar', \"situation_ar\" = '$situation_ar' WHERE \"keyDevId\" = '{$row['keyDevId']}'";
+
+                        go(function () use ($update, $dbFacade, $dbPool) {
+                            try {
+                                $dbFacade->query($update, $dbPool);
+                            } catch (Throwable $e) {
+                                output($e);
+                            }
+                        });
+                        output('updated keyDevId: ' . $row['keyDevId'] . ' with headline_ar: ' . $headline_ar . ' and situation_ar: ' . $situation_ar);
+                    }
+
+                }
+
+            } catch (\Throwable $e) {
+                output("Translation fixup error: " . $e->getMessage());
+            }
         }
     }
 

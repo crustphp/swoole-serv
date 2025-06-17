@@ -99,7 +99,7 @@ $swoole_config = [
         'log_level' => SWOOLE_LOG_ERROR, //SWOOLE_LOG_DEBUG
         //'log_level' => SWOOLE_LOG_DEBUG,
         'log_file' => dirname(__DIR__) . '/logs/swoole.log',
-        'log_rotation' => SWOOLE_LOG_ROTATION_HOURLY,
+        // 'log_rotation' => SWOOLE_LOG_ROTATION_HOURLY, // Commented this because it does not work as expected and we have custom log rotation logic
         'log_date_format' => '%Y-%m-%d %H:%M:%S',
         'log_date_with_microseconds' => true,
 

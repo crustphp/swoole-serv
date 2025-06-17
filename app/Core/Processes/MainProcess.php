@@ -48,6 +48,9 @@ class MainProcess
         // Used for setting prefix for Process Name
         $this->serviceStartedBy = serviceStartedBy();
 
+        // Name the Main Process
+        $process->name("php-{$this->serviceStartedBy}-MainProcess");
+
         // Lock
         $this->lock = new Lock(SWOOLE_MUTEX);
 
@@ -107,6 +110,9 @@ class MainProcess
 
                     // Set the name of the process
                     $process->name("php-{$this->serviceStartedBy}-" . $processKey);
+
+                    // Setting our own property title as swoole does not have any method of returing the process name
+                    $process->title = cli_get_process_title();
 
                     // Since we are usign $process->start so we will not have $process->id ...
                     // So we use Swoole Atomic to get incremented value to be used as process ID

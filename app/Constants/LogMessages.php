@@ -43,4 +43,31 @@ class LogMessages {
     public const SAVE_REF_SECTOR_SNAPSHOT = "Save Refinitiv snapshot sector data in the database table: %s";
     public const REF_SECTOR_RECORD_WITHIN_TIMESPAN = "The sector record is within the last %s seconds. Data is prepared.";
     public const REF_SECTOR_OLDER_DATA_EXISTS = "There is sector's data older than %s seconds.";
+
+    // Websocket Commands Message
+    public const MISSING_TASI_OR_NOMUC_INDICATORS_SWOOLE_TABLE = "Could not find Swoole table for Tasi or Nomuc companies indicators data";
+
+    // Refinitiv Historical
+    public const REF_HISTORICAL_NO_MODULE_DATA_PROVIDED = "No module data has been provided to fetch data for the %s indicators Historical.";
+    public const REF_HISTORICAL_DATA_ON_LAST_WORKING_DAY = "Fetching Refinitiv %s historical data of last working day.";
+    public const REF_HISTORICAL_DATA_OF_PREVIOUS_DAY = "Fetching Refinitiv %s historical data of previous day between %s and %s.";
+    public const REF_HISTORICAL_DATA_OF_TODAY = "Fetching Refinitiv %s historical data of today.";
+    public const REF_HISTORICAL_DATA_NOT_FETCHING = "Not fetching Refinitiv %s historical data between %s and %s, as the table is truncated during this period and an empty response is returned.";
+    public const REF_HISTORICAL_TRUNCATE_TABLES = "Truncating historical %s data from both Swoole and database tables.";
+    public const REF_HISTORICAL_DATA_NOT_FETCHING_MARKET_CLOSED = "Not fetching Refinitiv %s historical data because the market is closed.";
+    public const REF_HISTORICAL_INITIALIZE = "Initialize fresh historical data from Refinitiv for %s indicators.";
+    public const REFINITIV_HISTORICAL_MISSING_INDICATORS = "Refinitiv Historical API Issue: 'Indicators' missing for the %s in the Historical API. Response from Refinitiv: %s.";
+    public const REFINITIV_HISTORICAL_API_NOT_SENDING_DATA = "Refinitiv Historical API is not currently sending any %s data.";
+    public const DATA_NOT_FETCHING_MARKET_CLOSED_DAYS = "Not fetching Refinitiv %s historical data on weekend or holiday.";
+    public const REF_HISTORICAL_TRUNCATE_SWOOLE_TABLE_INIT_CASE = "Truncating historical %s data from Swoole table on init case.";
+    public const REF_HISTORICAL_TOTAL_RECORDS = "A total of %s historical %s data records were fetched.";
+    public const REF_HISTORICAL_PROCESS_INITIATE_FETCH_DATA = "Refinitiv historical process initiate to fetched for %s data.";
+    public const REFINITIV_HISTORICAL_NO_DATA = 'Refinitiv Historical API is not returning %s at this time for %s.';
+
+    public const REF_HISTORICAL_UNAUTHORIZED_ACCESS = "Swoole-serv: Unauthorized: Invalid token or session has expired in the Refinitiv Historical Process.";
+    public const REF_HISTORICAL_UNAUTHORIZED_RETRY_LIMIT = "Swoole-serv: Unauthorized: Retry limit reached in the Refinitiv Historical process.";
+    public const REF_HISTORICAL_TOO_MANY_REQUESTS = "Swoole-serv: Too Many Requests: Request failed in the Refinitiv Historical process.";
+    public const REF_HISTORICAL_TOO_MANY_REQUESTS_RETRY_LIMIT = "Swoole-serv: Too Many Requests: Retry limit reached in the Refinitiv Historical process.";
+    public const REF_HISTORICAL_INVALID_RESPONSE = "Swoole-Serv: Refinitiv Historical API Error – Received an invalid response in the Historical API. Response from Refinitiv: %s";
+    public const REF_HISTORICAL_OVERALL_RETRIES_LIMIT_EXCEEDED = "Swoole-serv: Overall retries limit exceeded in the Refinitiv Historical Process.";
 }

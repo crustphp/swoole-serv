@@ -7,5 +7,6 @@ return [
         ['name' => 'topic', 'type' => 'string', 'size' => 64],
         ['name' => 'fd', 'type' => 'int', 'size' => 8],
         ['name' => 'worker_id', 'type' => 'int', 'size' => 8],
+        ['name' => 'companies', 'type' => 'string', 'size' => 256],
     ],
 ];

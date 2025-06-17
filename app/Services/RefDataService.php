@@ -213,6 +213,11 @@ class RefDataService
             }
 
             while (true) {
+                // Log the Coroutine Stats on Each Iteration
+                if (config('app_config.env') == 'local' || config('app_config.env') == 'staging' || config('app_config.env') == 'pre-production') {
+                    output(data: Co::stats(), processName: $this->process->title);
+                }
+
                 $this->initRef($this->fields);
                 Co::sleep($this->refTimeSpan);
             }
@@ -284,7 +289,7 @@ class RefDataService
         $dbQuery = "SELECT s.*, ric, c.id, c.name, sp_comp_id, short_name, symbol, isin_code, arabic_name, arabic_short_name, logo, parent_id as market_id, m.name as market_name FROM companies as c
         INNER JOIN markets As m On c.parent_id = m.id
         LEFT JOIN $tableName As s On c.id = s.company_id
-        WHERE c.sp_comp_id IS NOT NULL";
+        WHERE c.sp_comp_id IS NOT NULL AND c.is_active = true";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
 
@@ -376,15 +381,16 @@ class RefDataService
 
     public function fetchOnlyRefDataCompaniesWithRefDataFromDB($tableName, $marketId = null)
     {
-        $dbQuery = 'SELECT refTable.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
+        $dbQuery = "SELECT refTable.*, c.name AS en_long_name, c.sp_comp_id, c.short_name AS en_short_name, c.symbol,
         c.isin_code, c.arabic_name AS ar_long_name, c.arabic_short_name AS ar_short_name, c.ric
         ,logo, parent_id as market_id, m.name as market_name
-        FROM ' . $tableName . ' refTable JOIN companies c ON refTable.company_id = c.id
-        INNER JOIN markets As m On c.parent_id = m.id';
+        FROM $tableName refTable JOIN companies c ON refTable.company_id = c.id
+        INNER JOIN markets As m On c.parent_id = m.id
+        WHERE c.is_active = true";
 
         // Append the WHERE clause if $marketId is provided
         if ($marketId) {
-            $dbQuery .= ' WHERE c.parent_id = ' . intval($marketId);
+            $dbQuery .= ' AND c.parent_id = ' . intval($marketId);
         }
 
         $dbQuery .= ' ORDER BY refTable.updated_at DESC';
@@ -535,6 +541,9 @@ class RefDataService
         $indicator = [];
         $fields = explode(',', $fields);
 
+        // To count how many companies data received from Refinitiv
+        $companyCounter = 0;
+
         foreach ($responses as $res) {
             $company = isset($res['Key']["Name"]) ? $companyDetail[str_replace('/', '', $res['Key']["Name"])] : null;
 
@@ -543,6 +552,8 @@ class RefDataService
                 output(sprintf(LogMessages::REFINITIV_MISSING_INDICATORS, json_encode($res)));
                 continue;
             }
+
+            $companyCounter++;
 
             $d = [];
             $isChangedData = false;
@@ -584,6 +595,8 @@ class RefDataService
             // All changed Indicators (Columns)
             $refSnapshotIndicatorData[self::ALLCHANGEDINDICATORS] = $allChangedIndicators;
         }
+
+        output($companyCounter. ' '.rtrim($marketName, '_'). ' companies data received from Refinitiv.');
 
         return $refSnapshotIndicatorData;
     }
@@ -1008,7 +1021,8 @@ class RefDataService
         INNER JOIN markets As m On c.parent_id = m.id
         WHERE c.ric IS NOT NULL
         AND c.ric NOT LIKE '%^%'
-        AND c.ric ~ '^[0-9a-zA-Z\\.]+$'";
+        AND c.ric ~ '^[0-9a-zA-Z\\.]+$'
+        AND c.is_active = true";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
         $channel = new Channel(1);
@@ -1036,7 +1050,7 @@ class RefDataService
     {
         $dbQuery = "SELECT ric, c.id, c.name, sp_comp_id, short_name, symbol, isin_code, arabic_name, arabic_short_name, logo, parent_id as market_id, m.name as market_name FROM companies as c
         INNER JOIN markets As m On c.parent_id = m.id
-        WHERE c.sp_comp_id IS NOT NULL";
+        WHERE c.sp_comp_id IS NOT NULL AND c.is_active = true";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
         $channel = new Channel(1);
@@ -1067,7 +1081,8 @@ class RefDataService
         LEFT JOIN $tableName As r On c.id = r.company_id
         WHERE c.ric IS NOT NULL
         AND c.ric NOT LIKE '%^%'
-        AND c.ric ~ '^[0-9a-zA-Z\\.]+$'";
+        AND c.ric ~ '^[0-9a-zA-Z\\.]+$'
+        AND c.is_active = true";
 
         // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
 

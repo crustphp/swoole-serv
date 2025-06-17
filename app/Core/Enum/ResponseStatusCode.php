@@ -105,6 +105,11 @@ enum ResponseStatusCode: int
     case METHOD_NOT_ALLOWED = 405;
 
     /**
+     * The server understands the request, but the data is invalid or incomplete.
+     */
+    case UNPROCESSABLE_CONTENT = 422;
+
+    /**
      * The server encountered an unexpected condition that prevented it from fulfilling the request.
      */
     case INTERNAL_SERVER_ERROR = 500;

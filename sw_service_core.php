@@ -85,6 +85,7 @@ use Carbon\Carbon;
 use DB\DbFacade;
 use Swoole\ExitException;
 use App\Constants\LogMessages;
+use App\Services\RefHistoricalAPIConsumer;
 
 use App\Core\Processes\MainProcess;
 
@@ -93,6 +94,10 @@ use App\Services\PushToken;
 
 use App\Core\Traits\CustomProcessesTrait;
 use Swoole\Coroutine\Channel;
+
+use Swoole\Coroutine\System;
+use App\Services\FetchRefinitivIndicatorHistory;
+use App\Services\NewsWebsocketService;
 
 class sw_service_core {
 
@@ -352,6 +357,66 @@ class sw_service_core {
 
     protected function bindWorkerEvents() {
         $init = function ($server, $worker_id) {
+            if ($worker_id === 0) {
+                // Log Rotation (Since swoole log_rotation does not work as expected and not for custom processes)
+                // So following code do the Log File Rotation manually.
+                $swooleLogRotationInterval = config('app_config.log_rotation_interval') * 60 * 1000;
+
+                swTimer::tick($swooleLogRotationInterval, function () {
+                    go(function () {
+                        $logFile = __DIR__ . "/logs/swoole.log";
+                        $timestamp = date('Y-m-d_H-i');
+                        $rotatedLogFile = __DIR__ . "/logs/swoole_{$timestamp}.log";
+
+                        if (is_file($logFile)) {
+                            // Read the log file
+                            $logFileData = System::readFile($logFile);
+
+                            if ($logFileData === false || strlen($logFileData) === 0) {
+                                return;
+                            }
+
+                            $writeSuccess = System::writeFile($rotatedLogFile, $logFileData);
+                            if ($writeSuccess === false) {
+                                output("Error - Failed to write the rotated log File");
+                                return;
+                            }
+
+                            // Truncate original log file (empty it)
+                            $clearSuccess = System::writeFile($logFile, '');
+                            if ($clearSuccess === false) {
+                                output("Error - Failed to clear the swoole log file");
+                                return;
+                            }
+                        }
+                    });
+                });
+
+                // Clean up the old swoole log files (Swoole Timer will run after every 6 Hours - 6 * 60 * 60 * 1000)
+                $daysToKeep = config('app_config.log_retention_days');
+
+                swTimer::tick(21600000, function () use ($daysToKeep) {
+                    go(function () use ($daysToKeep) {
+                        $thresholdDate = Carbon::now()->subDays($daysToKeep - 1)->startOfDay();
+                        $files = glob(__DIR__ . '/logs/swoole_*.log');
+
+                        foreach ($files as $filePath) {
+                            if (preg_match('/swoole_(\d{4}-\d{2}-\d{2})_/', $filePath, $matches)) {
+                                $fileDate = Carbon::createFromFormat('Y-m-d', $matches[1])->startOfDay();
+
+                                if ($fileDate->lt($thresholdDate)) {
+                                    if (@unlink($filePath)) {
+                                        output("Deleted old log: $filePath");
+                                    } else {
+                                        output("Failed to delete log file: $filePath");
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+
             // Setting Global $server (This is currently used in Subscription Manager)
             $GLOBALS['global_server'] = $server;
 
@@ -536,6 +601,9 @@ class sw_service_core {
 
             // Revoke Inotify Resources
             $this->revokeInotifyResources($worker_id);
+
+            // Clear the Timers
+            swTimer::clearAll();
         };
 
         // Docs: https://wiki.swoole.com/en/#/server/events?id=onworkererror
@@ -621,6 +689,7 @@ class sw_service_core {
             // Get FDs subscribed to provided topic
             $subscriptionManager = new SubscriptionManager();
             $fds = $subscriptionManager->getFdsOfTopic($topic);
+            $fds = array_column($fds, 'fd'); // Temporary code in this PR to avoid breaking current functionality.
             unset($subscriptionManager);
 
             // send to your known fds in worker scope
@@ -711,6 +780,20 @@ class sw_service_core {
 
                 // Get All topics of Fd
                 $topics = $subscriptionManager->getTopicsOfFD($request->fd);
+                $topics = array_column($topics, 'topic');
+
+                // Broadcast the News data (First page, without filters, just KSA) when FD subscribe the news Topic
+                if (in_array('news', $topics)) {
+                    go(function () use ($websocketserver, $request) {
+                        $newsFilters = [
+                            'country' => 'KSA',
+                            'page' => 1
+                        ];
+
+                        $service = new NewsWebsocketService($websocketserver, $request, $this->dbConnectionPools[$websocketserver->worker_id], $newsFilters, null, false);
+                        $service->handle();
+                    });
+                }
 
                 // Start Code: Broadcast data of Company's Indicators Data
                 go(function () use ($objDbPool, $dbFacade, $subscriptionManager, $request, $websocketserver, $topics) {
@@ -740,6 +823,11 @@ class sw_service_core {
                 });
                 // -------- End Code for Refinitive topics broadcasting ----------- //
 
+                // -------- Start Code: Broadcast data of Refinitiv Market's Historical Indicators ---------- //
+                go(function () use ($objDbPool, $dbFacade, $request, $websocketserver, $topics) {
+                    $this->processMarketHistoricalTopics($topics, $dbFacade, $objDbPool, $websocketserver, $request);
+                });
+                // -------- End Code: Broadcast data of Refinitiv Market's Historical Indicators ----------- //
 
                 // Code here for other topics broadcasting -----------
 
@@ -882,13 +970,13 @@ class sw_service_core {
                                 $service->newHandle();
                                 break;
                             case 'get-news':
+                                $service = new NewsWebsocketService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id], $frameData['request']);
+                                $service->handle();
+                                break;
+                            case 'get-news-detail':
                                 $subscriptionManager = new SubscriptionManager();
-                                if ($subscriptionManager->isSubscribed($frame->fd, 'news')) {
-                                    $service = new \App\Services\NewsWebsocketService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id], $frameData['request']);
-                                    $service->handle();
-                                }else{
-                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please subscribe to news first', 'status_code' => 401]));
-                                }
+                                $service = new \App\Services\NewsDetailWebsocketService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id], $frameData['request']);
+                                $service->handle();
                                 break;
                             case 'users':
                                 $table = SwooleTableFactory::getTable('users');
@@ -1046,6 +1134,19 @@ class sw_service_core {
                                 $objDbPool =  $this->dbConnectionPools[$webSocketServer->worker_id][config('app_config.swoole_pg_db_key')];
                                 $dbFacade = new DbFacade();
 
+                                // Broadcast the News data (First page, without filters, just KSA) when FD subscribe the news Topic
+                                if (in_array('news', $topicsRequested)) {
+                                    go(function () use ($webSocketServer, $frame) {
+                                        $newsFilters = [
+                                            'country' => 'KSA',
+                                            'page' => 1
+                                        ];
+
+                                        $service = new NewsWebsocketService($webSocketServer, $frame, $this->dbConnectionPools[$webSocketServer->worker_id], $newsFilters, null, false);
+                                        $service->handle();
+                                    });
+                                }
+
                                 // -------- Start Code for Refinitive topics broadcasting ----------- //
                                 go(function () use ($objDbPool, $dbFacade, $topicsRequested, $webSocketServer, $frame) {
                                     $this->processCompaniesTopics($topicsRequested, $dbFacade, $objDbPool, $webSocketServer, $frame);
@@ -1074,6 +1175,12 @@ class sw_service_core {
                                 });
                                 // -------- End Code for Refinitiv Sector's topics broadcasting ----------- //
 
+                                // -------- Start Code: Broadcast data of Refinitiv Market's Historical Indicators ---------- //
+                                go(function () use ($objDbPool, $dbFacade, $topicsRequested, $webSocketServer, $frame) {
+                                    $this->processMarketHistoricalTopics($topicsRequested, $dbFacade, $objDbPool, $webSocketServer, $frame);
+                                });
+                                // -------- End Code: Broadcast data of Refinitiv Market's Historical Indicators ----------- //
+
                                 // Code here for other topics broadcasting -----------
 
                                 // -------- End: Broadcast the newly subscribed topics ----------- //
@@ -1085,21 +1192,21 @@ class sw_service_core {
                                 $indicators = isset($frameData['indicators']) && is_array($frameData['indicators']) ? $frameData['indicators'] : null;
 
                                 if (!$indicators) {
-                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide indicators for which you want to get data', 'status_code' => 422]));
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide indicators for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
                                     break;
                                 }
 
                                 $market_ric = isset($frameData['market_ric']) && !empty($frameData['market_ric']) ? strtolower($frameData['market_ric']) : null;
 
                                 if (!$market_ric) {
-                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide market_ric for which you want to get data', 'status_code' => 422]));
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide market_ric for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
                                     break;
                                 }
 
                                 $companySwooleTableName = $market_ric . '_companies_indicators';
 
                                 if (!SwooleTableFactory::getTable($companySwooleTableName)) {
-                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide correct market name', 'status_code' => 422]));
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide correct market name', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
                                     break;
                                 }
 
@@ -1113,17 +1220,30 @@ class sw_service_core {
                                 $finalIndicators = array_intersect($indicators, $allRefCompanyDataTopics);
 
                                 if (count($indicators) != count($finalIndicators)) {
-                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide correct indicators', 'status_code' => 422]));
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide correct indicators', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
                                     break;
                                 }
 
                                 // Fetch the Data of provided Companies Indicators
-                                $dataJson = $this->getCompaniesIndicatorsTopicsData($finalIndicators, $companySwooleTableName);
+                                $data = $this->getCompaniesIndicatorsTopicsData($finalIndicators, $companySwooleTableName, false);
+                                $data = ['command' => $frameData['command']] + $data;
+                                $data['status_code'] = ResponseStatusCode::OK->value;
+
+                                $dataStructure = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                                if ($dataStructure == false) {
+                                    output("JSON encoding error for Command (" . $$frameData['command'] . ") : " . json_last_error_msg());
+                                    if ($webSocketServer->isEstablished($frame->fd)) {
+                                        $webSocketServer->push($frame->fd, json_encode(['message' => 'Something went wrong while encoding data', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                    }
+                                    break;
+                                }
 
                                 // Push Data to FD
                                 if ($webSocketServer->isEstablished($frame->fd)) {
-                                    $webSocketServer->push($frame->fd, $dataJson);
+                                    $webSocketServer->push($frame->fd, $dataStructure);
                                 }
+
                                 // ============================== Start code: to send company indicators topic wise ========================= //
                                  // Fetch the Data of provided Companies Indicators
                                 //  $indicatorsData = $this->getCompaniesIndicatorsTopicsData($finalIndicators, $companySwooleTableName, $market_ric . '_');
@@ -1151,8 +1271,349 @@ class sw_service_core {
                                 //  }
                                 // ============================== End code: to send company indicators topic wise ========================= //
 
-                                unset($indicatorsData);
+                                unset($dataStructure);
                                 break;
+                            case "get-companies-indicators-data":
+                                // Validate the presence of 'indicators' and 'companies' keys and ensure they are arrays
+                                $indicators = isset($frameData['indicators']) && is_array($frameData['indicators']) ? $frameData['indicators'] : null;
+
+                                if (!$indicators) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide indicators for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                    break;
+                                }
+
+                                $companies = isset($frameData['companies']) && is_array($frameData['companies']) ? $frameData['companies'] : null;
+
+                                if (!$companies) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide company(s) for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                    break;
+                                }
+
+                                $tasiCompaniesIndicatorsTable = SwooleTableFactory::getTable('tasi_companies_indicators', true);
+                                $nomucCompaniesIndicatorsTable = SwooleTableFactory::getTable('nomuc_companies_indicators', true);
+
+                                if (!$tasiCompaniesIndicatorsTable || !$nomucCompaniesIndicatorsTable) {
+                                    // Log the error as it could be in-case of Swoole Tables name are changed.
+                                    output(LogMessages::MISSING_TASI_OR_NOMUC_INDICATORS_SWOOLE_TABLE);
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Tasi or Nomuc companies data unavailable', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                    break;
+                                }
+
+                                // Fetch the companies indicators data and format according to frontend.
+                                $finalData = [];
+
+                                foreach ($companies as $company) {
+                                    $companyId = $company['company_id'] ?? $company;
+
+                                    // If the market ric is Provided then get data from that market otherwise search both markets
+                                    if (isset($company['market_ric']) && isset($company['company_id'])) {
+                                        $companyIndicators = $company['market_ric'] == 'tasi' ? $tasiCompaniesIndicatorsTable->get($company['company_id']) : $nomucCompaniesIndicatorsTable->get($company['company_id']);
+                                    }
+                                    else {
+                                        $companyIndicators = $tasiCompaniesIndicatorsTable->get($company);
+                                        if (empty($companyIndicators)) {
+                                            $companyIndicators = $nomucCompaniesIndicatorsTable->get($company);
+                                        }
+                                    }
+
+                                    $data = [];
+
+                                    // If the provided company ID or indicator doesn't exist, set the indicators to null for that company
+                                    foreach ($indicators as $indicator) {
+                                        $data[$indicator] = $companyIndicators[$indicator] ?? null;
+                                    }
+
+                                    $finalData[] = [
+                                        'company_id' => $companyId,
+                                        'data' => $data,
+                                    ];
+                                }
+
+                                $dataStructure = json_encode([
+                                    'command' => $frameData['command'],
+                                    'companies_indicators_data' => $finalData,
+                                    'status_code' => ResponseStatusCode::OK->value,
+                                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                                if ($dataStructure == false) {
+                                    output("JSON encoding error for Command (" . $$frameData['command'] . ") : " . json_last_error_msg());
+                                    if ($webSocketServer->isEstablished($frame->fd)) {
+                                        $webSocketServer->push($frame->fd, json_encode(['message' => 'Something went wrong while encoding data', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                    }
+                                    break;
+                                }
+
+                                // Push Data to FD
+                                if ($webSocketServer->isEstablished($frame->fd)) {
+                                    $webSocketServer->push($frame->fd, $dataStructure);
+                                }
+
+                                unset($dataStructure);
+                                break;
+                            case "get-markets-indicators-data":
+                                // Validate the presence of 'indicators' and 'markets' keys and ensure they are arrays
+                                $indicators = isset($frameData['indicators']) && is_array($frameData['indicators']) ? $frameData['indicators'] : null;
+
+                                if (!$indicators) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide indicators for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                    break;
+                                }
+
+                                $markets = isset($frameData['markets']) && is_array($frameData['markets']) ? $frameData['markets'] : null;
+
+                                if (!$markets) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide markets(s) for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                    break;
+                                }
+
+                                // Fetch the Data
+                                try {
+                                    $indicators[] = 'market_id';
+                                    $marketsData = SwooleTableFactory::getSwooleTableData(tableName: 'markets_indicators', selectColumns: $indicators, retainOriginalKeys: true);
+
+                                    if (!$marketsData) {
+                                        if ($webSocketServer->isEstablished($frame->fd)) {
+                                            $webSocketServer->push($frame->fd, json_encode(['message' => 'Market indicators data unavailable', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                        }
+                                        break;
+                                    }
+
+                                    // Fetch the markets indicators data and format according to frontend.
+                                    $finalData = [];
+
+                                    foreach ($markets as $m) {
+                                        $tableMarketKey = strtoupper($m);
+                                        if (isset($marketsData[$tableMarketKey])) {
+                                            $data['market_ric'] = $m;
+                                            $data['market_id'] = $marketsData[$tableMarketKey]['market_id'];
+                                            $data['data'] = $marketsData[$tableMarketKey];
+                                            unset($data['data']['market_id']);
+                                            $finalData[] = $data;
+                                        } else {
+                                            if ($webSocketServer->isEstablished($frame->fd)) {
+                                                $webSocketServer->push($frame->fd, json_encode(['message' => $m . ' data unavailable', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                            }
+                                        }
+                                    }
+
+                                    // Stop further execution of case/command if there is no final data
+                                    if (empty($finalData)) {
+                                        break;
+                                    }
+
+                                    $dataStructure = json_encode([
+                                        'command' => $frameData['command'],
+                                        'command_data' => $finalData,
+                                        'status_code' => ResponseStatusCode::OK->value,
+                                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                                    if ($dataStructure == false) {
+                                        output("JSON encoding error for Command (" . $$frameData['command'] . ") : " . json_last_error_msg());
+                                        if ($webSocketServer->isEstablished($frame->fd)) {
+                                            $webSocketServer->push($frame->fd, json_encode(['message' => 'Something went wrong while encoding data', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                        }
+                                        break;
+                                    }
+
+                                    // Push Data to FD
+                                    if ($webSocketServer->isEstablished($frame->fd)) {
+                                        $webSocketServer->push($frame->fd, $dataStructure);
+                                    }
+
+                                    unset($finalData);
+                                    unset($dataStructure);
+                                    break;
+                                } catch (\Throwable $e) {
+                                    output($e);
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Market indicators data unavailable', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                    break;
+                                }
+                            case "get-indicators-history":
+                                $objDbPool =  $this->dbConnectionPools[$webSocketServer->worker_id][config('app_config.swoole_pg_db_key')];
+                                $dbFacade = new DbFacade();
+                                $getRefinitivIndicatorsHistory = new FetchRefinitivIndicatorHistory($webSocketServer, $objDbPool, $dbFacade);
+                                $getRefinitivIndicatorsHistory->handle($frame, $frameData);
+                                unset($getRefinitivIndicatorsHistory);
+                                unset($dbFacade);
+                                break;
+                            case "get-sectors-indicators-data":
+                                // Validate the presence of 'indicators' and 'sectors' keys and ensure they are arrays
+                                $indicators = isset($frameData['indicators']) && is_array($frameData['indicators']) ? $frameData['indicators'] : null;
+
+                                if (!$indicators) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide indicators for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                    break;
+                                }
+
+                                $sectors = isset($frameData['sectors']) && is_array($frameData['sectors']) ? $frameData['sectors'] : null;
+
+                                if (!$sectors) {
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Please provide sectors(s) for which you want to get data', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                    break;
+                                }
+
+                                // Fetch the Data
+                                try {
+                                    $indicators[] = 'sector_info';
+                                    $sectorsData = SwooleTableFactory::getSwooleTableData(tableName: 'sectors_indicators', selectColumns: $indicators, jsonDecodeColumns:['sector_info'], retainOriginalKeys: true);
+
+                                    if (!$sectorsData) {
+                                        if ($webSocketServer->isEstablished($frame->fd)) {
+                                            $webSocketServer->push($frame->fd, json_encode(['message' => 'Sector(s) indicators data unavailable', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                        }
+                                        break;
+                                    }
+
+                                    // Fetch the sectors indicators data and format according to frontend.
+                                    $finalData = [];
+
+                                    foreach ($sectors as $s) {
+                                        $tableSectorKey = strtoupper($s);
+                                        if (isset($sectorsData[$tableSectorKey])) {
+                                            $data['sector_id'] = $s;
+                                            $data['sector_ric'] = $sectorsData[$tableSectorKey]['sector_info']['ric'];
+                                            $data['data'] = $sectorsData[$tableSectorKey];
+                                            unset($data['data']['sector_info']);
+                                            $finalData[] = $data;
+                                        } else {
+                                            if ($webSocketServer->isEstablished($frame->fd)) {
+                                                $webSocketServer->push($frame->fd, json_encode(['message' => 'Sectors ID (' . $s . ') data unavailable', 'status_code' => ResponseStatusCode::UNPROCESSABLE_CONTENT->value]));
+                                            }
+                                        }
+                                    }
+
+                                    // Stop further execution of case/command if there is no final data
+                                    if (empty($finalData)) {
+                                        break;
+                                    }
+
+                                    $dataStructure = json_encode([
+                                        'command' => $frameData['command'],
+                                        'command_data' => $finalData,
+                                        'status_code' => ResponseStatusCode::OK->value,
+                                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                                    if ($dataStructure == false) {
+                                        output("JSON encoding error for Command (" . $$frameData['command'] . ") : " . json_last_error_msg());
+                                        if ($webSocketServer->isEstablished($frame->fd)) {
+                                            $webSocketServer->push($frame->fd, json_encode(['message' => 'Something went wrong while encoding data', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                        }
+                                        break;
+                                    }
+
+                                    // Push Data to FD
+                                    if ($webSocketServer->isEstablished($frame->fd)) {
+                                        $webSocketServer->push($frame->fd, $dataStructure);
+                                    }
+
+                                    unset($finalData);
+                                    unset($dataStructure);
+                                    break;
+                                } catch (\Throwable $e) {
+                                    output($e);
+                                    $webSocketServer->push($frame->fd, json_encode(['message' => 'Sector(s) indicators data unavailable', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                    break;
+                                }
+                            case "get-holidays":
+                                    try {
+                                        $objDbPool =  $this->dbConnectionPools[$webSocketServer->worker_id][config('app_config.swoole_pg_db_key')];
+                                        $dbFacade = new DbFacade();
+
+                                        $dbQuery = "SELECT name, from_date, to_date FROM holidays;";
+                                        $holidayResult = executeDbFacadeQueryWithChannel($dbQuery, $objDbPool, $dbFacade);
+
+                                        $dataStructure = json_encode([
+                                            'command' => $frameData['command'],
+                                            'data' => $holidayResult,
+                                            'status_code' => ResponseStatusCode::OK->value,
+                                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                                        if ($dataStructure == false) {
+                                            output("JSON encoding error for Command (" . $$frameData['command'] . ") : " . json_last_error_msg());
+                                            if ($webSocketServer->isEstablished($frame->fd)) {
+                                                $webSocketServer->push($frame->fd, json_encode(['message' => 'Something went wrong while encoding data', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                            }
+                                            break;
+                                        }
+
+                                        if ($webSocketServer->isEstablished($frame->fd)) {
+                                            $webSocketServer->push($frame->fd, $dataStructure);
+                                        }
+
+                                        unset($dbFacade);
+                                        break;
+                                    } catch (\Throwable $e) {
+                                        output($e);
+                                        $webSocketServer->push($frame->fd, json_encode(['message' => 'Failed to retrieve holidays from the database.', 'status_code' => ResponseStatusCode::INTERNAL_SERVER_ERROR->value]));
+                                        break;
+                                    }
+                            case "sync-company-info-to-indicators-tables":
+                                // Validate the presence of 'indicators' and 'markets' keys and ensure they are arrays
+                                $companyInfo = isset($frameData['companyInfo']) && is_array($frameData['companyInfo']) ? $frameData['companyInfo'] : null;
+
+                                if (!$companyInfo) {
+                                    output('No company information provided. Please provide the company details you want to update.');
+                                    break;
+                                }
+
+                                $companySwooleTableName = $companyInfo['parent_id'] == 1 ? 'tasi_companies_indicators' : 'nomuc_companies_indicators';
+                                $company = $this->getTopicsFromSwooleTableRowwise(config('common_attributes_config'), $companySwooleTableName, $companyInfo['id'], 'company_info');
+
+                                // Update the corresponding record in the Swoole-related table if company data is available
+                                if (!empty($company)) {
+                                    output('This company info is going to be updated:');
+                                    output($company);
+
+                                    $company['sp_comp_id'] = $companyInfo['sp_comp_id'];
+                                    $company['isin_code'] = $companyInfo['isin_code'];
+                                    $company['ric'] = $companyInfo['ric'];
+                                    $company['company_info']->ric = $companyInfo['ric'];
+                                    $company['company_info']->en_long_name = $companyInfo['name'];
+                                    $company['company_info']->sp_comp_id = $companyInfo['sp_comp_id'];
+                                    $company['company_info']->en_short_name = $companyInfo['short_name'];
+                                    $company['company_info']->symbol = $companyInfo['symbol'];
+                                    $company['company_info']->isin_code = $companyInfo['isin_code'];
+                                    $company['company_info']->ar_long_name = $companyInfo['arabic_name'];
+                                    $company['company_info']->ar_short_name = $companyInfo['arabic_short_name'];
+                                    $company['company_info']->logo = $companyInfo['logo'];
+
+                                    $company['company_info'] = json_encode($company['company_info'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                                    $table = SwooleTableFactory::getTable($companySwooleTableName);
+                                    $table->set($company['company_id'], $company);
+                                } else {
+                                    output('Could not found the Company in Swoole table to update:');
+                                    output($company);
+                                }
+
+                                break;
+                                case "delete-company-record-from-indicators-tables":
+                                    // Validate the presence of 'indicators' and 'markets' keys and ensure they are arrays
+                                    $companyInfo = isset($frameData['companyInfo']) && is_array($frameData['companyInfo']) ? $frameData['companyInfo'] : null;
+
+                                    if (!$companyInfo) {
+                                        output('No company information provided. Please provide the company details you want to delete.');
+                                        break;
+                                    }
+
+                                    $companySwooleTableName = $companyInfo['parent_id'] == 1 ? 'tasi_companies_indicators' : 'nomuc_companies_indicators';
+                                    $company = $this->getTopicsFromSwooleTableRowwise(config('common_attributes_config'), $companySwooleTableName, $companyInfo['id'], 'company_info');
+
+                                    // Update the corresponding record in the Swoole-related table if company data is available
+                                    if (!empty($company)) {
+                                        output('This company record is going to be deleted:');
+                                        output($company);
+
+                                        // Get the Swoole table instance by name
+                                        $table = Bootstrap\SwooleTableFactory::getTable($companySwooleTableName, true);
+                                        // Delete a company's indicators record
+                                        $table->del($companyInfo['id']);
+                                    } else {
+                                        output('Could not found the Company in Swoole table to delete:');
+                                        output($company);
+                                    }
+
+                                    break;
                             default:
                                 if ($webSocketServer->isEstablished($frame->fd)) {
                                     $webSocketServer->push($frame->fd, 'Invalid command given');
@@ -1762,6 +2223,98 @@ class sw_service_core {
         }
     }
 
+    /**
+     * Process market historical topics and push relevant data to WebSocket.
+     *
+     * This function filters market topics based on market names, retrieves relevant data,
+     * and sends it via WebSocket if applicable.
+     *
+     * Steps:
+     * 1. Retrieves all market topics.
+     * 2. Checks if any provided topic exists in the market topics list.
+     * 3. Fetches market data from the database.
+     * 4. Iterates over each market:
+     *    - Ensures `refinitiv_universe` is set.
+     *    - Checks if a corresponding Swoole table exists.
+     *    - Filters market topics based on the market.
+     *    - Retrieves market indicators and pushes data to WebSocket.
+     *
+     * @param array $topics List of topics to process.
+     * @param object $dbFacade Database facade instance for executing queries.
+     * @param object $objDbPool Database connection pool.
+     * @param object $websocketserver WebSocket server instance for pushing data.
+     * @param object $request The WebSocket request object.
+     * @return void
+     */
+    public function processMarketHistoricalTopics(array $topics, object $dbFacade, object $objDbPool, object $websocketserver, object $request)
+    {
+        try {
+            // Retrieve all market topics, including Refinitiv into a single array.
+            $allRefMarektDataTopics = array_map('strtolower', explode(',', config('ref_config.ref_historical_fields')));
+
+            // Check if any of the provided topics exist in the list
+            if (!$this->isTopicExist($topics, $allRefMarektDataTopics, 3)) {
+                return;
+            }
+
+            // Fetch markets from the database
+            $markets = $this->getMarkets($dbFacade, $objDbPool);
+
+            // If no markets exist, return with a message
+            if (empty($markets)) {
+                output(LogMessages::NO_MARKET_IN_DB);
+                return;
+            }
+
+            $marketSwooleTableName = 'markets_historical_indicators';
+
+            // Iterate over each market
+            foreach ($markets as $market) {
+                if (empty($market['refinitiv_universe'])) {
+                    output(LogMessages::ADD_MARKET_TO_REF_UNIVERSE);
+                    continue;
+                }
+
+                $normalizedMarketName =  strtolower($market['refinitiv_universe']);
+                $marketName = $normalizedMarketName . '_market_historical';
+
+                // Filter market topics based on the market
+                $marketTopics = $this->filterTopics($topics, $marketName . '_', $allRefMarektDataTopics);
+
+                // If there are valid market topics, retrieve data and push to WebSocket
+                if (!empty($marketTopics)) {
+                    // Get the actual Swoole table instance by passing true in getTable function
+                    $marketHistoricalTable = SwooleTableFactory::getTable($marketSwooleTableName, true);
+
+                    $marketWiseTopicData = [];
+                    // Get only specific market data
+                    foreach ($marketHistoricalTable as $key => $row) {
+                        if ($market['id'] == $row['market_id']) {
+                            $row['market_info'] = json_decode($row['market_info'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                            $marketWiseTopicData[] =  array_intersect_key($row, array_flip(array_merge($marketTopics, explode(',', config('ref_config.ref_historical_market_common_attributes')))));
+                        }
+                    }
+
+                    $jobRunsAtData = getJobRunAt($marketSwooleTableName);
+
+                    $jsonData = json_encode([
+                        $normalizedMarketName . '_' . $marketSwooleTableName => $marketWiseTopicData,
+                        'job_runs_at' => $jobRunsAtData,
+                    ]);
+
+                    if ($jsonData == false) {
+                        output("JSON encoding error: " . json_last_error_msg());
+                    } else {
+                        $this->pushTopicToWebSocket($request, $websocketserver, $jsonData);
+                    }
+                    unset($marketHistoricalTable);
+                }
+            }
+        } catch (Throwable $e) {
+            output($e);
+        }
+    }
+
     // ============================== Start code: to send company indicators topic wise ========================= //
     // /**
     //  * Get the Companies indicators data based on subscribed Topics of FD
@@ -1800,6 +2353,46 @@ class sw_service_core {
     //     return $finalData;
     // }
     // ============================== End code: to send company indicators topic wise ========================= //
+
+     /**
+     * Get the Companies indicators data based on subscribed Topics of FD
+     *
+     * @param  mixed $companyTopics The company topics that FD has subscribed
+     * @param  string $companySwooleTableName Used to retrieve company topics for a specific market
+     * @param  bool $returnJson Returns the data in Json Format
+     * @return mixed
+     */
+    public function getCompaniesIndicatorsTopicsData($companyTopics, $companySwooleTableName, $returnJson = true): mixed
+    {
+        // Fetch data from swoole table jobs_runs_at
+        $jobRunsAtData = getJobRunAt($companySwooleTableName);
+
+        // Get common attributes
+        $commonAttributes = config('common_attributes_config');
+
+        $data = SwooleTableFactory::getSwooleTableData(tableName: $companySwooleTableName, selectColumns: array_merge($companyTopics, $commonAttributes), jsonDecodeColumns:['company_info'], retainOriginalKeys: false);
+
+        if ($returnJson) {
+            // Here we will check if the data is encoded without any error
+            $dataJson = json_encode([
+                $companySwooleTableName => $data,
+                'job_runs_at' => $jobRunsAtData,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            if ($dataJson == false) {
+                output("JSON encoding error: " . json_last_error_msg());
+                return false;
+            } else {
+                return $dataJson;
+            }
+        }
+        else {
+            return [
+                $companySwooleTableName => $data,
+                'job_runs_at' => $jobRunsAtData,
+            ];
+        }
+    }
 
     /**
      * Remove the server.pid when server shutdown

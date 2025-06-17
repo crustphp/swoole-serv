@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
+use App\Constants\LogMessages;
 use Swoole\Coroutine\Barrier;
 use Swoole\Coroutine;
 use App\Core\Services\APIConsumer;
-use Carbon\Carbon;
 use Throwable;
 use Swoole\Coroutine\Channel;
 
@@ -36,15 +36,15 @@ class RefSnapshotAPIConsumer
         $this->refTokenLock = $refTokenLock;
     }
 
-    public function handle($companies = null, $fields)
+    public function handle($companies = null, $fields, $column = 'ric', $tableName = 'companies')
     {
         if ($companies) {
-            $companiesRics = array_column($companies, 'ric');
+            $companiesRics = array_column($companies, $column);
         } else {
-            $dbQuery = "SELECT ric FROM companies
-            WHERE ric IS NOT NULL
-            AND ric NOT LIKE '%^%'
-            AND ric ~ '^[0-9a-zA-Z\\.]+$'";
+            $dbQuery = "SELECT $column FROM $tableName
+            WHERE $column IS NOT NULL
+            AND $column NOT LIKE '%^%'
+            AND $column ~ '^[0-9a-zA-Z\\.]+$'";
 
             // Assuming $dbFacade is an instance of DbFacade and $objDbPool is your database connection pool
             $channel = new Channel(1);
@@ -64,10 +64,10 @@ class RefSnapshotAPIConsumer
             if (!empty($results)) {
                 // Process the results: create an associative array with 'ric' as the key and 'id' as the value
                 foreach ($results as $row) {
-                    $companiesRics[$row['ric']] = $row;
+                    $companiesRics[$row[$column]] = $row;
                 }
 
-                $companiesRics = array_column($companiesRics, 'ric');
+                $companiesRics = array_column($companiesRics, $column);
             }
         }
 
@@ -105,7 +105,7 @@ class RefSnapshotAPIConsumer
             $this->tooManyRequestCounter = 0;
             // Process each chunk asynchronously using coroutines
             foreach ($ricsChunks as $chunk) {
-                $queryParams['universe'] = '/' . implode(',/', $chunk);
+                $queryParams['universe'] = $tableName == 'companies' ? '/' . implode(',/', $chunk) : '/.' . implode(',/.', $chunk);
                 $this->sendRequest($queryParams, $refAccessToken, $mAIndicatorBarrier);
             }
 
@@ -113,7 +113,7 @@ class RefSnapshotAPIConsumer
 
             return $this->mAIndicatorsData;
         }
-        output("There is an issue retrieving the token from the database, or the companies do not exist in the database.");
+        output(LogMessages::REF_TOKEN_COMPANY_ISSUE);
         return array();
     }
 
@@ -138,7 +138,7 @@ class RefSnapshotAPIConsumer
     {
         go(function () use ($queryParams, $accessToken, $mAIndicatorBarrier) {
 
-             $overAllRepCounter = 0;
+            $overAllRepCounter = 0;
             do {
 
                 do { // Check for status code 401 (Unauthorized)
@@ -148,7 +148,7 @@ class RefSnapshotAPIConsumer
                     $response = $responseData['response'];
 
                     if ($statusCode == 401) {
-                        var_dump('Swoole-serv: Unauthorized: Invalid token or session has expired.');
+                        output(LogMessages::REF_UNAUTHORIZED_ACCESS);
                         Coroutine::sleep(0.7);
                         $token = getActiveRefToken($this->webSocketServer, $this->refTokenLock);
                         if($token) {
@@ -164,7 +164,7 @@ class RefSnapshotAPIConsumer
 
                 if ($this->authCounter >=  $this->retry) {
                     $this->authCounter = 0;
-                    var_dump('Swoole-serv: Unauthorized: Retry limit reached.');
+                    output(LogMessages::REF_UNAUTHORIZED_RETRY_LIMIT);
                 }
 
                 if ($statusCode === 429) { // Check for status code 429 (Too Many Requests)
@@ -176,7 +176,7 @@ class RefSnapshotAPIConsumer
                         $response = $responseData['response'];
 
                         if ($statusCode == 429) {
-                            var_dump('Swoole-serv: Too Many Requests: failed.');
+                            output(LogMessages::REF_TOO_MANY_REQUESTS);
                             Coroutine::sleep($this->tooManyRequestCounter + 1);
                             $this->tooManyRequestCounter++;
                         } else {
@@ -187,7 +187,7 @@ class RefSnapshotAPIConsumer
 
                     if ($this->tooManyRequestCounter >=  $this->retry) {
                         $this->tooManyRequestCounter = 0;
-                        var_dump('Swoole-serv: Too many requests: Retry limit reached.');
+                        output(LogMessages::REF_TOO_MANY_REQUESTS_RETRY_LIMIT);
                     }
                 }
 
@@ -195,7 +195,7 @@ class RefSnapshotAPIConsumer
                     $res = json_decode($response, true);
                     $this->mAIndicatorsData = array_merge($this->mAIndicatorsData, $res);
                 } else {
-                    var_dump('Swoole-serv: Invalid repsonse from Refinitive Snapshot API', $response);
+                    output(sprintf(LogMessages::REF_INVALID_RESPONSE, json_encode($response)));
                 }
 
 
@@ -203,7 +203,7 @@ class RefSnapshotAPIConsumer
                     Coroutine::sleep(1);
                     $overAllRepCounter++;
                     if($overAllRepCounter == 2) {
-                        var_dump('Swoole-serv: Overall retries limit exceeded');
+                        output(LogMessages::REF_OVERALL_RETRIES_LIMIT_EXCEEDED);
                     }
                 } else {
                     break;

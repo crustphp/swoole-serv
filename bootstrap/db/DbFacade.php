@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 // For PostgreSQL Connection Pool
@@ -9,13 +10,16 @@ declare(strict_types=1);
 //use Swoole\Database\PDOConfig;
 //use Swoole\Database\PDOPool;
 namespace DB;
+
 use Swoole\Runtime;
 
 use Swoole\Coroutine as Co;
+use Swoole\Coroutine\PostgreSQL;
 
-class DbFacade {
+class DbFacade
+{
 
-    public function query($db_query, $objDbPool, array $options = null, $transaction = false, $lock = false, $tableName = '')
+    public function query($db_query, $objDbPool, ?array $options = null, $transaction = false, $lock = false, $tableName = '')
     {
         // Check if this function is called in Coroutine Context or not
         if (Co::getCid() == -1) {
@@ -43,7 +47,7 @@ class DbFacade {
         }
 
         // Apply Defer to Return the connection to pool
-        Co::defer(function() use($objDbPool, $postgresClient) {
+        Co::defer(function () use ($objDbPool, $postgresClient) {
             $objDbPool->put_dbObject_using_pool_key($postgresClient);
         });
 
@@ -55,7 +59,7 @@ class DbFacade {
                 $pdo_statement = $postgresClient->query('BEGIN');
                 $connectionTested = true;
 
-                if(!$pdo_statement) {
+                if (!$pdo_statement) {
                     throw new \RuntimeException('pdo function query() failed: ' . (isset($postgresClient->errCode) ? $postgresClient->errCode : ''));
                 }
             }
@@ -71,12 +75,12 @@ class DbFacade {
                 $pdo_statement = $postgresClient->query($lockQuery);
                 $connectionTested = true;
 
-                if(!$pdo_statement) {
+                if (!$pdo_statement) {
                     if ($transaction) {
                         $postgresClient->query('ROLLBACK');
                     }
 
-                    throw new \RuntimeException('pdo function query() failed: ' . (isset($postgresClient->errCode) ? $postgresClient->errCode : ''));
+                    throw new \RuntimeException($this->formatPostgresqlErrorMsg($postgresClient, false), $postgresClient->resultStatus);
                 }
             }
         }
@@ -104,12 +108,12 @@ class DbFacade {
                 $pdo_statement = $postgresClient->query($db_query);
                 // $connectionTested = true; // Not Required Here
 
-                if(!$pdo_statement) {
+                if (!$pdo_statement) {
                     if ($transaction) {
                         $postgresClient->query('ROLLBACK');
                     }
 
-                    throw new \RuntimeException('pdo function query() failed: ' . (isset($postgresClient->errCode) ? $postgresClient->errCode : ''));
+                    throw new \RuntimeException($this->formatPostgresqlErrorMsg($postgresClient, false), $postgresClient->resultStatus);
                 }
             }
         }
@@ -134,7 +138,8 @@ class DbFacade {
      * @param  mixed $objDbPool
      * @return mixed
      */
-    public function getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool): mixed {
+    public function getActivePostgresClient($postgresClient, $connectionPoolObj, $objDbPool): mixed
+    {
         if (!$connectionPoolObj->isClientConnected($postgresClient)) {
             return $objDbPool->get_replaced_dbObject();
         }
@@ -188,6 +193,26 @@ class DbFacade {
         $objDbPool->put_dbObject_using_pool_key($postgresClient);
     }
 
+    /**
+     * This function format the PostgreSQL error message for throwing exceptions
+     *
+     * @param  PostgreSQL $postgresClient PostgreSQL client instance
+     * @param  bool  $logError If true, logs the error message
+     * @return string formated error message
+     */
+    public function formatPostgresqlErrorMsg(PostgreSQL &$postgresClient, bool $logError = true): string
+    {
+        $exceptionMessage = "pdo function query() failed:\n";
+        $exceptionMessage .= "Error Message -> " . (!empty($postgresClient->error) ? $postgresClient->error : '') . "\n";
+        $exceptionMessage .= "Result Status -> " . (!empty($postgresClient->resultStatus) ? $postgresClient->resultStatus : '') . "\n";
+        $exceptionMessage .= "Result Diag -> " . (!empty($postgresClient->resultDiag) ? str_replace('&', "\n", http_build_query($postgresClient->resultDiag)) : '') . "\n";
+
+        if ($logError) {
+            output($exceptionMessage);
+        }
+
+        return $exceptionMessage;
+    }
 }
 
 

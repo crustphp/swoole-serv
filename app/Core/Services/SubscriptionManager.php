@@ -32,9 +32,10 @@ class SubscriptionManager
      * @param int $fd The FD of the subscriber.
      * @param string $topic The name of the topic the FD is subscribing to.
      * @param int $worker_id The worker ID of the FD.
+     * @param array $companies The companies for which FD is subscribing the topic.
      * @return mixed 1 in-case of success, -1 if FD is already subscribed to topic and false in-case of Failure
      */
-    public function subscribe(int $fd, string $topic, int $worker_id): mixed
+    public function subscribe(int $fd, string $topic, int $worker_id, array $companies = []): mixed
     {
         $key = $this->generateKey($fd, $topic);
 
@@ -43,17 +44,20 @@ class SubscriptionManager
             return -1;
         }
 
+        $implodedCompanies = implode(',', $companies);
+
         // Subscribe the FD to Table
         $subscribed = $this->subscriptionTable->set($key, [
             'topic' => $topic,
             'fd' => $fd,
             'worker_id' => $worker_id,
+            'companies' => $implodedCompanies,
         ]);
 
         if ($subscribed) {
             // Subscribe the FD to Worker
             //- Map the Topics to FD
-            self::$fdTopics[$fd][$topic] = $topic;
+            self::$fdTopics[$fd][$topic] = ['topic' => $topic, 'companies' => $implodedCompanies];
 
             //- Map the FDs to Topics
             self::$topicFds[$topic][$fd] = &self::$fdTopics[$fd];
@@ -121,7 +125,18 @@ class SubscriptionManager
     {
         // Prefer to get the data from the worker scope
         if ($fdsOnly && is_null($worker_id)) {
-            return isset(self::$topicFds[$topic]) ? array_keys(self::$topicFds[$topic]) : [];
+            $topicFds = self::$topicFds[$topic] ?? [];
+
+            $subscribedData = [];
+            foreach ($topicFds as $fd => $fdTopics) {
+                $companies = explode(',', $fdTopics[$topic]['companies'] ?? '');
+                $subscribedData[] = [
+                    'fd' => $fd,
+                    'companies' => $companies
+                ];
+            }
+
+            return $subscribedData;
         }
 
         $subscribedData = [];
@@ -129,13 +144,16 @@ class SubscriptionManager
 
         foreach ($subscriptionSwooleTable as $row) {
             if ($row['topic'] === $topic && ($worker_id === null || $row['worker_id'] === $worker_id)) {
+                $fdCompanies = !empty($row['companies']) ? explode(',', $row['companies']) : [];
+
                 if ($fdsOnly) {
-                    $subscribedData[] = $row['fd'];
+                    $subscribedData[] = ['fd' => $row['fd'], 'companies' => $fdCompanies];
                 } else {
                     $subscribedData[] = [
                         'topic' => $row['topic'],
                         'fd' => $row['fd'],
                         'worker_id' => $row['worker_id'],
+                        'companies' => $fdCompanies,
                     ];
                 }
             }
@@ -148,14 +166,15 @@ class SubscriptionManager
      * Get all topics that a specific FD has subscribed to.
      *
      * @param int $fd The file descriptor (FD).
-     * @param bool $fdsOnly If true, returns only an array of FDs; if false, returns all data of the row.
+     * @param bool $topicsOnly If true, returns only an array of topics (with companies); if false, returns all data of the row.
      * @return array
      */
-    public function getTopicsOfFD(int $fd, bool $fdsOnly = true): array
+    public function getTopicsOfFD(int $fd, bool $topicsOnly = true): array
     {
         // Prefer to get the data from the worker scope
-        if ($fdsOnly) {
-            return isset(self::$fdTopics[$fd]) ? array_keys(self::$fdTopics[$fd]) : [];
+        if ($topicsOnly) {
+            $fdTopics = isset(self::$fdTopics[$fd]) ? array_values(self::$fdTopics[$fd]) : [];
+            return $fdTopics;
         }
 
         $subscribedTopics = [];
@@ -167,6 +186,7 @@ class SubscriptionManager
                     'topic' => $row['topic'],
                     'fd' => $row['fd'],
                     'worker_id' => $row['worker_id'],
+                    'companies' => $row['companies'],
                 ];
             }
         }
@@ -182,9 +202,10 @@ class SubscriptionManager
      * @param array $subscribeTopics Topics to subscribe to.
      * @param array $unsubscribeTopics Topics to unsubscribe from.
      * @param int $worker_id The worker ID of the FD.
+     * @param array $companies The companies for which FD is subscribing the topic.
      * @return array Returns an associative array with results of subscriptions and unsubscriptions.
      */
-    public function manageSubscriptions(int $fd, array $subscribeTopics, array $unsubscribeTopics, int $worker_id): array
+    public function manageSubscriptions(int $fd, array $subscribeTopics, array $unsubscribeTopics, int $worker_id, array $companies = []): array
     {
         $subscriptionResults = [
             'subscribed' => [],
@@ -195,7 +216,7 @@ class SubscriptionManager
 
         // Handle subscriptions
         foreach ($subscribeTopics as $topic) {
-            $subscribed = $this->subscribe($fd, $topic, $worker_id);
+            $subscribed = $this->subscribe($fd, $topic, $worker_id, $companies);
             if ($subscribed == -1) {
                 $subscriptionResults['already_subscribed'][] = $topic;
             } else if ($subscribed) {
@@ -230,12 +251,13 @@ class SubscriptionManager
         // Remove from Swoole Table
         $fdTopics = $this->getTopicsOfFD($fd);
         foreach ($fdTopics as $topic) {
-            $removed = $this->subscriptionTable->del($this->generateKey($fd, $topic));
+            $removed = $this->subscriptionTable->del($this->generateKey($fd, $topic['topic']));
         }
 
         // Remove the subscriptions from the Worker Scope.
         if (isset(self::$fdTopics[$fd])) {
-            foreach (self::$fdTopics[$fd] as $topic) {
+            foreach (self::$fdTopics[$fd] as $topicArr) {
+                $topic = $topicArr['topic'];
                 unset(self::$topicFds[$topic][$fd]);
 
                 // If no FDs are left in this topic, remove the topic entirely
@@ -317,8 +339,13 @@ class SubscriptionManager
 
         foreach ($subscriptionsSwooleTable as $row) {
             if ($row['worker_id'] == $this->server->worker_id) {
-                self::$topicFds[$row['topic']][$row['fd']] = $row['fd'];
-                self::$fdTopics[$row['fd']][$row['topic']] = $row['topic'];
+
+                self::$fdTopics[$row['fd']][$row['topic']] = [
+                    'topic' => $row['topic'],
+                    'companies' => $row['companies'],
+                ];
+
+                self::$topicFds[$row['topic']][$row['fd']] = &self::$fdTopics[$row['fd']];
             }
         }
     }

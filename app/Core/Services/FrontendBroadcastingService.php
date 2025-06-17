@@ -2,7 +2,8 @@
 
 namespace App\Core\Services;
 
-class FrontendBroadcastingService {
+class FrontendBroadcastingService
+{
     protected $webSocketServer;
 
     /**
@@ -11,7 +12,8 @@ class FrontendBroadcastingService {
      * @param  mixed $webSocketServer
      * @return void
      */
-    public function __construct($webSocketServer) {
+    public function __construct($webSocketServer)
+    {
         $this->webSocketServer = $webSocketServer;
     }
 
@@ -19,18 +21,18 @@ class FrontendBroadcastingService {
      * Magic invoke method to broadcast the message to all workers fds.
      *
      * @param string|array $message The message to broadcast, either as a string or array.
+     * @param callable $callback An optional callback to overide the default functionality. Callback will receive the $server and the $message as parameters.
      * @return void
      */
-    public function __invoke(string|array $message, callable $callback = null): mixed {
-
-       if (!is_null($callback)) {
-           if (is_array($message)) {
-                 return call_user_func_array($callback, $message);
-            } else {
-                 return call_user_func($callback, $message);
-            }
+    public function __invoke(string|array $message, callable $callback = null): void
+    {
+        // Execute the callback function if provided, otherwise run the default functionality
+        if (!is_null($callback)) {
+            $callback($this->webSocketServer, $message);
+            return;
         }
 
+        // Default functionality
         // Convert array message to JSON string if necessary
         if (is_array($message)) {
             $message = json_encode($message);
@@ -45,8 +47,8 @@ class FrontendBroadcastingService {
         }
 
         // message to all fds in this scope (Worker Process)
-        foreach($this->webSocketServer->fds as $fd) {
-            if ($server->isEstablished($frame->fd)){
+        foreach ($this->webSocketServer->fds as $fd) {
+            if ($this->webSocketServer->isEstablished($fd)) {
                 $this->webSocketServer->push($fd, $message);
             }
         }

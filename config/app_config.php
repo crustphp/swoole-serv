@@ -34,7 +34,12 @@ return [
     'redis_host' => $_ENV['SW_REDIS_HOST'] ?? '127.0.0.1',
     'redis_password' => $_ENV['SW_REDIS_PASSWORD'],
     'redis_port' => $_ENV['SW_REDIS_PORT'] ?? 6379,
-    'max_sftp_downloads' => $_ENV['MAX_SFTP_DOWNLOADS'] ?? 2,
+    'max_sftp_downloads' => $_ENV['SW_MAX_SFTP_DOWNLOADS'] ?? 2,
     'laravel_app_url' => $_ENV['SW_LARAVEL_APP_URL'],
     'ref_daywise_fetching_timespan' =>  intval($_ENV['SW_REF_DAYWISE_DATA_FETCHING_TIMESPAN'] ?? 43200),
+
+    'log_rotation_interval' =>  intval($_ENV['SW_LOG_ROTATION_INTERVAL'] ?? 60), // Value in minutes
+    'log_retention_days' =>  intval($_ENV['SW_LOG_RETENTION_DAYS'] ?? 5), // Number of Days - Starting from Today
+
+    'news_translation' => $_ENV['SW_NEWS_TRANSLATION'] ?? true,
 ];

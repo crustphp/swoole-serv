@@ -34,6 +34,7 @@ class NewsProcess
                 // Important: make sure you use the same identifier as pool_key that you use for $this->dbConnectionPools
                 // If you want to use different identifier than modify the __destruct code accordingly
                 $this->dbConnectionPools[$this->poolKey] = new DBConnectionPool($this->poolKey, 'postgres', 'swoole', true);
+                $this->dbConnectionPools[$this->poolKey]->setPoolSize(config('db_config.news_process_db_connection_pool_size'));
                 $this->dbConnectionPools[$this->poolKey]->create();
             } catch (\Throwable $e) {
                 echo $e->getMessage() . PHP_EOL;

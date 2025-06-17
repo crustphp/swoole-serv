@@ -16,7 +16,7 @@ class RegisteredProcessesSeeder extends AbstractSeed
      */
     public function run(): void
     {
-        // Names (NewService, RefService) will be replaced in future after "make:process" command to NewsBase and RefBase respectively.
+        // Names (NewService, RefDataService) will be replaced in future after "make:process" command to NewsBase and RefBase respectively.
         $data = [
             [
                 'name' => 'NewsProcess',

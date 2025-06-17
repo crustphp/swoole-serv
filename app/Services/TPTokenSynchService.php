@@ -35,6 +35,11 @@ class TPTokenSynchService
         // In case of stage or local make websocket connection with prod
         if (config('app_config.env') == 'local' || config('app_config.env') == 'staging' || config('app_config.env') == 'pre-production') {
             do {
+                // Log the Coroutine Stats on Each Iteration
+                if (config('app_config.env') == 'local' || config('app_config.env') == 'staging' || config('app_config.env') == 'pre-production') {
+                    output(data: Co::stats(), processName: $this->process->title);
+                }
+                
                 $this->getTokenFrmProductionSever(config('app_config.production_ip'));
                 output('Refinitiv Token Sync Function ended and will retry after ' . $this->refTokenSyncRetryInterval . ' seconds');
                 Co::sleep($this->refTokenSyncRetryInterval);
@@ -86,6 +91,8 @@ class TPTokenSynchService
 
                             // Save into the swoole table
                             $this->refTokenTable->set('1', $token);
+
+                            output('Refinitiv token saved in swoole table');
                         }
                     }
                 }

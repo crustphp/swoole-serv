@@ -148,6 +148,11 @@ class RefSectorDataService
             }
 
             while (true) {
+                // Log the Coroutine Stats on Each Iteration
+                if (config('app_config.env') == 'local' || config('app_config.env') == 'staging' || config('app_config.env') == 'pre-production') {
+                    output(data: Co::stats(), processName: $this->process->title);
+                }
+                
                 $this->initRef();
                 Co::sleep($this->refTimeSpan);
             }
@@ -572,6 +577,9 @@ class RefSectorDataService
         $indicator = [];
         $fields = explode(',', $this->fields);
 
+        // To count how many sectors data received from Refinitiv
+        $sectorCounter = 0;
+
         foreach ($responses as $res) {
             $sector = isset($res['Key']["Name"]) ? $sectorDetail[str_replace('/.', '', $res['Key']["Name"])] : null;
 
@@ -580,6 +588,8 @@ class RefSectorDataService
                 output(sprintf(LogMessages::REFINITIV_MISSING_SECTOR_INDICATORS, json_encode($res)));
                 continue;
             }
+
+            $sectorCounter++;
 
             $indicatorsRecord = [];
             $isChangedData = false;
@@ -621,6 +631,8 @@ class RefSectorDataService
             // All changed Indicators (Columns)
             $refSnapshotIndicatorData[self::ALL_CHANGED_INDICATORS] = $allChangedIndicators;
         }
+
+        output($sectorCounter. ' sectors data received from Refinitiv.');
 
         return $refSnapshotIndicatorData;
     }

@@ -207,6 +207,19 @@ sudo phpenmod -s cli swoole
 php sw_service.php stats
 ```
 
+##### Split the huge files (log files) into smaller chunks:
+Some log files can be difficult to open, as their **large size** may cause them to crash. To handle this, you can split them using the following commands.
+
+```sh
+# Splits by file size (500MB per file)
+split -b 500M filename.txt chunk_
+
+# Splits by lines (10,000 per file)
+split -l 10000 filename.txt chunk_
+```
+
+It will create files like: chunk_aa, chunk_ab etc.
+
 # Other useful dependencies / services installation
 ## SSH2 Installation
 ### Step 1 - Check if SSH2 is already installed
@@ -321,6 +334,48 @@ sudo systemctl restart php8.3-fpm
 ```
 
 Replace 8.3 with your PHP version if needed.
+
+## PostgreSQL Configuration
+To update the settings first you need to open the `postgresql.conf` file using following command:
+
+```
+sudo nano /etc/postgresql/<version>/main/postgresql.conf
+```
+
+**Note:** Once you have done the modifications, you need to restart the postgreSQL service using:
+
+```
+sudo systemctl restart postgresql
+```
+
+### 1 - TCP Settings:
+Once the file is opened, look for the **TCP settings** and update as following:
+
+```
+# - TCP settings -
+# see "man tcp" for details
+
+tcp_keepalives_idle = 15                # TCP_KEEPIDLE, in seconds;
+                                        # 0 selects the system default
+tcp_keepalives_interval = 3             # TCP_KEEPINTVL, in seconds;
+                                        # 0 selects the system default
+tcp_keepalives_count = 10               # TCP_KEEPCNT;
+                                        # 0 selects the system default
+tcp_user_timeout = 30000                # TCP_USER_TIMEOUT, in milliseconds;
+                                        # 0 selects the system default
+
+client_connection_check_interval = 150  # time between checks for client
+                                        # disconnection while running queries;
+                                        # 0 for never
+```
+
+### 2 - Increase Number of concurrent connections of PostgreSQL Server:
+Look for the **Connection settings** in `postgresql.conf` file and update as following:
+
+```
+max_connections = 200			# (change requires restart)
+```
+
 
 # Setting up Phinx (Database Migrations)
 You can setup the database and other Phinx configuration inside `config/phinx.php` file
@@ -478,4 +533,67 @@ Command:
 php prompt configure:process ProcessName --enable=1
 ```
 
-**Note:** The process will be enabled or disabled only in the environment where the command is executed. For example, if you run this command in the staging environment, it will enable or disable the process only in staging and will not affect the local or other environments.
+- **Note:** The process will be enabled or disabled only in the environment where the command is executed. For example, if you run this command in the staging environment, it will enable or disable the process only in staging and will not affect the local or other environments.
+
+
+# Redis Installation and Configuration Guide
+
+This guide walks you through installing Redis on an system, setting a password for security, and testing your Redis server.
+
+---
+
+## Installation Steps
+
+### 1. Update Package Index
+```sh
+sudo apt update
+sudo apt install redis-server
+```
+
+## Configure Redis Password
+
+### 3. Open Redis Configuration File
+```sh
+sudo nano /etc/redis/redis.conf
+```
+
+### 4. Set the Password
+Find the following line:
+# requirepass foobared
+Uncomment it and set your own password:
+requirepass mystrongpassword
+Replace mystrongpassword with a secure password of your choice.
+
+### 5. Restart Redis Service
+sudo systemctl restart redis.service
+```sh
+sudo systemctl restart redis.service
+```
+
+### 6. (Optional) Check Redis Status
+```sh
+sudo systemctl status redis
+```
+
+## Test the Redis Server
+
+### 7. Open Redis CLI
+```sh
+redis-cli
+```
+
+### 8. Authenticate with Your Password
+```sh
+auth mystrongpassword
+```
+
+### 9. Test the Connection
+```sh
+ping
+```
+
+### 10. Expected Response
+```sh
+PONG
+```
+

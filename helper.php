@@ -18,23 +18,31 @@ if (!function_exists('output')) {
      * @param mixed $data  The data to be printed or logged.
      * @param mixed $server  Optional The Swoole server instance
      * @param bool $shouldExit  If true, exit the script after output.
-     * @param bool $shouldVarDump  If true, use var_dump
+     * @param bool $shouldVarDump  If true, uses var_dump.
+     * @param string $processName  The name of the Process to Log along with data.
      *
      * @return void
      */
-    function output(mixed $data, mixed $server = null, bool $shouldExit = false, bool $shouldVarDump = false): void
+    function output(mixed $data, mixed $server = null, bool $shouldExit = false, bool $shouldVarDump = false, string $processName = ""): void
     {
         // New line at start and begining of output to make it appear seperated from the rest
         echo PHP_EOL;
 
+        $isException = $data instanceof \Throwable;
+
+        // In-case of exception always log the process name whether provided or not.
+        if ($isException && empty($processName)) {
+            $processName = cli_get_process_title();
+        }
+
         // Also log the Time with data.
-        echo '[' . Carbon::now()->format('Y-m-d H:i:s') . '] --> ';
+        echo '[' . Carbon::now()->format('Y-m-d H:i:s') . ']{' . $processName . '} --> ';
 
         if ($shouldVarDump) {
             var_dump($data);
         } else {
             // If the Data is an Exception (Instance of Throwable)
-            if ($data instanceof \Throwable) {
+            if ($isException) {
                 echo 'Exception Occured: ' . PHP_EOL;
                 echo 'Message: ' . $data->getMessage() . PHP_EOL;
                 echo 'In File: ' . $data->getFile() . PHP_EOL;
@@ -369,7 +377,7 @@ if (!function_exists('getActiveRefToken')) {
         $gotLock = true;
         // Token is empty or expired
         while (empty($token) ||  Carbon::now()->timestamp - Carbon::parse($token['updated_at'])->timestamp >= ($token['expires_in'] - 60)) {
-            if ((config('app_config.env') != 'local' && config('app_config.env') != 'staging' && config('app_config.env') != 'pre-production') && $gotLock && $refTokenLock->trylock()) {
+            if ((config('app_config.env') != 'local' && config('app_config.env') != 'staging' && config('app_config.env') != 'pre-production') && $gotLock && $refTokenLock && $refTokenLock->trylock()) {
                 output('Updating the token inside the lock');
                 $token = $refTokenObj->produceNewToken($token);
                 $refTokenLock->unlock();
@@ -448,5 +456,97 @@ if (!function_exists('executeDbFacadeQueryWithChannel')) {
         return $channel->pop();
     }
 }
+
+if (!function_exists('truncateSwooleTable')) {
+    /**
+     * Truncate (delete all rows from) a Swoole table safely.
+     *
+     * @param string $tableName The name of the Swoole table to truncate.
+     *
+     * @return bool
+     */
+    function truncateSwooleTable(string $tableName): bool
+    {
+        try {
+            output('Truncating Swoole table: ' . $tableName);
+
+            // Get the Swoole table instance by name
+            $table = Bootstrap\SwooleTableFactory::getTable($tableName, true);
+
+            // Collect keys to avoid modifying the table while iterating
+            $keys = [];
+            foreach ($table as $key => $row) {
+                $keys[] = $key;
+            }
+
+            // Delete all keys
+            foreach ($keys as $key) {
+                $table->del($key);
+            }
+
+            return true;
+        } catch (Throwable $e) {
+            output("Failed to truncate Swoole table '{$tableName}': " . $e->getMessage());
+
+            return false;
+        }
+    }
+}
+
+if (!function_exists('getLastWorkingMarketDateTime')) {
+    /**
+     * Get the last working market date, skipping holidays and weekends.
+     *
+     * @param string|null $todayDate  Optional. Starting date in 'Y-m-d' format. Defaults to today if null.
+     * @param object $objDbPool       DB pool instance.
+     * @param object $dbFacade        DB facade instance.
+     *
+     * @return string           Last working date in 'Y-m-d' format.
+     */
+    function getLastWorkingMarketDateTime(?string $dateTimeString, object $objDbPool, object $dbFacade): string|false
+    {
+            // If no datetime provided, use current datetime
+            $originalDateTime = $dateTimeString ? Carbon::parse($dateTimeString) : Carbon::now();
+            $originalTime = $originalDateTime->format('H:i:s.uP'); // Preserve time and timezone if present
+
+            while (true) {
+                $currentDate = $originalDateTime->toDateString(); // Just the date part
+
+                // Check if the day falls within a holiday period
+                $dbQuery = "SELECT from_date, to_date FROM holidays WHERE DATE '$currentDate' BETWEEN from_date AND to_date;";
+                $holidayResult = executeDbFacadeQueryWithChannel($dbQuery, $objDbPool, $dbFacade);
+
+                // If it's not a holiday and not a weekend, return combined date and original time
+                if (count($holidayResult) == 0 && !in_array($originalDateTime->dayOfWeekIso, [5, 6])) {
+                    // Reapply the original time to the corrected date
+                    $finalDateTime = Carbon::parse($currentDate . ' ' . $originalTime);
+                    return $finalDateTime->toIso8601String(); // returns e.g., "2025-05-27T07:00:00.093000Z"
+                }
+
+                // If it's holiday or weekend, subtract one day
+                $originalDateTime = $originalDateTime->subDay();
+
+                // If new date is Friday or Saturday, move to previous Thursday
+                if ($originalDateTime->isFriday() || $originalDateTime->isSaturday()) {
+                    $originalDateTime = $originalDateTime->previous(Carbon::THURSDAY);
+                }
+            }
+    }
+}
+
+if (!function_exists('extractMilliseconds')) {
+    /**
+     * Extracts milliseconds from a datetime string (e.g., `2025-05-18T07:00:00.093Z`).
+     *
+     * @param string $dateTimeStr The datetime string in ISO 8601 format.
+     * @return string The extracted milliseconds, padded to 3 digits if necessary.
+     */
+    function extractMilliseconds(string $dateTimeStr): string
+    {
+        preg_match('/\.(\d{1,3})Z$/', $dateTimeStr, $matches);
+        return isset($matches[1]) ? str_pad($matches[1], 3, '0') : '000';
+    }
+}
+
 
 
